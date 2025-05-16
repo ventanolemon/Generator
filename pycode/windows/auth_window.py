@@ -4,9 +4,7 @@ from PyQt6 import uic
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMainWindow, QMessageBox, QProgressDialog, QLineEdit
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
-import sqlite3
 import requests
-import json
 
 
 class AuthRequestThread(QThread):

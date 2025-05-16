@@ -13,11 +13,24 @@ class MainMenu:
         self.generator = gen
         self.cur_obj = self.auth
         self.cur_obj.mainObject = self
+
+        # Центрируем все окна при инициализации
+        self.center_window(self.auth)
+        self.center_window(self.reg)
+        self.center_window(self.generator)
+
+    def center_window(self, window):
+        """Центрирует окно на экране"""
+        frame_geometry = window.frameGeometry()
+        screen_center = window.screen().availableGeometry().center()
+        frame_geometry.moveCenter(screen_center)
+        window.move(frame_geometry.topLeft())
         
     def change_cur_obj(self, new):
         self.cur_obj.hide()
         self.cur_obj = new
         self.cur_obj.mainObject = self
+        self.center_window(self.cur_obj)
         self.cur_obj.show()
 
     def __str__(self):

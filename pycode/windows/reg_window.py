@@ -2,8 +2,39 @@
 import pycode.helper as hp
 from PyQt6 import uic
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QMainWindow, QMessageBox, QLineEdit
-import sqlite3
+from PyQt6.QtWidgets import QMainWindow, QMessageBox, QLineEdit, QProgressDialog
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
+import requests
+import json
+
+
+class RegistrationThread(QThread):
+    """Поток для выполнения асинхронной регистрации"""
+    finished = pyqtSignal(dict)  # Сигнал с результатом регистрации
+    error = pyqtSignal(str)  # Сигнал с ошибкой
+
+    def __init__(self, register_data):
+        super().__init__()
+        self.register_data = register_data
+
+    def run(self):
+        try:
+            response = requests.post(
+                'http://localhost:8080/register',
+                headers={'Content-Type': 'application/json'},
+                data=json.dumps(self.register_data),
+                timeout=10  # Таймаут 10 секунд
+            )
+            self.finished.emit({
+                'status_code': response.status_code,
+                'response': response.json()
+            })
+        except requests.exceptions.RequestException as e:
+            self.error.emit(f"Ошибка сети: {str(e)}")
+        except json.JSONDecodeError as e:
+            self.error.emit(f"Ошибка разбора JSON: {str(e)}")
+        except Exception as e:
+            self.error.emit(f"Неизвестная ошибка: {str(e)}")
 
 
 class RegWindow(QMainWindow):
@@ -13,19 +44,19 @@ class RegWindow(QMainWindow):
 
         self.login = None
         self.password = None
-        self.mainObject = None
+        self.email = None
         self.fio = None
         self.group = None
+        self.student = None
+        self.mainObject = None
 
         # Настройка окна
         uic.loadUi('resources/templates/reg_window.ui', self)
         self.setWindowIcon(QIcon("resources/icon.png"))
-
         self.setWindowTitle("Регистрация")
         self.passwordInput.setEchoMode(QLineEdit.EchoMode.Password)
 
         # Обработчики событий
-        # self.actionAboutApp.triggered.connect(self.open_about_app_dialog)
         self.exitButton.clicked.connect(self.close)
         self.registrateButton.clicked.connect(self.inputLogAndPass)
         self.authButton.clicked.connect(self.auth)
@@ -35,42 +66,77 @@ class RegWindow(QMainWindow):
         self.password = self.passwordInput.text()
         self.fio = self.fioInput.text()
         self.group = self.groupInput.text()
+
+        # Проверка заполнения обязательных полей
         if not self.login:
-            message_box = hp.show_message(
-                text="Введите логин",
-                message_type="Information",  # Тип сообщения - вопрос
-                icon='Information'  # Иконка вопроса
-            )
-            message_box.exec()
-            return None
+            self.show_message("Введите логин", "Information")
+            return
         if not self.password:
-            message_box = hp.show_message(
-                text="Введите пароль",
-                message_type="Information",  # Тип сообщения - вопрос
-                icon='Information'  # Иконка вопроса
-            )
-            message_box.exec()
-            return None
-        with sqlite3.connect("resources/users_database.db") as db:
-            cur = db.cursor()
-            # print(cur.execute("SELECT login FROM users").fetchall())
-            try:
-                cur.execute(f"INSERT INTO users VALUES ('{self.login}', '{self.password}', "
-                            f"'{self.fio}', '{self.group}')")
-                self.go_to_generator()
-            except sqlite3.IntegrityError:
-                message_box = hp.show_message(
-                    text="Логин уже занят",
-                    message_type="Information",  # Тип сообщения - вопрос
-                    icon='Information'  # Иконка вопроса
-                )
-                message_box.exec()
+            self.show_message("Введите пароль", "Information")
+            return
+
+        # Показываем диалог загрузки
+        self.show_loading_dialog("Регистрация...")
+
+        # Данные для регистрации
+        register_data = {
+            'login': self.login,
+            'password': self.password,
+            'email': self.email,
+            'FIO': self.fio,
+            'group': self.group,
+            'student': self.student
+        }
+
+        # Создаем и запускаем поток регистрации
+        self.thread = RegistrationThread(register_data)
+        self.thread.finished.connect(self.handle_registration_result)
+        self.thread.error.connect(self.handle_registration_error)
+        self.thread.start()
+
+    def show_loading_dialog(self, message):
+        """Показывает диалоговое окно загрузки"""
+        self.progress_dialog = QProgressDialog(message, None, 0, 0, self)
+        self.progress_dialog.setWindowTitle("Пожалуйста, подождите")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setCancelButton(None)
+        self.progress_dialog.show()
+
+    def show_message(self, text, message_type):
+        """Показывает информационное сообщение"""
+        message_box = hp.show_message(
+            text=text,
+            message_type=message_type,
+            icon=message_type
+        )
+        message_box.exec()
+
+    def handle_registration_result(self, result):
+        """Обрабатывает результат регистрации"""
+        self.progress_dialog.close()
+
+        status_code = result['status_code']
+        response = result['response']
+
+        if status_code == 201:
+            self.clear_inputs()
+            self.go_to_generator()
+        elif status_code == 400:
+            self.show_message(response.get('error', 'Логин уже занят'), "Information")
+        else:
+            self.show_message(f"Ошибка регистрации: {response.get('error', 'Неизвестная ошибка')}", "Critical")
+
+    def handle_registration_error(self, error_msg):
+        """Обрабатывает ошибку регистрации"""
+        self.progress_dialog.close()
+        self.show_message(error_msg, "Critical")
+
+    def clear_inputs(self):
+        """Очищает поля ввода"""
         self.loginInput.setText("")
         self.passwordInput.setText("")
         self.fioInput.setText("")
         self.groupInput.setText("")
-
-        print(self.login, self.password)
 
     def auth(self):
         self.mainObject.change_cur_obj(self.mainObject.auth)
@@ -80,31 +146,4 @@ class RegWindow(QMainWindow):
 
     def open_about_app_dialog(self):
         """Открытие диалогового окна"""
-        hp.show_message("О программе", "Инфо", "Ошибка",
-                        "Critical", ['Ok'], 'Critical').exec()
-
-        # 1. Создаем диалог с вопросом и кнопками Да/Нет
-        message_box = hp.show_message(
-            text="Вы уверены, что хотите продолжить?",
-            message_type="Question",  # Тип сообщения - вопрос
-            buttons=['Yes', 'No'],  # Кнопки Да и Нет
-            icon='Question'  # Иконка вопроса
-        )
-
-        # 2. Показываем диалог и ждем выбора пользователя
-        result = message_box.exec()
-
-        # 3. Обрабатываем результат
-        if result == QMessageBox.StandardButton.Yes:
-            print("Пользователь выбрал Да")
-            # Здесь код, который выполняется при выборе "Да"
-            # Например:
-            # self.save_data()
-            # self.close_window()
-            # self.process_operation()
-        else:
-            print("Пользователь выбрал Нет")
-            # Здесь код, который выполняется при выборе "Нет"
-            # Например:
-            # self.cancel_operation()
-            # self.show_warning("Операция отменена")
+        self.show_message("О программе", "Information")
