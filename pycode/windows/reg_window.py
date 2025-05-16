@@ -2,7 +2,7 @@
 import pycode.helper as hp
 from PyQt6 import uic
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QMainWindow, QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QMessageBox, QLineEdit
 import sqlite3
 
 
@@ -14,10 +14,15 @@ class RegWindow(QMainWindow):
         self.login = None
         self.password = None
         self.mainObject = None
+        self.fio = None
+        self.group = None
 
         # Настройка окна
         uic.loadUi('resources/templates/reg_window.ui', self)
         self.setWindowIcon(QIcon("resources/icon.png"))
+
+        self.setWindowTitle("Регистрация")
+        self.passwordInput.setEchoMode(QLineEdit.EchoMode.Password)
 
         # Обработчики событий
         # self.actionAboutApp.triggered.connect(self.open_about_app_dialog)
@@ -28,6 +33,8 @@ class RegWindow(QMainWindow):
     def inputLogAndPass(self):
         self.login = self.loginInput.text()
         self.password = self.passwordInput.text()
+        self.fio = self.fioInput.text()
+        self.group = self.groupInput.text()
         if not self.login:
             message_box = hp.show_message(
                 text="Введите логин",
@@ -48,8 +55,9 @@ class RegWindow(QMainWindow):
             cur = db.cursor()
             # print(cur.execute("SELECT login FROM users").fetchall())
             try:
-                cur.execute(f"INSERT INTO users VALUES ('{self.login}', '{self.password}')")
-                print("yeeee")
+                cur.execute(f"INSERT INTO users VALUES ('{self.login}', '{self.password}', "
+                            f"'{self.fio}', '{self.group}')")
+                self.go_to_generator()
             except sqlite3.IntegrityError:
                 message_box = hp.show_message(
                     text="Логин уже занят",
@@ -59,11 +67,16 @@ class RegWindow(QMainWindow):
                 message_box.exec()
         self.loginInput.setText("")
         self.passwordInput.setText("")
+        self.fioInput.setText("")
+        self.groupInput.setText("")
 
         print(self.login, self.password)
 
     def auth(self):
         self.mainObject.change_cur_obj(self.mainObject.auth)
+
+    def go_to_generator(self):
+        self.mainObject.change_cur_obj(self.mainObject.generator)
 
     def open_about_app_dialog(self):
         """Открытие диалогового окна"""

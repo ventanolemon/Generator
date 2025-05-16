@@ -196,7 +196,14 @@
          </font>
         </property>
         <property name="text">
-         <string>Регистрации</string>
+         <string>Регистрация</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="3">
+       <widget class="QPushButton" name="guestButton">
+        <property name="text">
+         <string>зайти гостем</string>
         </property>
        </widget>
       </item>
