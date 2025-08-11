@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>838</width>
-    <height>644</height>
+    <width>933</width>
+    <height>647</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,7 +16,7 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout_2">
     <item row="0" column="0">
-     <layout class="QGridLayout" name="gridLayout" rowstretch="1,0,0" columnstretch="1,5">
+     <layout class="QGridLayout" name="gridLayout" rowstretch="1,0,0" columnstretch="2,6">
       <item row="0" column="0">
        <widget class="QComboBox" name="subject"/>
       </item>
@@ -99,7 +99,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>838</width>
+     <width>933</width>
      <height>22</height>
     </rect>
    </property>

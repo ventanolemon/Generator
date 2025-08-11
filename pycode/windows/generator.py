@@ -1,70 +1,121 @@
 # Импорт библиотек
-import pycode.helper as hp
 from PyQt6 import uic
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout
-from pycode.exercises.linal.ex2_d import get_exercise
-from pycode.exercises.linal.linal_main import SecondWindow
+import sqlite3
+
+from pycode.exercises.fisic.fisic_main import FisicMain
+from pycode.exercises.linal.linal_main import LinalMain
 
 
+db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 class GeneratorWindow(QMainWindow):
-    """Класс окна авторизации"""
+    """Класс окна генератора заданий"""
 
     def __init__(self):
-        """Конструктор"""
         super().__init__()
-
         self.mainObject = None
         self.answer = None
+        self.subject_id = 1
 
         # Настройка окна
         uic.loadUi('resources/templates/gen.ui', self)
         self.setWindowIcon(QIcon("resources/icon.png"))
-        self.initiolaise()
+        self.initialize_ui()
 
-    def initiolaise(self):
+    def initialize_ui(self):
         self.setWindowTitle("Генератор")
+        self.cur_sub = LinalMain(self)
 
+        # Скрываем ненужные элементы
         self.generateButton.hide()
         self.taskText.hide()
         self.taskTitle.hide()
         self.answerButton.hide()
+        self.generateButton.hide()
 
-        self.subject.addItems(["Линал", "Англ", "Инфа"])
-        self.type.addItems(["задание на 2d плоскость"])
+        # Инициализация списков из БД
+        self.load_subjects_from_db()
 
+        # Подключение сигналов
         self.type.itemClicked.connect(self.generate_exercise)
-        self.generateButton.clicked.connect(self.generate_2_d_task)
-        self.subject.currentTextChanged.connect(self.update_tasks_list)
-        self.answerButton.clicked.connect(self.show_answer)
+        self.subject.currentTextChanged.connect(self.handle_subject_change)
+        self.profile.clicked.connect(self.go_to_profile)
+
+        self.generator.setLayout(QVBoxLayout())
+
+    def load_subjects_from_db(self):
+        """Загрузка предметов из таблицы Subjects"""
+        try:
+            with sqlite3.connect(db) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT subject_name FROM Subjects")
+                subjects = [row[0] for row in cursor.fetchall()]
+                self.subject.clear()
+                self.subject.addItems(subjects)
+                self.handle_subject_change("Линейная алгебра")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки предметов: {str(e)}")
+
+    def handle_subject_change(self, subject_name):
+        """Обработка изменения выбранного предмета"""
+        try:
+            with sqlite3.connect(db) as conn:
+                cursor = conn.cursor()
+
+                # Получаем ID выбранного предмета
+                cursor.execute(
+                    "SELECT id FROM Subjects WHERE subject_name = ?",
+                    (subject_name,)
+                )
+                subject_id = cursor.fetchone()
+                self.subject_id = subject_id[0]
+
+                cursor.execute(
+                    "SELECT pra_subject FROM Subjects WHERE subject_name = ?",
+                    (subject_name,)
+                )
+                science = cursor.fetchone()[0]
+
+                if subject_id:
+                    # Загружаем типы заданий для выбранного предмета
+                    cursor.execute(
+                        """SELECT partition_name 
+                        FROM Partitions 
+                        WHERE subject_id = ?""",
+                        (subject_id[0],)
+                    )
+                    partitions = [row[0] for row in cursor.fetchall()]
+                    self.type.clear()
+                    self.type.addItems(partitions)
+                # print(science)
+                if science == "Линейная алгебра":
+                    self.cur_sub = LinalMain(self)
+                elif science == "Физика":
+                    self.cur_sub = FisicMain(self)
+
+                # Обработка специальных случаев
+                # self.update_tasks_list(subject_name)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки типов заданий: {str(e)}")
 
     def generate_exercise(self, item):
-        self.generateButton.hide()
-        self.taskText.hide()
-        self.taskTitle.hide()
+        layout = self.generator.layout()
+        while layout.count():
+            child = layout.takeAt(0)
+            widget = child.widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        with sqlite3.connect(db) as conn:
+            cursor = conn.cursor()
 
-        if item.text() == "задание на 2d плоскость":
-            self.generateButton.show()
+            # Получаем ID выбранного предмета
+            cursor.execute(
+                f"SELECT id FROM Partitions WHERE subject_id = {self.subject_id} AND partition_name = '{item.text()}'")
+            partition_id = cursor.fetchone()[0]
+            self.cur_sub.get_ex(partition_id)
 
-    def update_tasks_list(self, text):
-        self.type.clear()
-        if text == "Линал":
-            self.type.addItems(["задание на 2d плоскость"])
-        if text == "Англ":
-            self.type.addItems(["диктант по модулю 1", "диктант по модулю 2"])
-
-    def generate_2_d_task(self):
-        self.generator.setLayout(QVBoxLayout())
-        self.second_ui = SecondWindow()
-        self.generator.layout().addWidget(self.second_ui)
-        # self.taskText.show()
-        # self.taskTitle.show()
-        # self.answerButton.show()
-        #
-        # text, answer = get_exercise()
-        # self.taskText.setText(text)
-        # self.answer = answer
-
-    def show_answer(self):
-        self.taskText.setText(self.answer)
-        self.answerButton.hide()
+    def go_to_profile(self):
+        self.mainObject.change_cur_obj(self.mainObject.profile)

@@ -18,7 +18,7 @@ def choice_word(sl):
         if len(LAST) > len(list(sl.keys())) // 3:
             LAST = LAST[1:]
         return slovo
-    elif len(now) - len(LAST) <= 0:
+    elif len(sl) - len(LAST) <= 0:
         if random.randint(0, 2):
             try:
                 return choice_word(sl)
@@ -36,6 +36,9 @@ all_words.update(slova_education)
 now = {1: slova_characters, 2: slova_family, 3: slova_education, 4: all_words}[int(input())]
 '''
 def test(part):
+    global LAST_WRONG
+    global LAST
+
     files = [i.path for i in os.scandir("words") if part in i.path]
     words = [load(open(file, encoding='utf-8')) for file in files]
     now = reduce(lambda a, b: a | b, words)
@@ -61,3 +64,6 @@ def test(part):
         else:
             print("Thats all")
             break
+
+if __name__ == "__main__":
+    test("2")

@@ -176,18 +176,6 @@
         </property>
        </widget>
       </item>
-      <item row="5" column="3">
-       <widget class="QPushButton" name="exitButton">
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>Выход</string>
-        </property>
-       </widget>
-      </item>
       <item row="5" column="0" colspan="2">
        <widget class="QPushButton" name="registrtionButton">
         <property name="font">
@@ -201,9 +189,26 @@
        </widget>
       </item>
       <item row="0" column="3">
-       <widget class="QPushButton" name="guestButton">
+       <widget class="QPushButton" name="exitButton">
+        <property name="font">
+         <font>
+          <pointsize>12</pointsize>
+         </font>
+        </property>
         <property name="text">
-         <string>зайти гостем</string>
+         <string>Выход</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="3">
+       <widget class="QPushButton" name="guestButton">
+        <property name="font">
+         <font>
+          <pointsize>12</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>Зайти гостем</string>
         </property>
        </widget>
       </item>

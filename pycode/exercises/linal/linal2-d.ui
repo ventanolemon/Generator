@@ -6,38 +6,81 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>300</height>
+    <width>693</width>
+    <height>565</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
-  <widget class="QPushButton" name="pushButton">
+  <widget class="QWidget" name="generator" native="true">
    <property name="geometry">
     <rect>
-     <x>40</x>
-     <y>40</y>
-     <width>75</width>
-     <height>23</height>
+     <x>-4</x>
+     <y>-10</y>
+     <width>811</width>
+     <height>721</height>
     </rect>
    </property>
-   <property name="text">
-    <string>PushButton</string>
-   </property>
-  </widget>
-  <widget class="QPushButton" name="pushButton_2">
-   <property name="geometry">
-    <rect>
-     <x>170</x>
-     <y>170</y>
-     <width>75</width>
-     <height>23</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>PushButton</string>
-   </property>
+   <widget class="QPushButton" name="generateButton">
+    <property name="geometry">
+     <rect>
+      <x>460</x>
+      <y>10</y>
+      <width>211</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>сгенерировать</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="taskTitle">
+    <property name="geometry">
+     <rect>
+      <x>30</x>
+      <y>20</y>
+      <width>121</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Задание:</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="taskText">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>70</y>
+      <width>631</width>
+      <height>491</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="answerButton">
+    <property name="geometry">
+     <rect>
+      <x>464</x>
+      <y>550</y>
+      <width>151</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>показать ответ</string>
+    </property>
+   </widget>
+   <zorder>taskText</zorder>
+   <zorder>generateButton</zorder>
+   <zorder>taskTitle</zorder>
+   <zorder>answerButton</zorder>
   </widget>
  </widget>
  <resources/>

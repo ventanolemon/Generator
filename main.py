@@ -4,13 +4,15 @@ from PyQt6.QtWidgets import QApplication
 from pycode.windows.auth_window import AuthWindow
 from pycode.windows.reg_window import RegWindow
 from pycode.windows.generator import GeneratorWindow
+from pycode.windows.profile_interface import Profile
 
 
 class MainMenu:
-    def __init__(self, auth, reg, gen):
+    def __init__(self, auth, reg, gen, profile):
         self.auth = auth
         self.reg = reg
         self.generator = gen
+        self.profile = profile
         self.cur_obj = self.auth
         self.cur_obj.mainObject = self
 
@@ -52,12 +54,13 @@ if __name__ == "__main__":
     auth = AuthWindow()
     reg = RegWindow()
     generator = GeneratorWindow()
+    profile = Profile()
 
     # auth.login = "ventano"
     # auth.password = "2112005"
     # auth.check_input()
 
-    start_window = MainMenu(auth, reg, generator)
+    start_window = MainMenu(auth, reg, generator, profile)
     start_window.cur_obj.show()
     # start_window = AuthWindow()
     # start_window.show()
