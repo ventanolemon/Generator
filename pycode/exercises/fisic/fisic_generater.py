@@ -16,7 +16,7 @@ def generate_fisic_task(task_config):
     generated_values = {}
     for var_name, var_config in variables.items():
         # Генерируем случайное число в заданном диапазоне
-        value = random.uniform(var_config['min'], var_config['max'])
+        value = random.randint(int(var_config['min']), int(var_config['max']))
 
         # Проверяем на запрещённые значения
         while value in var_config['forbidden']:
@@ -51,7 +51,8 @@ def generate_fisic_task(task_config):
     # Формируем условие задачи
     condition = condition_template
     for var_name, value in generated_values.items():
-        condition = condition.replace(f'#{var_name}#', str(value))
+        dim = variables[var_name]["dimension"]
+        condition = condition.replace(f'#{var_name}#', str(value) + " " + dim)
 
     # Формируем итоговое задание
     task = {

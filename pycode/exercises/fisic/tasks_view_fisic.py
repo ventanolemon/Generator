@@ -1,14 +1,19 @@
 from PyQt6 import uic
 from PyQt6.QtWidgets import QMessageBox, QPushButton, QHeaderView, QWidget, QVBoxLayout, QHBoxLayout
+
+from pycode.exercises.fisic.constructor_window import ExerciseWindow
 from pycode.exercises.fisic.fisic_generater import generate_fisic_task
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 
 
 class ConstructedTasks(QWidget):
-    def __init__(self, generation_settings):
+    def __init__(self, partitions_id, generation_settings, main_obj):
         super().__init__()
         uic.loadUi('pycode/exercises/fisic/fisic_task_generated_interface.ui', self)
+
+        self.main_obj = main_obj
+        self.editer = ExerciseWindow(self.main_obj)
 
         # Поиск основных элементов с созданием при необходимости
         original_table = self.findChild(QTableWidget, 'tasksView')
@@ -24,6 +29,7 @@ class ConstructedTasks(QWidget):
             buttons_container.setObjectName('buttonsContainer')
             self.generateButton = QPushButton("Сгенерировать", buttons_container)
             self.exportButton = QPushButton("Экспорт", buttons_container)
+            self.editButton = QPushButton("Редактировать шаблон", buttons_container)
 
         # Создаем главный макет, если его нет
         main_layout = self.layout() or QVBoxLayout(self)
@@ -36,6 +42,7 @@ class ConstructedTasks(QWidget):
         buttons_layout = QHBoxLayout(buttons_container)
         buttons_layout.addWidget(self.generateButton)
         buttons_layout.addWidget(self.exportButton)
+        buttons_layout.addWidget(self.editButton)
         buttons_layout.addStretch()
 
         # Настройка таблицы
@@ -54,13 +61,19 @@ class ConstructedTasks(QWidget):
         # Подключение сигналов
         self.generateButton.clicked.connect(self.generate_task)
         self.exportButton.clicked.connect(self.export_tasks)
+        self.editButton.clicked.connect(self.edit)
         self.tasksView.cellClicked.connect(self.show_answer)
 
         self.answer_popup = QMessageBox(self)
         self.answer_popup.setWindowTitle("Правильный ответ")
         self.answer_popup.setStandardButtons(QMessageBox.StandardButton.Ok)
 
+        self.partitions_id = partitions_id
         self.generation_settings = generation_settings
+
+    def edit(self):
+        self.editer.edit_exercise(self.partitions_id, self.generation_settings, )
+        self.editer.show()
 
     def show_answer(self, row, column):
         """Показывает ответ при клике на ячейку ответа"""

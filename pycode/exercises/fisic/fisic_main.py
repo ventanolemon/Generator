@@ -22,7 +22,7 @@ class FisicMain(QMainWindow):
             )
             params = cursor.fetchone()[0]
             if params:
-                task_obj = ConstructedTasks(params)
+                task_obj = ConstructedTasks(partitions_id, params, self)
 
                 self.main_obj.second_ui = task_obj
                 self.main_obj.generator.layout().addWidget(self.main_obj.second_ui)

@@ -1,3 +1,5 @@
+import sqlite3
+
 from PyQt6.QtWidgets import (
     QMainWindow,
     QTableWidgetItem,
@@ -12,10 +14,15 @@ import ast  # Добавлен импорт модуля ast
 from pycode.exercises.fisic.adder import TaskTypeEditor
 
 
+db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 class ExerciseWindow(QMainWindow):
+    partitions_id = None
+
     def __init__(self, main_obj):
         super().__init__()
         loadUi('pycode/exercises/fisic/fisic_interface_main.ui', self)  # загружаем UI файл
+
+        self.update = False
 
         # Инициализация компонентов
         self.exersiseText.textChanged.connect(self.update_variables)
@@ -94,6 +101,55 @@ class ExerciseWindow(QMainWindow):
         return variables
 
     def save_exercise(self):
+        if self.update:
+            with sqlite3.connect(db) as conn:
+                exercise_data = {
+                    'condition': self.exersiseText.toPlainText().strip(),
+                    'result_letter': self.resultLetter.text().strip(),
+                    'formula': self.resultFormula.toPlainText().strip(),
+                    'dimension': self.resultRasm.text().strip(),
+                    'variables': {}
+                }
+                cursor = conn.cursor()
+
+                for row in range(self.varsDiaposone.rowCount()):
+                    var_name = self.varsDiaposone.item(row, 0).text().strip()
+                    var_min = self.validate_number(row, 1)
+                    var_max = self.validate_number(row, 2)
+                    forbidden = self.parse_forbidden(row, 3)
+                    dimension = self.varsDiaposone.item(row, 4).text().strip()
+
+                    if var_min is None or var_max is None:
+                        return  # Валидация уже показала ошибку
+
+                    exercise_data['variables'][var_name] = {
+                        'min': var_min,
+                        'max': var_max,
+                        'forbidden': forbidden,
+                        'dimension': dimension
+                    }
+                params = json.dumps(exercise_data)
+
+                sql_query = """
+                                UPDATE Partitions 
+                                SET constracted = ?, generation_parametrs = ?
+                                WHERE id = ?
+                                """
+                cursor.execute(
+                    sql_query,
+                    (1, params, self.partitions_id))
+                rows_affected = cursor.rowcount
+
+                if rows_affected == 0:
+                    QMessageBox.warning(self, "Предупреждение", "Запись не найдена в базе данных")
+                    return
+                conn.commit()
+                # self.saved.emit()
+                QMessageBox.information(self, "Успех", "Тип задания сохранён")
+                self.close()
+                self.update = False
+                return None
+
         exercise_data = {
             'condition': self.exersiseText.toPlainText().strip(),
             'result_letter': self.resultLetter.text().strip(),
@@ -147,6 +203,7 @@ class ExerciseWindow(QMainWindow):
 
         # Сохранение данных
         try:
+            # print(exercise_data)
             adder = TaskTypeEditor(exercise_data, main_obj=self.main_obj)
             adder.show()
             self.main_obj.cur_sub = adder
@@ -155,6 +212,57 @@ class ExerciseWindow(QMainWindow):
             # QMessageBox.information(self, 'Успех', 'Данные успешно сохранены!')
         except Exception as e:
             self.show_error(f"Ошибка сохранения: {str(e)}")
+
+    def edit_exercise(self, partitions_id, json_file):
+        self.partitions_id = partitions_id
+        self.update = True
+        try:
+            # Читаем JSON файл
+            # with open(json_file_path, 'r', encoding='utf-8') as file:
+            data = json.loads(json_file)
+
+            # print(data)
+
+            # Заполняем основные поля
+            self.exersiseText.setPlainText(data.get('condition', ''))
+            self.resultLetter.setText(data.get('result_letter', ''))
+            self.resultFormula.setPlainText(data.get('formula', ''))
+            self.resultRasm.setText(data.get('dimension', ''))
+
+            # Очищаем таблицу перед заполнением новыми данными
+            self.varsDiaposone.setRowCount(0)
+            self.variables.clear()
+
+            # Заполняем таблицу переменных
+            variables_data = data.get('variables', {})
+            for var_name, var_info in variables_data.items():
+                row_position = self.varsDiaposone.rowCount()
+                self.varsDiaposone.insertRow(row_position)
+
+                # Заполняем ячейки таблицы
+                self.varsDiaposone.setItem(row_position, 0, QTableWidgetItem(var_name))
+                self.varsDiaposone.setItem(row_position, 1, QTableWidgetItem(str(var_info.get('min', 0))))
+                self.varsDiaposone.setItem(row_position, 2, QTableWidgetItem(str(var_info.get('max', 100))))
+                self.varsDiaposone.setItem(row_position, 3,
+                                           QTableWidgetItem(', '.join(map(str, var_info.get('forbidden', [])))))
+                self.varsDiaposone.setItem(row_position, 4, QTableWidgetItem(var_info.get('dimension', '')))
+
+                # Сохраняем переменные в словарь
+                self.variables[var_name] = {
+                    'min': var_info.get('min', 0),
+                    'max': var_info.get('max', 100),
+                    'forbidden': var_info.get('forbidden', []),
+                    'dimension': var_info.get('dimension', '')
+                }
+
+            # QMessageBox.information(self, 'Успех', 'Данные успешно загружены!')
+
+        except FileNotFoundError:
+            self.show_error("Файл не найден!")
+        except json.JSONDecodeError:
+            self.show_error("Ошибка декодирования JSON!")
+        except Exception as e:
+            self.show_error(f"Произошла ошибка: {str(e)}")
 
     # Вспомогательные методы
     def validate_number(self, row, column):

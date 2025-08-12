@@ -15,7 +15,7 @@ class TaskTypeEditor(QMainWindow):
     def __init__(self, generation_params: dict, main_obj=None):
         super().__init__()
         self.generation_params = generation_params
-        print(generation_params)
+        # print(generation_params)
         loadUi('pycode/exercises/fisic/adder_interface.ui', self)  # загружаем UI файл
 
         self.load_subjects()
@@ -36,7 +36,6 @@ class TaskTypeEditor(QMainWindow):
                 )
                 self.subjetChoose.clear()
                 for subj_id, name in cursor.fetchall():
-                    print()
                     self.subjetChoose.addItem(name, subj_id)
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки: {str(e)}")
@@ -88,18 +87,53 @@ class TaskTypeEditor(QMainWindow):
         try:
             with sqlite3.connect(db) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """INSERT INTO Partitions 
-                    (subject_id, partition_name, constracted, generation_parametrs)
-                    VALUES (?, ?, ?, ?)""",
-                    (subject_id, partition_name, 1, params)
+
+                test = cursor.execute(
+                    f"""SELECT partition_name FROM Partitions 
+                    WHERE subject_id = '{subject_id}' AND partition_name = '{partition_name}'
+                    """
                 )
-                conn.commit()
-                self.saved.emit()
-                QMessageBox.information(self, "Успех", "Тип задания сохранён")
-                self.close()
+                yes = test.fetchone()
+                if not yes:
+                    cursor.execute(
+                        """INSERT INTO Partitions 
+                        (subject_id, partition_name, constracted, generation_parametrs)
+                        VALUES (?, ?, ?, ?)""",
+                        (subject_id, partition_name, 1, params)
+                    )
+                    print(params)
+                    conn.commit()
+                    self.saved.emit()
+                    QMessageBox.information(self, "Успех", "Тип задания сохранён")
+                    self.close()
+                else:
+                    reply = QMessageBox.question(
+                        self,
+                        "Подтверждение перезаписи",
+                        "Задание уже существует. Хотите перезаписать его?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+
+                    if reply == QMessageBox.StandardButton.No:
+                        QMessageBox.information(self, "Отмена", "Сохранение отменено")
+                        return
+
+                    # Обновляем существующую запись
+                    cursor.execute(
+                        """UPDATE Partitions 
+                        SET constracted = ?, generation_parametrs = ?
+                        WHERE subject_id = ? AND partition_name = ?""",
+                        (1, params, subject_id, partition_name))
+
+                    QMessageBox.information(
+                        self,
+                        "Успех",
+                        "Тип задания успешно обновлен!"
+                    )
+
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Ошибка сохранения: {str(e)}")
+            raise e
+            # QMessageBox.critical(self, "Ошибка", f"Ошибка сохранения: {str(e)}")
 
 
 # Пример использования
