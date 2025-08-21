@@ -1,3 +1,6 @@
+import random
+import sqlite3
+
 from PyQt6 import uic
 from PyQt6.QtWidgets import QMessageBox, QPushButton, QHeaderView, QWidget, QVBoxLayout, QHBoxLayout, QRadioButton
 
@@ -6,14 +9,25 @@ from pycode.exercises.fisic.fisic_generater import generate_fisic_task
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
 
+from pycode.group_adder.group_adder import GroupAdder
 
-class ConstructedTasks(QWidget):
-    def __init__(self, partitions_id, generation_settings, main_obj):
+
+db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
+class ConstructedGroup(QWidget):
+    def __init__(self, partitions_ids, generation_settings_list, main_obj=None):
         super().__init__()
         uic.loadUi('pycode/exercises/fisic/fisic_task_generated_interface.ui', self)
 
         self.main_obj = main_obj
-        self.editer = ExerciseWindow(self.main_obj)
+        self.editer = GroupAdder(subject_id=self.main_obj.main_obj.subject_id, main_obj=self.main_obj)
+
+        # Сохраняем список настроек генерации
+        self.partitions_ids = partitions_ids  # список ID разделов
+        self.generation_settings_list = generation_settings_list  # список настроек
+
+        # Проверка корректности входных данных
+        if not self.partitions_ids or not self.generation_settings_list:
+            raise ValueError("Список разделов и настроек не может быть пустым")
 
         # Поиск основных элементов с созданием при необходимости
         original_table = self.findChild(QTableWidget, 'tasksView')
@@ -71,12 +85,8 @@ class ConstructedTasks(QWidget):
         self.answer_popup.setWindowTitle("Правильный ответ")
         self.answer_popup.setStandardButtons(QMessageBox.StandardButton.Ok)
 
-        self.partitions_id = partitions_id
-        self.generation_settings = generation_settings
-
     def edit(self):
-        self.editer.edit_exercise(self.partitions_id, self.generation_settings, )
-        self.editer.show()
+        self.editer.edit_group()
 
     def show_all_answers(self):
         pos = self.showAnswersButton.isChecked()
@@ -111,7 +121,19 @@ class ConstructedTasks(QWidget):
                 self.answer_popup.exec()
 
     def generate_task(self):
-        text, answer = generate_fisic_task(self.generation_settings)
+        # Выбираем случайные настройки генерации
+        if not self.generation_settings_list:
+            QMessageBox.warning(self, "Ошибка", "Нет доступных настроек генерации")
+            return
+
+        selected_settings = random.choice(self.generation_settings_list)
+
+        # Генерируем задание
+        try:
+            text, answer = generate_fisic_task(selected_settings)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка генерации задания: {str(e)}")
+            return
 
         # Определение позиции для вставки
         row_position = self.tasksView.rowCount()
@@ -143,13 +165,6 @@ class ConstructedTasks(QWidget):
         # Автоматическое растягивание столбца
         self.tasksView.resizeColumnToContents(0)
         self.tasksView.resizeColumnToContents(1)
-
-    def handle_cell_click(self, row, column):
-        if column == 1:
-            answer_item = self.tasksView.item(row, 1)
-            if answer_item.text() == "Нажмите для просмотра":
-                real_answer = answer_item.data(Qt.ItemDataRole.UserRole)
-                answer_item.setText(real_answer)
 
     def handle_header_resize(self, logicalIndex, oldSize, newSize):
         """Обновление размеров столбцов при изменении"""

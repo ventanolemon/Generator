@@ -1,0 +1,20 @@
+{
+    "condition": "#a# #m#",
+    "result_letter": "F",
+    "formula": "a * m",
+    "dimension": "Н",
+    "variables": {
+        "a": {
+            "min": 0.0,
+            "max": 100.0,
+            "forbidden": [],
+            "dimension": ""
+        },
+        "m": {
+            "min": 0.0,
+            "max": 100.0,
+            "forbidden": [],
+            "dimension": ""
+        }
+    }
+}

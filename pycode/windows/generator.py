@@ -4,13 +4,15 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout
 import sqlite3
 
+# from pycode.adder.adder import TaskTypeEditor
 from pycode.exercises.fisic.fisic_main import FisicMain
 from pycode.exercises.linal.linal_main import LinalMain
-
+from pycode.group_adder.group_adder import GroupAdder
 
 db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 class GeneratorWindow(QMainWindow):
     """Класс окна генератора заданий"""
+    grouper = None
 
     def __init__(self):
         super().__init__()
@@ -41,6 +43,7 @@ class GeneratorWindow(QMainWindow):
         self.type.itemClicked.connect(self.generate_exercise)
         self.subject.currentTextChanged.connect(self.handle_subject_change)
         self.profile.clicked.connect(self.go_to_profile)
+        self.groupButton.clicked.connect(self.create_group)
 
         self.generator.setLayout(QVBoxLayout())
 
@@ -116,6 +119,10 @@ class GeneratorWindow(QMainWindow):
                 f"SELECT id FROM Partitions WHERE subject_id = {self.subject_id} AND partition_name = '{item.text()}'")
             partition_id = cursor.fetchone()[0]
             self.cur_sub.get_ex(partition_id)
+
+    def create_group(self):
+        self.grouper = GroupAdder(self.subject_id, self.mainObject)
+        self.grouper.show()
 
     def go_to_profile(self):
         self.mainObject.change_cur_obj(self.mainObject.profile)
