@@ -10,11 +10,10 @@ from PyQt6.uic import loadUi
 import json
 import re
 import ast  # Добавлен импорт модуля ast
-
+from const import db
 from pycode.exercises.fisic.adder import TaskTypeEditor
 
 
-db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 class ExerciseWindow(QMainWindow):
     partitions_id = None
 
@@ -129,22 +128,26 @@ class ExerciseWindow(QMainWindow):
                         'dimension': dimension
                     }
                 params = json.dumps(exercise_data)
+                print(exercise_data)
 
                 sql_query = """
                                 UPDATE Partitions 
-                                SET constracted = ?, generation_parametrs = ?
+                                SET generation_parametrs = ?
                                 WHERE id = ?
                                 """
                 cursor.execute(
                     sql_query,
-                    (1, params, self.partitions_id))
+                    (params, self.partitions_id))
                 rows_affected = cursor.rowcount
 
                 if rows_affected == 0:
                     QMessageBox.warning(self, "Предупреждение", "Запись не найдена в базе данных")
                     return
                 conn.commit()
+                # cursor.execute(f"SELECT generation_parametrs FROM Partitions WHERE id = {self.partitions_id}")
+                # print(cursor.fetchone())
                 # self.saved.emit()
+                print("sss")
                 QMessageBox.information(self, "Успех", "Тип задания сохранён")
                 self.close()
                 self.update = False
@@ -254,7 +257,7 @@ class ExerciseWindow(QMainWindow):
                     'forbidden': var_info.get('forbidden', []),
                     'dimension': var_info.get('dimension', '')
                 }
-
+                # self.save_exercise()
             # QMessageBox.information(self, 'Успех', 'Данные успешно загружены!')
 
         except FileNotFoundError:

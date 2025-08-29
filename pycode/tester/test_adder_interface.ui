@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>testAdder</class>
+ <widget class="QMainWindow" name="testAdder">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Редактор теста</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QGridLayout" name="gridLayout_2">
+    <item row="1" column="0">
+     <layout class="QGridLayout" name="gridLayout">
+      <item row="7" column="1">
+       <widget class="QComboBox" name="selectScience"/>
+      </item>
+      <item row="8" column="0" colspan="2">
+       <widget class="QPushButton" name="saveBtn">
+        <property name="text">
+         <string>Сохранить</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QLabel" name="label">
+        <property name="text">
+         <string>типы заданий</string>
+        </property>
+       </widget>
+      </item>
+      <item row="7" column="0">
+       <widget class="QLabel" name="label_3">
+        <property name="text">
+         <string>сохранить в предмет</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QLabel" name="label_4">
+        <property name="text">
+         <string>Название теста</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0" colspan="2">
+       <widget class="QLineEdit" name="testName"/>
+      </item>
+      <item row="5" column="0">
+       <widget class="QPushButton" name="addTypeBtn">
+        <property name="text">
+         <string>+</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="1">
+       <widget class="QTableWidget" name="typesTable">
+        <column>
+         <property name="text">
+          <string/>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>задание</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>количество</string>
+         </property>
+        </column>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QComboBox" name="selectType"/>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="parentSubjectLabel">
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_5">
+        <property name="text">
+         <string>Задания из:</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>800</width>
+     <height>22</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -47,6 +47,7 @@ def except_hook(cls, exception, traceback):
     sys.__excepthook__(cls, exception, traceback)
 
 
+db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 # Точка старта приложения
 if __name__ == "__main__":
     app = QApplication(sys.argv)

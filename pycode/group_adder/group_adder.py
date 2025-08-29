@@ -4,11 +4,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, Qt
 import sqlite3
 import json
-
+from const import db
 from PyQt6.uic import loadUi
 
 
-db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 class GroupAdder(QMainWindow):
     saved = pyqtSignal()  # Сигнал успешного сохранения
     partitions = []
@@ -35,7 +34,7 @@ class GroupAdder(QMainWindow):
             with sqlite3.connect(db) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    f"SELECT partition_name FROM Partitions WHERE subject_id = {self.subject_id}"
+                    f"SELECT partition_name FROM Partitions WHERE subject_id = {self.subject_id} AND constracted <> 2"
                 )
                 subj = cursor.fetchall()
                 self.partitions = []
@@ -101,16 +100,16 @@ class GroupAdder(QMainWindow):
                 with sqlite3.connect(db) as conn:
                     cursor = conn.cursor()
                     cursor.execute(
-                        f"SELECT id, constracted, generation_parametrs FROM Partitions WHERE subject_id = {self.subject_id} "
+                        f"SELECT id, constracted FROM Partitions WHERE subject_id = {self.subject_id} "
                         f"AND partition_name = '{item.text()}'"
                     )
-                    task_id, constracted, params = cursor.fetchone()
+                    task_id, constracted = cursor.fetchone()
                     # Предполагаем, что текст элемента содержит нужные данные
                     task_data = {
                         "task_id": task_id,
                         "constracted": constracted,
                         "task_type": item.text(),
-                        "params": params  # Здесь должны быть реальные параметры задания
+                        # "params": params  # Здесь должны быть реальные параметры задания
                     }
                     selected_tasks.append(task_data)
 
@@ -180,7 +179,7 @@ class GroupAdder(QMainWindow):
 
     def edit_group(self):
         try:
-            group_id = self.main_obj.partitions_id
+            group_id = self.main_obj.partition_id
             # Очищаем текущие данные
             self.groupName.clear()
             self.partitionsChoose.list_widget.clear()
@@ -268,12 +267,12 @@ class GroupAdder(QMainWindow):
                 "Ошибка базы данных",
                 f"Произошла ошибка при загрузке данных: {str(e)}"
             )
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Ошибка",
-                f"Непредвиденная ошибка: {str(e)}"
-            )
+        # except Exception as e:
+        #     QMessageBox.critical(
+        #         self,
+        #         "Ошибка",
+        #         f"Непредвиденная ошибка: {str(e)}"
+        #     )
 
 
 class CheckboxListWidget(QWidget):

@@ -6,9 +6,9 @@ import sqlite3
 import json
 
 from PyQt6.uic import loadUi
+from const import db
 
 
-db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 class TaskTypeEditor(QMainWindow):
     saved = pyqtSignal()  # Сигнал успешного сохранения
 

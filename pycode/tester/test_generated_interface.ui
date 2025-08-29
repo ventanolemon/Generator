@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>693</width>
+    <height>565</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <widget class="QWidget" name="generator" native="true">
+   <property name="geometry">
+    <rect>
+     <x>-4</x>
+     <y>-10</y>
+     <width>811</width>
+     <height>721</height>
+    </rect>
+   </property>
+   <widget class="QPushButton" name="exportButton">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>520</y>
+      <width>211</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>экспортировать текущий вариант</string>
+    </property>
+   </widget>
+   <widget class="QTextBrowser" name="testBrowser">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>70</y>
+      <width>621</width>
+      <height>441</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>50</x>
+      <y>50</y>
+      <width>110</width>
+      <height>19</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>отображение ответов</string>
+    </property>
+   </widget>
+   <widget class="QComboBox" name="selectAnswers">
+    <property name="geometry">
+     <rect>
+      <x>170</x>
+      <y>50</y>
+      <width>261</width>
+      <height>19</height>
+     </rect>
+    </property>
+    <item>
+     <property name="text">
+      <string>показывать рядом с заданием</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>показывать в конце</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string>скрыть</string>
+     </property>
+    </item>
+    <item>
+     <property name="text">
+      <string/>
+     </property>
+    </item>
+   </widget>
+   <widget class="QPushButton" name="exportNewButton">
+    <property name="geometry">
+     <rect>
+      <x>350</x>
+      <y>520</y>
+      <width>211</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>экспорт и генерация</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="generateButton">
+    <property name="geometry">
+     <rect>
+      <x>460</x>
+      <y>50</y>
+      <width>141</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Сгенерировать вариант</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="editButton">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>20</y>
+      <width>241</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Редактировать шаблон</string>
+    </property>
+   </widget>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

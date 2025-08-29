@@ -16,14 +16,35 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout_2">
     <item row="0" column="0">
-     <layout class="QGridLayout" name="gridLayout" rowstretch="1,0,0,0" columnstretch="2,6">
-      <item row="1" column="0">
+     <layout class="QGridLayout" name="gridLayout" rowstretch="1,0,0,0,0,0,0" columnstretch="2,6">
+      <item row="2" column="0">
        <widget class="QComboBox" name="subject"/>
       </item>
-      <item row="2" column="0">
+      <item row="3" column="0">
        <widget class="QListWidget" name="type"/>
       </item>
-      <item row="1" column="1" rowspan="3">
+      <item row="0" column="0">
+       <widget class="QPushButton" name="profile">
+        <property name="text">
+         <string>Профиль</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QPushButton" name="groupButton">
+        <property name="text">
+         <string>Создать группу</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0">
+       <widget class="QPushButton" name="testButton">
+        <property name="text">
+         <string>Создать тест</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1" rowspan="5">
        <widget class="QWidget" name="generator" native="true">
         <widget class="QPushButton" name="generateButton">
          <property name="geometry">
@@ -81,20 +102,6 @@
         <zorder>generateButton</zorder>
         <zorder>taskTitle</zorder>
         <zorder>answerButton</zorder>
-       </widget>
-      </item>
-      <item row="0" column="0">
-       <widget class="QPushButton" name="profile">
-        <property name="text">
-         <string>Профиль</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0">
-       <widget class="QPushButton" name="groupButton">
-        <property name="text">
-         <string>Создать группу</string>
-        </property>
        </widget>
       </item>
      </layout>

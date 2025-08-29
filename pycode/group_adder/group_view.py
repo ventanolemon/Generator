@@ -1,3 +1,4 @@
+import json
 import random
 import sqlite3
 
@@ -8,22 +9,30 @@ from pycode.exercises.fisic.constructor_window import ExerciseWindow
 from pycode.exercises.fisic.fisic_generater import generate_fisic_task
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
-
+from const import db
 from pycode.group_adder.group_adder import GroupAdder
 
 
-db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
 class ConstructedGroup(QWidget):
-    def __init__(self, partitions_ids, generation_settings_list, main_obj=None):
+    def __init__(self, partitions_ids, pra_obj=None):
         super().__init__()
         uic.loadUi('pycode/exercises/fisic/fisic_task_generated_interface.ui', self)
 
-        self.main_obj = main_obj
-        self.editer = GroupAdder(subject_id=self.main_obj.main_obj.subject_id, main_obj=self.main_obj)
+        self.pra_obj = pra_obj
+        self.editer = GroupAdder(subject_id=self.pra_obj.main_obj.subject_id, main_obj=self.pra_obj.main_obj)
 
         # Сохраняем список настроек генерации
         self.partitions_ids = partitions_ids  # список ID разделов
+        generation_settings_list = []
+        with sqlite3.connect(db) as conn:
+            cursor = conn.cursor()
+            for partitions_id in self.partitions_ids:
+                cursor.execute(
+                    f"SELECT generation_parametrs FROM Partitions WHERE id = {partitions_id}",
+                )
+                generation_settings_list.append(cursor.fetchone()[0])
         self.generation_settings_list = generation_settings_list  # список настроек
+        # print(self.generation_settings_list)
 
         # Проверка корректности входных данных
         if not self.partitions_ids or not self.generation_settings_list:
@@ -120,20 +129,34 @@ class ConstructedGroup(QWidget):
                 self.answer_popup.setText(f"<b>Правильный ответ:</b><br>{real_answer}")
                 self.answer_popup.exec()
 
-    def generate_task(self):
+    def get_task(self):
         # Выбираем случайные настройки генерации
         if not self.generation_settings_list:
             QMessageBox.warning(self, "Ошибка", "Нет доступных настроек генерации")
             return
-
-        selected_settings = random.choice(self.generation_settings_list)
+        numb = random.randint(0, len(self.partitions_ids) - 1)
+        # selected_settings = random.choice(self.generation_settings_list)
+        selected_settings = self.generation_settings_list[numb]
 
         # Генерируем задание
         try:
-            text, answer = generate_fisic_task(selected_settings)
+            if self.pra_obj.main_obj.pra_subject_id == 1:
+                if selected_settings:
+                    # print(self.partitions_ids[numb])
+                    pass  # сюдааа доработать когда добавлю конструктор по линалу
+                else:
+                    # print(self.partitions_ids[numb])
+                    text, answer = self.pra_obj.give_ex(self.partitions_ids[numb])
+
+            elif self.pra_obj.main_obj.pra_subject_id == 3:
+                text, answer = generate_fisic_task(selected_settings)
+            return text, answer
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка генерации задания: {str(e)}")
-            return
+            return -1
+
+    def generate_task(self):
+        text, answer = self.get_task()
 
         # Определение позиции для вставки
         row_position = self.tasksView.rowCount()

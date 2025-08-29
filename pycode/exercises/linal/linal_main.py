@@ -1,7 +1,12 @@
+import json
+import sqlite3
+from const import db
 from PyQt6.QtWidgets import QApplication, QMainWindow, QFrame, QWidget, QVBoxLayout
 from PyQt6.uic import loadUi
 from pycode.exercises.linal import ex2_d
 from pycode.exercises.linal import ex3_d
+from pycode.group_adder.group_view import ConstructedGroup
+from pycode.tester.test_view import ConstructedTest
 
 
 class LinalMain(QMainWindow):
@@ -20,13 +25,55 @@ class LinalMain(QMainWindow):
         # self.frame.layout().addWidget(self.second_ui)
 
     def get_ex(self, partitions_id):
+        self.partitions_id = partitions_id
+
         if partitions_id == 1:
             task_obj = SecondWindow()
         elif partitions_id == 4:
             task_obj = ThirdWindow()
 
+        with sqlite3.connect(db) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT constracted, generation_parametrs FROM Partitions WHERE id = '{partitions_id}'",
+            )
+            constracted, params_js = cursor.fetchone()
+            if constracted == 2:
+                tasks_id = []
+                for obj in json.loads(params_js):
+                    tasks_id.append(obj.get("task_id"))
+                task_obj = ConstructedGroup(tasks_id, self)
+            elif constracted == 3:
+                params = json.loads(params_js)
+                # print(params, type(params.get("data")))
+                task_obj = ConstructedTest(params.get("data"), self)
+
         self.main_obj.second_ui = task_obj
         self.main_obj.generator.layout().addWidget(self.main_obj.second_ui)
+
+    def give_ex(self, partitions_id):
+        if partitions_id == 1:
+            task_obj = SecondWindow()
+            task_obj.generate_task()
+            return task_obj.task_text, task_obj.answer
+        elif partitions_id == 4:
+            task_obj = ThirdWindow()
+            task_obj.generate_task()
+            return task_obj.task_text, task_obj.answer
+        else:
+            with sqlite3.connect(db) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    f"SELECT constracted, generation_parametrs FROM Partitions WHERE id = '{partitions_id}'",
+                )
+                constracted, generation_parametrs = cursor.fetchone()
+                if constracted == 2:
+                    tasks_id = []
+                    for obj in json.loads(generation_parametrs):
+                        tasks_id.append(obj.get("task_id"))
+                    task_obj = ConstructedGroup(tasks_id, self)
+                    task_text, answer = task_obj.get_task()
+                    return task_text, answer
 
 
 class SecondWindow(QWidget):

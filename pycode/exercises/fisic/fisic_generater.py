@@ -3,9 +3,10 @@ import random
 from math import sin, cos, tan, log
 
 
-def generate_fisic_task(task_config):
+def generate_fisic_task(task_config: json):
     # Извлекаем данные из конфигурации
     task_config = json.loads(task_config)
+    # print(task_config)
     condition_template = task_config['condition']
     result_letter = task_config['result_letter']
     formula = task_config['formula']

@@ -3,22 +3,28 @@ from PyQt6 import uic
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout
 import sqlite3
-
+from const import db
 # from pycode.adder.adder import TaskTypeEditor
 from pycode.exercises.fisic.fisic_main import FisicMain
 from pycode.exercises.linal.linal_main import LinalMain
 from pycode.group_adder.group_adder import GroupAdder
+from pycode.tester.test_adder import TestAdder
 
-db = r'C:\Users\happy\PycharmProjects\PythonProject4\resources\users_database.db'
+
 class GeneratorWindow(QMainWindow):
     """Класс окна генератора заданий"""
     grouper = None
+    tester = None
 
     def __init__(self):
         super().__init__()
-        self.mainObject = None
+        self.main_obj = self
         self.answer = None
         self.subject_id = 1
+        self.subject_name = "Линейная алгебра"
+        self.pra_subject_id = 1
+        self.partition_id = None
+        self.partition_name = None
 
         # Настройка окна
         uic.loadUi('resources/templates/gen.ui', self)
@@ -44,7 +50,7 @@ class GeneratorWindow(QMainWindow):
         self.subject.currentTextChanged.connect(self.handle_subject_change)
         self.profile.clicked.connect(self.go_to_profile)
         self.groupButton.clicked.connect(self.create_group)
-
+        self.testButton.clicked.connect(self.create_test)
         self.generator.setLayout(QVBoxLayout())
 
     def load_subjects_from_db(self):
@@ -73,12 +79,19 @@ class GeneratorWindow(QMainWindow):
                 )
                 subject_id = cursor.fetchone()
                 self.subject_id = subject_id[0]
+                self.subject_name = subject_name
 
                 cursor.execute(
                     "SELECT pra_subject FROM Subjects WHERE subject_name = ?",
                     (subject_name,)
                 )
                 science = cursor.fetchone()[0]
+                cursor.execute(
+                    "SELECT id FROM Subjects WHERE subject_name = ?",
+                    (science,)
+                )
+                science_id = cursor.fetchone()
+                self.pra_subject_id = science_id[0]
 
                 if subject_id:
                     # Загружаем типы заданий для выбранного предмета
@@ -114,15 +127,22 @@ class GeneratorWindow(QMainWindow):
         with sqlite3.connect(db) as conn:
             cursor = conn.cursor()
 
-            # Получаем ID выбранного предмета
+            self.partition_name = item.text()
+
+            # Получаем ID выбранного задания
             cursor.execute(
                 f"SELECT id FROM Partitions WHERE subject_id = {self.subject_id} AND partition_name = '{item.text()}'")
             partition_id = cursor.fetchone()[0]
+            self.partition_id = partition_id
             self.cur_sub.get_ex(partition_id)
 
     def create_group(self):
         self.grouper = GroupAdder(self.subject_id, self.mainObject)
         self.grouper.show()
+
+    def create_test(self):
+        self.tester = TestAdder(self.subject_id, self)
+        self.tester.show()
 
     def go_to_profile(self):
         self.mainObject.change_cur_obj(self.mainObject.profile)
