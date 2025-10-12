@@ -39,9 +39,11 @@ def test(part):
     global LAST_WRONG
     global LAST
 
-    files = [i.path for i in os.scandir("words") if part in i.path]
-    words = [load(open(file, encoding='utf-8')) for file in files]
-    now = reduce(lambda a, b: a | b, words)
+    # files = [i.path for i in os.scandir("words") if part in i.path]
+    # words = [load(open(file, encoding='utf-8')) for file in files]
+    # now = reduce(lambda a, b: a | b, words)
+    words = load(open("words/2_year_1-2_units.json", encoding='utf-8'))
+    now = words
     while True:
         # var = choice(list(slova_characters.keys()))
         if len(LAST_WRONG) > 5:
