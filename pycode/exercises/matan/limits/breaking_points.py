@@ -11,7 +11,7 @@ def get_breaking_points():
     ev_2 = x - a2
 
     k = random.randint(2, 9) / 10
-    if random.randint(0, 1):
+    if k:  # random.randint(0, 1)
         expression = (ev_1 / (ev_1 * ev_2))
         res = "f(x)=" + str(k) + r"^{\frac{" + sp.latex(ev_1.expand()) + "}{" + sp.latex((ev_1 * ev_2).expand()) + "}}"
     else:
@@ -25,7 +25,7 @@ def get_breaking_points():
 
     if lim_1_mn == lim_1_pl and abs(lim_1_mn) != sp.oo and abs(lim_1_pl) != sp.oo:
         type_1 = "устранимая"
-    elif lim_1_mn == lim_1_pl and abs(lim_1_mn) != sp.oo and abs(lim_1_pl) != sp.oo:
+    elif lim_1_mn != lim_1_pl and abs(lim_1_mn) != sp.oo and abs(lim_1_pl) != sp.oo:
         type_1 = "1 рода"
     else:
         type_1 = "2 рода"

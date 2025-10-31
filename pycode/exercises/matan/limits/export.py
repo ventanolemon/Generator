@@ -1,15 +1,26 @@
 import win32com.client as win32
 
-from pycode.exercises.matan.breaking_points import get_breaking_points
-from pycode.exercises.matan.c_k_equals import get_c_k_equals
-from pycode.exercises.matan.drob_radicals import get_drob_radicals
-from pycode.exercises.matan.equals import get_equals
-from pycode.exercises.matan.lim_opr import get_lim_opr
-from pycode.exercises.matan.long_radicals import get_long_radicals
-from pycode.exercises.matan.simple_osn import get_simple_osn
-from pycode.exercises.matan.simple_stepens import get_simple_stepens
-from pycode.exercises.matan.second_perfect import get_2_perfect
+from pycode.exercises.matan.limits.breaking_points import get_breaking_points
+from pycode.exercises.matan.limits.c_k_equals import get_c_k_equals
+from pycode.exercises.matan.limits.drob_radicals import get_drob_radicals
+from pycode.exercises.matan.limits.equals import get_equals
+from pycode.exercises.matan.limits.lim_opr import get_lim_opr
+from pycode.exercises.matan.limits.long_radicals import get_long_radicals
+from pycode.exercises.matan.limits.simple_osn import get_simple_osn
+from pycode.exercises.matan.limits.simple_stepens import get_simple_stepens
+from pycode.exercises.matan.limits.second_perfect import get_2_perfect
+from pycode.exercises.matan.limits.perfect_1_2 import get_1_2_perfect
+import shutil
+import win32com
 
+
+try:
+    # Получить путь к gen_py
+    gen_path = win32com.__gen_path__
+    shutil.rmtree(gen_path)
+    print(f"Кэш очищен: {gen_path}")
+except Exception as e:
+    print(f"Ошибка: {e}")
 
 def insert_formula(selection, formula):
     selection.OMaths.Add(selection.Range)
@@ -33,13 +44,14 @@ def insert_editable_latex(answers="show", variants_cnt=1):
                             ("text", " 5.\tВычислить предел функции.\n"),
                             ("text", " 6.\tВычислить предел функции.\n"),
                             ("text", " 7.\tВычислить предел функции.\n"),
-                            ("text", " 8.\tВычислить предел функции.\n"),
-                            ("text", " 9.\tНайти точки разрыва функции y=f(x) и определить их тип. \n")
+                            ("text", " 8.\tОпределить C и  k, при которых функции эквивалентны при x → 0. \n"),
+                            ("text", " 9.\tНайти точки разрыва функции y=f(x) и определить их тип. \n"),
+                            ("text", " 10.\tВычислить предел функции.\n")
                             ]
 
         tasks_text, tasks_answers = [], []
         for task in [get_lim_opr(), get_simple_osn(), get_simple_stepens(), get_drob_radicals(), get_long_radicals(),
-                     get_2_perfect(), get_equals(), get_c_k_equals(), get_breaking_points()]:
+                     get_2_perfect(), get_equals(), get_c_k_equals(), get_breaking_points(), get_1_2_perfect()]:
             tasks_text.append(task[0])
             tasks_answers.append(task[1])
 
@@ -70,7 +82,7 @@ def insert_editable_latex(answers="show", variants_cnt=1):
     return word, doc
 
 
-insert_editable_latex(variants_cnt=50)
+insert_editable_latex(variants_cnt=15)
 
 # if answers == "show":
 #     pass
