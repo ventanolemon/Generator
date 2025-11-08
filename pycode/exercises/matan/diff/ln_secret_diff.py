@@ -22,7 +22,13 @@ def get_ln_secret_diff():
 
     res_ev = get_ev(x) ** ev_1
     answer = sp.diff(res_ev, x)
-    return ("formula", sp.latex(res_ev)), ("formula", sp.latex(sp.simplify(answer)))
+
+    res_latex = ("y=" + sp.latex(res_ev).replace(r"\operatorname", "").replace(r"atan", "arctg").replace(r"asin", "arcsin").replace(r"acos", "arccos")
+                 .replace(r"\tan", "tg").replace("log", "ln"))
+    ans_latex = (sp.latex(answer).replace(r"\operatorname", "").replace(r"atan", "arctg").replace(r"asin", "arcsin").replace(r"acos", "arccos")
+                 .replace(r"\tan", "tg").replace("log", "ln"))
+
+    return ("formula", res_latex), ("formula", ans_latex)
 
 
 if __name__ == "__main__":

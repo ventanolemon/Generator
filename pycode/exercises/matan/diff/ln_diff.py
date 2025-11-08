@@ -2,6 +2,12 @@ import random
 import sympy as sp
 
 
+def clear_latex(inp):
+    inp = (inp.replace(r"\operatorname", "").replace(r"atan", "arctg").replace(r"asin", "arcsin").replace(r"acos", "arccos")
+                 .replace(r"\tan", "tg").replace("log", "ln"))
+    return inp
+
+
 def get_ln_diff():
     x = sp.Symbol("x")
 
@@ -16,9 +22,21 @@ def get_ln_diff():
     chisl = (a1 * x + b1) * x ** stepen_zn_1
     znam = ((a3 * x + b3) ** stepen_zn_3) * sp.sqrt((a2 * x ** stepen_zn_2 + b2))
 
-    res_ev = (chisl / znam) ** (1 / k)
+    if random.random() >= 0.7:
+        res_ev = (chisl / znam) ** (1 / k)
+        if k != 2:
+            res_latex = r"y=\sqrt[" + str(k) + "]{" + clear_latex(sp.latex(chisl / znam)) + "}"
+        else:
+            res_latex = r"y=\sqrt{" + clear_latex(sp.latex(chisl / znam)) + "}"
+    else:
+        res_ev = (chisl / znam)
+        res_latex = ("y=" + clear_latex(sp.latex(res_ev)))
     answer = sp.diff(res_ev, x)
-    return ("formula", sp.latex(res_ev)), ("formula", sp.latex(sp.simplify(answer)))
+
+    ans_latex = clear_latex(sp.latex(answer))
+
+    # print(res)
+    return ("formula", res_latex), ("formula", ans_latex)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,11 @@ import random
 import sympy as sp
 
 
+def clear_latex(inp):
+    inp = (inp.replace(r"\operatorname", "").replace(r"atan", "arctg").replace(r"asin", "arcsin").replace(r"acos", "arccos")
+                 .replace(r"\tan", "tg").replace("log", "ln"))
+    return inp
+
 
 e = sp.Symbol("e")
 def get_ev_zero(res, ind=None):
@@ -33,13 +38,13 @@ def get_lopital_law():
 
     ev_1, ev_2, ev_3, ev_4 = get_ev_zero(first_x), get_ev_zero(second_x), get_ev_zero(third_x), get_ev_zero(fourth_x)
 
-    print(ev_1, "----", ev_2)
-    print(ev_3, "----", ev_4)
+    # print(ev_1, "----", ev_2)
+    # print(ev_3, "----", ev_4)
 
     res_ev = (ev_1 + ev_2) / (ev_3 - ev_4)
 
     answer = sp.limit(res_ev, x, 0)
-    return ("formula", sp.latex(res_ev)), ("formula", sp.latex(answer))
+    return ("formula", r"\lim_{x \to 0} {" + clear_latex(sp.latex(res_ev)) + "}"), ("formula", clear_latex(sp.latex(answer)))
 
 
 if __name__ == "__main__":
