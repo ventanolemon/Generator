@@ -16,7 +16,7 @@ from pycode.group_adder.group_adder import GroupAdder
 class ConstructedGroup(QWidget):
     def __init__(self, partitions_ids, pra_obj=None):
         super().__init__()
-        uic.loadUi('pycode/exercises/fisic/fisic_task_generated_interface.ui', self)
+        uic.loadUi('resources/exercises/fisic/fisic_task_generated_interface.ui', self)
 
         self.pra_obj = pra_obj
         self.editer = GroupAdder(subject_id=self.pra_obj.main_obj.subject_id, main_obj=self.pra_obj.main_obj)

@@ -16,7 +16,7 @@ class GroupAdder(QMainWindow):
         super().__init__()
         self.subject_id = subject_id
         self.main_obj = main_obj
-        loadUi('pycode/group_adder/group_adder_interface.ui', self)  # загружаем UI файл
+        loadUi('resources/group_adder/group_adder_interface.ui', self)  # загружаем UI файл
         # loadUi('group_adder_interface.ui', self)  # загружаем UI файл
 
         self.load_partitions()

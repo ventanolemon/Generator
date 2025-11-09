@@ -19,7 +19,7 @@ class ExerciseWindow(QMainWindow):
 
     def __init__(self, main_obj):
         super().__init__()
-        loadUi('pycode/exercises/fisic/fisic_interface_main.ui', self)
+        loadUi('resources/exercises/fisic/fisic_interface_main.ui', self)
 
         self.update = False
         self.main_obj = main_obj

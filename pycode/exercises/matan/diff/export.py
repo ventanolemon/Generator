@@ -6,9 +6,13 @@ from pycode.exercises.matan.diff.ln_diff import get_ln_diff
 from pycode.exercises.matan.diff.ln_secret_diff import get_ln_secret_diff
 from pycode.exercises.matan.diff.lopital_law import get_lopital_law
 from pycode.exercises.matan.diff.neyawn_diff import get_neyawn_diff
+from pycode.exercises.matan.diff.parametric_task import get_parametric_task
+
 
 import shutil
 import win32com
+
+from pycode.exercises.matan.diff.teylor import get_taylor_limit_task
 
 
 # try:
@@ -20,11 +24,13 @@ import win32com
 #     print(f"Ошибка: {e}")
 
 def insert_formula(selection, formula):
+
+    # print(formula)
+    # formula = r"\left\{\matrix{ 2x + 3y = 12 \\ 4x - y = 6 \\}\right."
     selection.OMaths.Add(selection.Range)
     selection.TypeText(formula)
     selection.OMaths.BuildUp()
     # selection.TypeText("\r\n")
-
 
 def insert_editable_latex(answers="show", variants_cnt=1):
     word = win32.gencache.EnsureDispatch('Word.Application')
@@ -38,12 +44,15 @@ def insert_editable_latex(answers="show", variants_cnt=1):
                             ("text", " 2.\tВычислить производную функции, используя логарифмическую производную\n"),
                             ("text", " 3.\tВычислить производную функции\n"),
                             ("text", " 4.\tВычислить производную неявно заданной функции\n"),
+                            ("text", " 5.\tВычислить производную функции, заданной параметрически в точке\n"),
                             ("text", " 6.\tНаписать уравнение касательной к графику функции\n"),
-                            ("text", " 7.\tВычислить предел с помощью правила Лопиталя\n")
+                            ("text", " 7.\tВычислить предел с помощью правила Лопиталя\n"),
+                            ("text", " 8.\tВычислить предел, используя разложения функций по формуле Тейлора\n")
                             ]
 
         tasks_text, tasks_answers = [], []
-        for task in [get_just_diff(), get_ln_diff(), get_ln_secret_diff(), get_neyawn_diff(), get_tangent_line(), get_lopital_law()]:
+        for task in [get_just_diff(), get_ln_diff(), get_ln_secret_diff(), get_neyawn_diff(), get_parametric_task(),
+                     get_tangent_line(), get_lopital_law(), get_taylor_limit_task()]:
             tasks_text.append(task[0])
             tasks_answers.append(task[1])
 
@@ -67,30 +76,13 @@ def insert_editable_latex(answers="show", variants_cnt=1):
                 if string[0] == "text":
                     selection.TypeText(string[1])
                 else:
-                    insert_formula(selection, string[1].replace(r"\\", '\\'))
+                    insert_formula(selection, string[1])
 
                 selection.TypeText("\n")
 
     return word, doc
 
+# system_latex = r"\cases{3 \sin(2 t) - 1 - 3 e^{-2 t} & @ -3 t^{2} - 3 \sin(2 t) - 1 & }"
+# insert_formula(selection, system_latex)
 
 insert_editable_latex(variants_cnt=15)
-
-# if answers == "show":
-#     pass
-# elif answers == "show_after":
-#     tasks, answers = [], []
-#     for item in tasks_text_answers:
-#         tasks.append(item[0])
-#         answers.append(item[1])
-#     tasks_text_answers.extend(tasks)
-#     tasks_text_answers.extend(answers)
-# elif answers == "show_after":
-#     tasks_text_answers = [item[0] for item in tasks_text_answers]
-
-# formulas = [
-#     r"\sqrt[3]{x_0^{\infty}} \cdot \frac{1}{2}x^2",
-#     r"\lim_{x \to 0} {\frac{\sin x}{x}} = 1",
-#     r"C(1 - \cos{\left(\tan{\left(x^{2} \right)} \right)})"]
-#
-

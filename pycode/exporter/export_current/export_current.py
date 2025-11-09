@@ -18,7 +18,7 @@ class ExportDialog(QMainWindow):
         self.setup_connections()
 
     def init_ui(self):
-        uic.loadUi('pycode/exporter/export_current/export_current_interface.ui', self)
+        uic.loadUi('resources/exporter/export_current/export_current_interface.ui', self)
         self.fileName.setText(self.test_name)
         # self.setWindowTitle("Экспорт теста")
         # self.setMinimumWidth(400)

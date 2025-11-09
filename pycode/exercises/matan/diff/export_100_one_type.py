@@ -6,7 +6,8 @@ import os
 import random
 
 # Импорты генераторов
-from pycode.exercises.matan.diff.just_diff import get_just_diff
+# from pycode.exercises.matan.diff.just_diff import get_just_diff
+from pycode.exercises.matan.diff.parametric_task import get_parametric_task
 
 
 # try:
@@ -32,7 +33,7 @@ def generate_tasks(task_count=100):
 
     tasks = []
     for i in range(task_count):
-        gen = get_just_diff()  # случайный выбор (можно заменить на циклический)
+        gen = get_parametric_task()  # случайный выбор (можно заменить на циклический)
         formula, answer = gen[0], gen[1]
         tasks.append((formula, answer))
     return tasks
@@ -49,6 +50,7 @@ def create_document(tasks, with_answers=False, filename="output.docx"):
         selection.TypeText(f"Задание {i}.\n")
         # Формула условия
         # print(formula_latex)
+        print(formula_latex[1])
         insert_latex_formula(selection, formula_latex[1])
 
         # Ответ (если нужно)
@@ -70,7 +72,7 @@ def create_document(tasks, with_answers=False, filename="output.docx"):
 
 # === ЗАПУСК ===
 if __name__ == "__main__":
-    TASK_COUNT = 100
+    TASK_COUNT = 10
 
     # 1️⃣ Генерируем ОДИН список заданий (чтобы в обоих файлах были одинаковые!)
     print("Генерация 100 заданий...")

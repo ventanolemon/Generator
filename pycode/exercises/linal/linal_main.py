@@ -79,7 +79,7 @@ class LinalMain(QMainWindow):
 class SecondWindow(QWidget):
     def __init__(self):
         super().__init__()
-        loadUi('pycode/exercises/linal/linal2-d.ui', self)
+        loadUi('resources/exercises/linal/linal2-d.ui', self)
         self.generateButton.clicked.connect(self.generate_task)
         self.answerButton.clicked.connect(self.show_answer)
 
@@ -116,7 +116,7 @@ class SecondWindow(QWidget):
 class ThirdWindow(QWidget):
     def __init__(self):
         super().__init__()
-        loadUi('pycode/exercises/linal/linal2-d.ui', self)
+        loadUi('resources/exercises/linal/linal2-d.ui', self)
         self.generateButton.clicked.connect(self.generate_task)
         self.answerButton.clicked.connect(self.show_answer)
 

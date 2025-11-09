@@ -16,7 +16,7 @@ class TaskTypeEditor(QMainWindow):
         super().__init__()
         self.generation_params = generation_params
         # print(generation_params)
-        loadUi('pycode/exercises/fisic/adder_interface.ui', self)  # загружаем UI файл
+        loadUi('resources/exercises/fisic/adder_interface.ui', self)  # загружаем UI файл
 
         self.load_subjects()
         self.connect_signals()

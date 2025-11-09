@@ -4,20 +4,19 @@ import sympy as sp
 
 def clear_latex(inp):
     inp = (inp.replace(r"\operatorname", "").replace(r"atan", "arctg").replace(r"asin", "arcsin").replace(r"acos", "arccos")
-                 .replace(r"\tan", "tg").replace("log", "ln"))
+                 .replace(r"\tan", "tg").replace("log", "ln"))  # .replace(r"\ln{\left(e\right)}", "").replace(r"\ln{\left(e \right)}", "")
     return inp
 
 
-e = sp.Symbol("e")
+e = sp.E
 def get_ev_zero(res, ind=None):
     a, m = random.randint(2, 10), random.randint(2, 10)
     base_equals = [(a ** res) - 1, sp.ln(1 + res),
                    (e ** res) - 1,
-                   ((1 + res) ** m) - 1, res ** a]
+                   ((1 + res) ** m) - 1]  # , res ** a
     if ind is not None:
         return base_equals[ind]
     return random.choice(base_equals)
-
 
 def get_ev_one(res, ind=None):
     a, m = random.randint(2, 10), random.randint(2, 10)

@@ -12,7 +12,7 @@ from pycode.exercises.fisic.fisic_generater import generate_fisic_task
 class ConstructedTasks(QWidget):
     def __init__(self, partitions_id, generation_settings, main_obj):
         super().__init__()
-        uic.loadUi('pycode/exercises/fisic/fisic_task_generated_interface.ui', self)
+        uic.loadUi('resources/exercises/fisic/fisic_task_generated_interface.ui', self)
 
         self.main_obj = main_obj
         self.editer = ExerciseWindow(self.main_obj)

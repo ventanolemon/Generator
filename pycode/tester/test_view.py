@@ -16,7 +16,7 @@ from pycode.tester.test_adder import TestAdder
 class ConstructedTest(QWidget):
     def __init__(self, generation_data: list, pra_obj=None):
         super().__init__()
-        uic.loadUi('pycode/tester/test_generated_interface.ui', self)
+        uic.loadUi('resources/tester/test_generated_interface.ui', self)
 
         self.pra_obj = pra_obj
         self.editer = TestAdder(subject_id=self.pra_obj.main_obj.subject_id, main_obj=self.pra_obj.main_obj)

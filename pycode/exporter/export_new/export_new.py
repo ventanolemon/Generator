@@ -18,7 +18,7 @@ class ExportNewDialog(QMainWindow):
         self.setup_connections()
 
     def init_ui(self):
-        uic.loadUi('pycode/exporter/export_new/export_new_variants.ui', self)
+        uic.loadUi('resources/exporter/export_new/export_new_variants.ui', self)
         self.fileName.setText(self.test_name)
         self.variantCount.setValue(1)
 

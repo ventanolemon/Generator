@@ -31,7 +31,7 @@ class TestAdder(QMainWindow):
         self.typesTable.model().dataChanged.connect(self.update_table_sizes)
 
     def initUI(self):
-        loadUi("pycode/tester/test_adder_interface.ui", self)
+        loadUi("resources/tester/test_adder_interface.ui", self)
 
         self.parentSubjectLabel.setText(self.main_obj.subject_name)
 
