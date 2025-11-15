@@ -43,7 +43,9 @@ def get_lopital_law():
     res_ev = (ev_1 + ev_2) / (ev_3 - ev_4)
 
     answer = sp.limit(res_ev, x, 0)
-    return ("formula", r"\lim_{x \to 0} {" + clear_latex(sp.latex(res_ev)) + "}"), ("formula", clear_latex(sp.latex(answer)))
+    return (("text", " 7.\tВычислить предел с помощью правила Лопиталя\n"),
+            ("formula", r"\lim_{x \to 0} {" + clear_latex(sp.latex(res_ev)) + "}"),
+            ("formula", clear_latex(sp.latex(answer))))
 
 
 if __name__ == "__main__":

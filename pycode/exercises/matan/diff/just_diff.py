@@ -72,7 +72,8 @@ def get_just_diff():
 
     res_latex = ("y=" + clear_latex(sp.latex(res_ev)))
     ans_latex = clear_latex(sp.latex(answer))
-    return (("formula", res_latex),
+    return (("text", " 1.\tВычислить производную функции\n"),
+            ("formula", res_latex),
             ("formula", ans_latex))
 
 

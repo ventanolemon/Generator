@@ -2,7 +2,7 @@ import sympy as sp
 import random
 
 x = sp.Symbol('x')
-GOOD_POINTS = [i for i in range(-16, 17)]
+GOOD_POINTS = [i for i in range(-9, 10)]
 random.shuffle(GOOD_POINTS)
 
 
@@ -137,7 +137,9 @@ def get_tangent_line():
     answer_eq = sp.Eq(sp.Symbol('y'), tangent)
     answer_latex = sp.latex(answer_eq)
 
-    return ("formula", task_latex), ("formula", answer_latex)
+    return (("text", " 6.\tНаписать уравнение касательной к графику функции\n"),
+            ("formula", task_latex),
+            ("formula", answer_latex))
 
 
 # --- Тест ---

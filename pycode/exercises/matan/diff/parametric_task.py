@@ -4,7 +4,7 @@ from sympy import pi, E as e
 
 
 def clean_latex_for_word(latex_str):
-    """Подготавливает LaTeX для Word (OMaths): без пробелов в степенях, без \left\right и т.д."""
+    r"""Подготавливает LaTeX для Word (OMaths): без пробелов в степенях, без \left\right и т.д."""
     s = latex_str
     # Удаляем пробелы после ^ и _ (главная причина ошибки -2147467263)
     s = s.replace(r"^ {", r"^{").replace(r"^  {", r"^{")
@@ -56,13 +56,16 @@ def generate_expression(t):
     expr = sum(generate_term(t) for _ in range(n))
     if random.random() < 0.6:
         expr += random.randint(-3, 3)
+
+    if t not in expr.free_symbols:
+        return sp.simplify(generate_expression(t))
     return sp.simplify(expr)
 
 
 def get_parametric_task(max_attempts=20):
     """Возвращает system_latex в формате \\cases{x = ... @ y = ...} и answer_latex"""
     t = sp.symbols('t')
-    t0 = pi / 2
+    t0 = random.choice((pi / 2, pi, 2 * pi, 0))
 
     for _ in range(max_attempts):
         # try:
@@ -83,8 +86,7 @@ def get_parametric_task(max_attempts=20):
             x_latex = clean_latex_for_word(sp.latex(x))
             y_latex = clean_latex_for_word(sp.latex(y))
 
-            system_latex = (f"{str(t0).replace("pi", "π")}." + "\n" +
-                            r"\left\{\matrix{ "  +
+            system_latex = (r"\left\{\matrix{ "  +
                             "x(t) = " + x_latex +
                             r"\\" +
                             "y(t) = " + y_latex +
@@ -93,7 +95,9 @@ def get_parametric_task(max_attempts=20):
             # Очистка для Word
             answer_latex = clean_latex_for_word(sp.latex(result))
 
-            return ("formula", system_latex), ("formula", answer_latex)
+            return (("text", f" 5.\tВычислить производную функции, заданной параметрически в точке {str(t0).replace("pi", "π")}.\n"),
+                    ("formula", system_latex),
+                    ("formula", answer_latex))
 
 
 # Пример использования
