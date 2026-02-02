@@ -7,6 +7,7 @@ from const import db
 # from pycode.adder.adder import TaskTypeEditor
 from pycode.exercises.fisic.fisic_main import FisicMain
 from pycode.exercises.linal.linal_main import LinalMain
+from pycode.exercises.matan.matan_main import MatanMain
 from pycode.group_adder.group_adder import GroupAdder
 from pycode.tester.test_adder import TestAdder
 
@@ -109,12 +110,15 @@ class GeneratorWindow(QMainWindow):
                     self.cur_sub = LinalMain(self)
                 elif science == "Физика":
                     self.cur_sub = FisicMain(self)
+                elif science == "Математический анализ":
+                    self.cur_sub = MatanMain(self)
 
                 # Обработка специальных случаев
                 # self.update_tasks_list(subject_name)
 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки типов заданий: {str(e)}")
+            raise e
 
     def generate_exercise(self, item):
         layout = self.generator.layout()

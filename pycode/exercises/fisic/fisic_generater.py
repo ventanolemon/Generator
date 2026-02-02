@@ -117,26 +117,22 @@ def generate_fisic_task(task_config: str):
 
     formatted_result = format_result(result)
 
-    # Форматируем значения переменных для вывода
-    def format_variable_value(value):
-        abs_val = abs(value)
-        if abs_val >= 1e3 or (abs_val < 1e-3 and abs_val > 0):
-            try:
-                exponent = math.floor(math.log10(abs_val))
-                coefficient = value / (10 ** exponent)
-                # Стараемся показать коэффициент как целое число
-                if abs(coefficient - round(coefficient)) < 1e-10:
-                    return f"{int(round(coefficient))}×10^{{{exponent}}}"
-                else:
-                    return f"{coefficient:.2f}×10^{{{exponent}}}"
-            except (OverflowError, ValueError):
-                return f"{value:.2e}"
-        else:
-            # Для обычных чисел стараемся показывать как целые, если возможно
-            if abs(value - round(value)) < 1e-10:
-                return str(int(round(value)))
-            else:
-                return f"{value:.4f}".rstrip('0').rstrip('.')
+    def format_variable_value(value: float) -> str:
+        # Научная нотация для очень больших/малых
+        abs_v = abs(value)
+        if abs_v >= 1e4 or (abs_v != 0 and abs_v < 1e-3):
+            # Пример: 1.23×10^5, 4.56×10^{-3}
+            exp = math.floor(math.log10(abs_v)) if abs_v > 0 else 0
+            coeff = value / (10 ** exp)
+            # coeff с 2–3 значащими цифрами
+            coeff_str = f"{coeff:.3g}"  # .3g = до 3 значащих цифр
+            return f"{coeff_str}×10^{{{exp}}}"
+
+        # Обычные числа: убираем лишние нули
+        if abs(value - round(value)) < 1e-10:
+            return str(int(round(value)))
+        s = f"{value:.3f}".rstrip('0').rstrip('.')
+        return s or '0'
 
     # Формируем условие задачи
     condition = condition_template
@@ -156,75 +152,33 @@ def generate_fisic_task(task_config: str):
     return task["условие"], task["решение"]
 
 
-def generate_smart_value(min_val, max_val, forbidden, max_attempts=50):
+def generate_smart_value(min_val: float, max_val: float, forbidden: list = None, max_attempts: int = 20) -> float:
     """
-    Умная генерация значений с приоритетом на целые числа и степенной формат
+    Генерирует значение в [min_val, max_val], избегая forbidden.
+    Отдаёт предпочтение целым числам, иначе — дробям с ≤3 знаками после запятой.
     """
-    for attempt in range(max_attempts):
-        # Определяем порядок величин
-        try:
-            min_exp = math.floor(math.log10(min_val)) if min_val > 0 else -100
-            max_exp = math.floor(math.log10(max_val)) if max_val > 0 else -100
-        except (ValueError, OverflowError):
-            min_exp, max_exp = -100, 100
+    if forbidden is None:
+        forbidden = []
 
-        # Если диапазон охватывает несколько порядков, используем степенной формат
-        if max_exp - min_exp >= 2 and min_val > 0:
-            # Генерируем в формате coefficient × 10^exponent
-            # Выбираем случайную экспоненту из доступного диапазона
-            exponent = random.randint(min_exp, max_exp)
-
-            # Вычисляем границы для коэффициента
-            min_coef = max(1, min_val / (10 ** exponent))
-            max_coef = min(100, max_val / (10 ** exponent))
-
-            # Если диапазон коэффициентов допустим
-            if min_coef <= max_coef:
-                # С высокой вероятностью генерируем целый коэффициент
-                if max_coef - min_coef >= 1:
-                    # Генерируем целый коэффициент в диапазоне от 1 до 100
-                    int_min_coef = max(1, math.ceil(min_coef))
-                    int_max_coef = min(100, math.floor(max_coef))
-                    if int_min_coef <= int_max_coef:
-                        coefficient = random.randint(int_min_coef, int_max_coef)
-                    else:
-                        coefficient = random.uniform(min_coef, max_coef)
-                else:
-                    # print("rrr")
-
-                    # Генерируем дробный коэффициент
-                    coefficient = random.uniform(min_coef, max_coef)
-
-                value = coefficient * (10 ** exponent)
+    for _ in range(max_attempts):
+        # Пытаемся сгенерировать целое число (если диапазон ≥1)
+        if max_val - min_val >= 1.0:
+            lo = math.ceil(min_val)
+            hi = math.floor(max_val)
+            if lo <= hi:
+                value = float(random.randint(lo, hi))
             else:
-                # Если не получается с выбранной экспонентой, пробуем другую
-                continue
+                value = round(random.uniform(min_val, max_val), 2)
         else:
-            # Для узких диапазонов стараемся генерировать целые числа
-            if max_val - min_val >= 1:
-                # Генерируем целое число
-                int_min = math.ceil(min_val)
-                int_max = math.floor(max_val)
-                if int_min <= int_max:
-                    value = random.randint(int_min, int_max)
-                else:
-                    value = random.uniform(min_val, max_val)
-            else:
-                # Генерируем дробное число
-                value = random.uniform(min_val, max_val)
+            # Дробное число → округляем до 3 знаков
+            value = round(random.uniform(min_val, max_val), 2)
 
-        # Проверяем на запрещенные значения
-        if value not in forbidden:
+        # Проверка на запрещённые значения (с учётом погрешности float)
+        if not any(abs(value - f) < 1e-9 for f in forbidden):
             return value
 
-    # Если не удалось сгенерировать допустимое значение, используем обычную генерацию
-    if max_val - min_val >= 1:
-        int_min = math.ceil(min_val)
-        int_max = math.floor(max_val)
-        if int_min <= int_max:
-            return random.randint(int_min, int_max)
-
-    return random.uniform(min_val, max_val)
+    # Fallback: просто возвращаем округлённое случайное
+    return round(random.uniform(min_val, max_val), 2)
 
 
 def safe_eval_formula(formula, local_scope):

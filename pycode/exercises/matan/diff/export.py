@@ -14,7 +14,7 @@ from pycode.exercises.matan.diff.teylor import get_taylor_limit_task
 
 # import shutil
 # import win32com
-
+#
 # try:
 #     # Получить путь к gen_py
 #     gen_path = win32com.__gen_path__

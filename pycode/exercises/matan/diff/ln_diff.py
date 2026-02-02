@@ -40,7 +40,7 @@ def get_ln_diff(max_attempts=10):
 
         # === Знаменатель: (a3*x + b3)^p3 * sqrt(a4*x^2 + b4*x + c4) ===
         p3 = random.randint(2, 4)
-        a3, a4 = random.sample([-3, -2, 2, 3, 4, 5], k=2)
+        a3, a4 = random.sample([2, 3, 4, 5, 6, 7], k=2)
         b3 = random.choice([-4, -3, -2, 2, 3, 4, 5, 6])
         term3 = (a3 * x + b3) ** p3
 

@@ -6,9 +6,10 @@ def get_simple_stepens():
     x = sympy.Symbol("x")
     # a0, b0, c0 = random.randint(-5, 6), random.randint(-5, 6), random.randint(-5, 6)
     # first_ev = a0 * x ** 2 + b0 * x + c0
-    a0, b0 = random.choice([-2, -1, 1, 2, 3]), random.randint(-2, 4)
+    a0, a2 = random.sample([-2, -1, 1, 2, 3], k=2)
+    b0 = random.choice([-2, -1, 1, 2, 3, 4])
     a1, b1 = random.choice([-2, -1, 1, 2, 3]), random.randint(-2, 4)
-    a2, b2 = random.choice([-2, -1, 1, 2, 3]), random.randint(-2, 4)
+    b2 = random.choice([-2, -1, 1, 2, 3, 4])
     a3, b3 = random.choice([-2, -1, 1, 2, 3]), random.randint(-2, 4)
 
     zero_ev = a0 * x + b0

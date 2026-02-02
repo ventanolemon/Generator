@@ -46,7 +46,7 @@ def insert_editable_latex(answers="show", variants_cnt=1):
                             ("text", " 7.\tВычислить предел функции.\n"),
                             ("text", " 8.\tОпределить C и  k, при которых функции эквивалентны при x → 0. \n"),
                             ("text", " 9.\tНайти точки разрыва функции y=f(x) и определить их тип. \n"),
-                            ("text", " 10.\tВычислить предел функции.\n")
+                            # ("text", " 10.\tВычислить предел функции.\n")
                             ]
         tasks_text, tasks_answers = [], []
         for task in [get_lim_opr(), get_simple_osn(), get_simple_stepens(), get_drob_radicals(), get_long_radicals(),

@@ -35,8 +35,7 @@ def safe_function():
     ]
 
     for _ in range(30):
-        P = random.choice(polys)
-        Q = random.choice(polys)
+        P, Q = random.sample(polys, k=2)
         n, target_vals = random.choice(roots_info)
 
         # Подбираем x0 ∈ GOOD_POINTS такой, что Q(x0) ∈ target_vals
@@ -71,8 +70,8 @@ def safe_function():
                     Qp = sp.diff(Q, x)
                     if Qp.subs(x, x0) != 0:
                         continue
-
-                candidates.append(x0)
+                if x0 != 0:
+                    candidates.append(x0)
             except Exception:
                 continue
 
