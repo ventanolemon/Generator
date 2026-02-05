@@ -1,5 +1,9 @@
+import random
+
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
+
+from sympy.physics.units import second
 
 # Настройки ГОСТ
 GOST = {
@@ -15,7 +19,7 @@ GOST = {
     "track_offset": 30,
     "avoidance_margin": 25,
     "vertical_clearance": 40,
-    "track_separation": 20
+    "track_separation": 15
 }
 
 
@@ -133,27 +137,89 @@ class LogicElement:
         except:
             return ImageFont.load_default()
 
+    def get_logic_str(self):
+        if self.type == "INPUT":
+            return self.name
+        elif self.type == "NOT":
+            return "not(" + self.inputs[0].get_logic_str() + ")"
+        separator = " ^ " if self.type == "AND" else " v "
+        return "(" + separator.join([i.get_logic_str() for i in self.inputs]) + ")"
 
-def build_circuit(function_tree):
-    """Создание схемы из дерева функции"""
-    # Создаем элементы
-    A = LogicElement('INPUT', name='A')
-    B = LogicElement('INPUT', name='B')
-    C = LogicElement('INPUT', name='C')
-    D = LogicElement('INPUT', name='D')
-    F = LogicElement('INPUT', name='F')
+    def __eq__(self, other):
+        if self.type == other.type and self.name == other.name and self.inputs == other.inputs:
+            return True
+        else:
+            return False
 
-    not_c = LogicElement('NOT', inputs=[C])
-    and_ab = LogicElement('AND', inputs=[A, B])
-    and_ad = LogicElement('AND', inputs=[A, D])
-    or_af = LogicElement('OR', inputs=[A, F])
+    def __str__(self):
+        return self.type + "(" + (self.name if self.name else ", ".join(map(str, self.inputs))) + ")"
 
-    or_gate = LogicElement('OR', inputs=[and_ab, not_c])
-    and_gate = LogicElement('AND', inputs=[and_ab, D])
+    def __repr__(self):
+        return self.type + "(" + (self.name if self.name else ", ".join(map(str, self.inputs))) + ")"
 
-    and_abc = LogicElement('AND', inputs=[A, or_gate])
 
-    return [A, B, C, D, not_c, and_ab, or_gate, and_abc, F, or_af, and_ad, and_gate]
+def make_function():
+    """Генерация логической функции от 3-4 переменных """
+    input_count = random.randint(3, 4)
+    inputs = [LogicElement('INPUT', name=chr(ord('A') + i)) for i in range(input_count)]
+    unused_elements = inputs.copy()
+
+    noters = []
+    first_layer_functions_count = random.randint(2, 3)
+    first_layer = []
+    for i in range(first_layer_functions_count):
+        new_type = random.choice(["AND", "AND", "OR", "OR", "NOT"])
+        if new_type != "NOT":
+            logic_inputs = random.sample(inputs, k=2)
+        else:
+            logic_inputs = random.sample(inputs, k=1)
+            if logic_inputs not in noters:
+                noters.append(logic_inputs)
+            else:
+                new_type = random.choice(["AND", "OR"])
+                logic_inputs = random.sample(inputs, k=2)
+
+        for inp in logic_inputs:
+            try:
+                unused_elements.remove(inp)
+            except ValueError:
+                pass
+        elem = LogicElement(new_type, inputs=logic_inputs)
+        first_layer.append(elem)
+        unused_elements.append(elem)
+
+    second_layer_functions_count = random.randint(1, 2)
+    second_layer = []
+    for i in range(second_layer_functions_count):
+        new_type = random.choice(["AND", "AND", "OR", "OR", "NOT"])
+        if new_type != "NOT":
+            logic_inputs = random.sample(first_layer, k=2)
+        else:
+            logic_inputs = random.sample(inputs, k=1)
+            if logic_inputs not in noters:
+                noters.append(logic_inputs)
+            else:
+                new_type = random.choice(["AND", "OR"])
+                logic_inputs = random.sample(inputs, k=2)
+
+        for inp in logic_inputs:
+            try:
+                unused_elements.remove(inp)
+            except ValueError:
+                pass
+
+        elem = LogicElement(new_type, inputs=logic_inputs)
+        second_layer.append(elem)
+        unused_elements.append(elem)
+
+    new_type = random.choice(["AND", "AND", "OR", "OR"])
+    third_layer = [LogicElement(new_type, unused_elements)]
+    # print(inputs)
+    # print(first_layer)
+    # print(second_layer)
+    # print(third_layer)
+    res_tree = inputs + first_layer + second_layer + third_layer
+    return res_tree
 
 
 def calculate_levels(elements):
@@ -237,46 +303,44 @@ def horizontal_segment_intersects_element(start_x, end_x, y, element):
     return box_top <= y <= box_bottom
 
 
-def find_clear_horizontal_path(start_x, end_x, y, elements, levels, src_level, dest_level):
-    """Находит безопасный горизонтальный путь, обходящий элементы"""
-    # Сначала проверяем, можно ли пройти напрямую
-    direct_path_clear = True
-    for elem in elements:
-        if elem.type == 'INPUT':
-            continue
+def vertical_segment_intersects_element(segment_x, y_start, y_end, element):
+    """
+    Проверяет, пересекает ли вертикальный сегмент элемент.
 
-        elem_level = next((l for l, es in levels.items() if elem in es), -1)
-        # Проверяем только элементы между уровнями или на целевом уровне
-        if src_level <= elem_level <= dest_level:
-            if horizontal_segment_intersects_element(start_x, end_x, y, elem):
-                direct_path_clear = False
-                break
+    Вертикальный сегмент определяется как линия с фиксированной координатой X,
+    проходящая от y_start до y_end (включительно).
 
-    if direct_path_clear:
-        return end_x, None  # Прямой путь свободен
+    Пересечение происходит, если:
+    1. Координата X сегмента находится внутри расширенных границ элемента по горизонтали
+    2. Диапазон Y сегмента пересекается с расширенными границами элемента по вертикали
 
-    # Ищем ближайшее препятствие
-    obstacles = []
-    for elem in elements:
-        if elem.type == 'INPUT':
-            continue
+    Аргументы:
+        segment_x (int): X-координата вертикального сегмента
+        y_start (int): Начальная Y-координата сегмента
+        y_end (int): Конечная Y-координата сегмента
+        element (LogicElement): Проверяемый элемент
 
-        elem_level = next((l for l, es in levels.items() if elem in es), -1)
-        if src_level <= elem_level <= dest_level:
-            if horizontal_segment_intersects_element(start_x, end_x, y, elem):
-                box = elem.get_bounding_box()
-                obstacles.append((box, elem))
+    Возвращает:
+        bool: True если сегмент пересекает элемент (с учётом отступа), иначе False
+    """
+    # Нормализуем Y-координаты (сегмент может идти вверх или вниз)
+    seg_y_top = min(y_start, y_end)
+    seg_y_bottom = max(y_start, y_end)
 
-    if not obstacles:
-        return end_x, None
+    # Получаем границы элемента с расширенным отступом для безопасного обхода
+    box = element.get_bounding_box()
+    box_left = int(box[0] - GOST["avoidance_margin"])
+    box_right = int(box[2] + GOST["avoidance_margin"])
+    box_top = int(box[1] - GOST["avoidance_margin"])
+    box_bottom = int(box[3] + GOST["avoidance_margin"])
 
-    # Находим ближайшее препятствие от начальной точки
-    nearest_obstacle = min(obstacles, key=lambda x: abs(x[0][0] - start_x))
-    box, elem = nearest_obstacle
+    # Проверка 1: сегмент находится внутри горизонтальных границ элемента
+    if not (box_left <= segment_x <= box_right):
+        return False
 
-    # Возвращаем X-координату перед препятствием и само препятствие
-    safe_x = box[0] - GOST["avoidance_margin"] if start_x < box[0] else box[2] + GOST["avoidance_margin"]
-    return safe_x, elem
+    # Проверка 2: диапазоны Y пересекаются
+    # Два отрезка [a1, a2] и [b1, b2] пересекаются, если max(a1, b1) <= min(a2, b2)
+    return max(seg_y_top, box_top) <= min(seg_y_bottom, box_bottom)
 
 
 def horizontal_segments_overlap(seg1, seg2):
@@ -312,6 +376,58 @@ def vertical_segments_overlap(seg1, seg2):
         return max(y1_start, y2_start) <= min(y1_end, y2_end)
 
     return False
+
+
+def find_safe_bend_point(start_x, start_y, target_x, horizontal_tracks, min_offset=25):
+    """
+    Находит безопасную X-координату для точки изгиба первого горизонтального сегмента.
+
+    Алгоритм:
+    1. Начинаем с целевой позиции (середина между слоями)
+    2. Двигаемся от источника к цели с шагом track_separation
+    3. На каждой позиции проверяем сегмент на пересечение с существующими треками
+    4. Возвращаем первую безопасную позицию или минимально допустимый отступ
+
+    Возвращает: (safe_x, was_shortened)
+    """
+    # Определяем направление движения (вправо или влево от источника)
+    direction = 1 if target_x > start_x else -1
+    step = GOST["track_separation"] * direction
+
+    # Минимально допустимая позиция изгиба (с отступом от элемента-источника)
+    min_safe_x = start_x + (40 if direction > 0 else -40)
+
+    # Сначала проверяем целевую позицию
+    candidate_x = target_x
+    test_seg = (start_y, min(start_x, candidate_x), max(start_x, candidate_x))
+
+    if not any(horizontal_segments_overlap(test_seg, existing) for existing in horizontal_tracks):
+        return candidate_x, False  # Целевая позиция безопасна
+
+    # Если конфликт — ищем безопасную позицию ближе к источнику
+    current_x = start_x + step
+    attempts = 0
+    max_attempts = 50
+
+    while attempts < max_attempts and abs(current_x - start_x) <= abs(target_x - start_x):
+        # Проверяем минимальный отступ от источника
+        if abs(current_x - start_x) < min_offset:
+            current_x += step
+            attempts += 1
+            continue
+
+        test_seg = (start_y, min(start_x, current_x), max(start_x, current_x))
+        has_conflict = any(horizontal_segments_overlap(test_seg, existing) for existing in horizontal_tracks)
+
+        if not has_conflict:
+            return current_x, True  # Найдена безопасная позиция ближе к источнику
+
+        current_x += step
+        attempts += 1
+
+    # Если не нашли безопасную позицию в диапазоне — используем минимально допустимый отступ
+    safe_x = start_x + (min_offset if direction > 0 else -min_offset)
+    return safe_x, True
 
 
 def route_connections(elements):
@@ -394,43 +510,12 @@ def route_connections(elements):
                 else:
                     track_x = int((channel_left + channel_right) / 2)
 
-                # Проверка вертикального трека на пересечение с элементами
-                for level in range(src_level, dest_level + 1):
-                    if level not in levels:
-                        continue
-                    for elem in levels[level]:
-                        if elem.type == 'INPUT' or elem == src or elem == dest:
-                            continue
-
-                        box = elem.get_bounding_box()
-                        elem_left = int(box[0] - GOST["avoidance_margin"])
-                        elem_right = int(box[2] + GOST["avoidance_margin"])
-
-                        # Проверяем только по X — Y проверим позже при построении сегментов
-                        if elem_left <= track_x <= elem_right:
-                            # Смещаем трек вправо за границу элемента
-                            track_x = int(elem_right + GOST["track_separation"])
-                            if track_x > channel_right - GOST["track_separation"]:
-                                track_x = int(channel_right - GOST["track_separation"])
-                            break
-
                 # Базовые Y-координаты для горизонтальных сегментов
                 y1, y2 = start[1], end[1]
 
                 # === КОРРЕКЦИЯ ДЛЯ ОРТОГОНАЛЬНОСТИ ===
                 # Горизонтальный сегмент 1: от источника до трека — должен иметь постоянный Y
                 seg1_y = y1
-                seg1_conflict = False
-                for elem in elements:
-                    if elem.type == 'INPUT' or elem == src or elem == dest:
-                        continue
-                    if horizontal_segment_intersects_element(start[0], track_x, seg1_y, elem):
-                        seg1_conflict = True
-                        break
-
-                if seg1_conflict:
-                    # Поднимаем ВЕСЬ сегмент выше (сохраняя горизонтальность)
-                    seg1_y = start[1] #  min(start[1], end[1]) - GOST["vertical_clearance"] * (i + 1)
 
                 # Горизонтальный сегмент 2: от трека до получателя — должен иметь постоянный Y
                 seg2_y = y2
@@ -461,44 +546,49 @@ def route_connections(elements):
                 # Сохраняем горизонтальные сегменты для будущих проверок
                 horizontal_tracks.append((seg1_y, min(start[0], track_x), max(start[0], track_x)))
                 horizontal_tracks.append((seg2_y, min(track_x, end[0]), max(track_x, end[0])))
+                vertical_tracks.append((track_x, min(start[1], end[1]), max(start[1], end[1])))
                 all_routes.append((route, src, dest))
 
         else:
             # === СЛУЧАЙ 2: НЕСМЕЖНЫЕ УРОВНИ (разница > 1) ===
-            # 5-точечный маршрут с подъемом в середине между слоями
+            # 6-точечный маршрут с подъемом в середине между слоями
 
             for i, (start, end, src, dest) in enumerate(conns):
-                # Точка изгиба по X — середина между слоем источника и СЛЕДУЮЩИМ слоем (целое число)
-                bend_x = int(src_center_x + GOST["layer_spacing"] / 2)
+                # Базовая точка изгиба по X — середина между слоем источника и СЛЕДУЮЩИМ слоем
+                base_bend_x = int(src_center_x + GOST["layer_spacing"] / 2)
 
-                # Определяем базовую безопасную высоту НАД всеми промежуточными элементами
-                min_element_top = float('inf')
-                for level in range(src_level + 1, dest_level):
-                    if level not in levels:
-                        continue
-                    for elem in levels[level]:
-                        if elem.type == 'INPUT':
-                            continue
-                        box = elem.get_bounding_box()
-                        min_element_top = min(min_element_top, box[1])
+                # === ШАГ 1: Проверка и коррекция ПЕРВОГО горизонтального сегмента ===
+                # Ищем безопасную точку изгиба, укорачивая сегмент при конфликтах
+                bend_x, was_shortened = find_safe_bend_point(
+                    start[0], start[1], base_bend_x, horizontal_tracks
+                )
 
-                # Базовая безопасная высота (целое число)
-                base_safe_y = int(min_element_top - GOST["vertical_clearance"] * 2) if min_element_top != float(
-                    'inf') else int(start[1] - 150)
+                # Если сегмент был укорочен, корректируем минимальный отступ от элемента-источника
+                if was_shortened:
+                    # Для входов (кружок) минимальный отступ = радиус + отступ
+                    if src.type == 'INPUT':
+                        min_offset = 8 + GOST["avoidance_margin"]
+                    else:
+                        min_offset = GOST["gate_width"] // 2 + GOST["avoidance_margin"]
 
-                # X-координата перед входом получателя (целое число)
-                dest_input_x = int(dest_center_x - GOST["gate_width"] // 2 - GOST["avoidance_margin"])
+                    # Гарантируем минимальный отступ
+                    if bend_x > start[0]:  # Движение вправо
+                        bend_x = max(bend_x, start[0] + min_offset)
+                    else:  # Движение влево (маловероятно в нашей схеме)
+                        bend_x = min(bend_x, start[0] - min_offset)
 
-                # === ШАГ 1: Проверка и коррекция bend_x на пересечение с вертикальными треками ===
+                # === ШАГ 2: Определяем базовую безопасную высоту НАД всеми промежуточными элементами ===
+                base_safe_y = 120 - GOST["track_separation"] # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                # === ШАГ 3: Проверка и коррекция bend_x на пересечение с вертикальными треками ===
                 # Вертикальный сегмент подъема: от start[1] до base_safe_y по координате bend_x
-                bend_seg_y_start = min(start[1], base_safe_y)
-                bend_seg_y_end = max(start[1], base_safe_y)
+                bend_seg_y_start = start[1]
+                bend_seg_y_end = base_safe_y
                 bend_x_candidate = bend_x
                 conflict_attempts = 0
 
-                while conflict_attempts < 15:
+                while conflict_attempts < 30:
                     has_conflict = False
-                    # Проверяем пересечение с существующими вертикальными треками
                     for existing_x, ex_y_start, ex_y_end in vertical_tracks:
                         if vertical_segments_overlap(
                                 (bend_x_candidate, bend_seg_y_start, bend_seg_y_end),
@@ -509,41 +599,51 @@ def route_connections(elements):
 
                     if not has_conflict:
                         break
-
-                    # Сдвигаем вправо с шагом track_separation
-                    bend_x_candidate += GOST["track_separation"]
+                    if bend_x_candidate > start[0] + 8:
+                        # Сдвигаем вправо с шагом track_separation
+                        bend_x_candidate -= GOST["track_separation"]
+                    else:
+                        bend_x_candidate += GOST["track_separation"]
                     conflict_attempts += 1
 
                 bend_x = bend_x_candidate
 
-                # === ШАГ 2: Проверка и коррекция dest_input_x на пересечение с вертикальными треками ===
-                # Вертикальный сегмент спуска: от base_safe_y до end[1] по координате dest_input_x
+                # === ШАГ 4: Определяем X-координату перед входом получателя ===
+                dest_input_x = int(dest_center_x - GOST["gate_width"] // 2 - GOST["avoidance_margin"])
+
+                # === ШАГ 5: Проверка и коррекция dest_input_x на пересечение с вертикальными треками и элементами ===
                 dest_seg_y_start = min(base_safe_y, end[1])
                 dest_seg_y_end = max(base_safe_y, end[1])
                 dest_x_candidate = dest_input_x
                 conflict_attempts = 0
+                flag_2_x = True  # нужно, чтобы пошли влево (-), когда упремся в границу конечного элемента
 
-                while conflict_attempts < 15:
+                while conflict_attempts < 30:
                     has_conflict = False
                     for existing_x, ex_y_start, ex_y_end in vertical_tracks:
                         if vertical_segments_overlap(
                                 (dest_x_candidate, dest_seg_y_start, dest_seg_y_end),
                                 (existing_x, ex_y_start, ex_y_end)
-                        ):
+                        ) or dest_x_candidate >= end[0] - GOST["track_separation"]:
                             has_conflict = True
                             break
 
                     if not has_conflict:
                         break
 
-                    # Сдвигаем вправо с шагом track_separation
-                    dest_x_candidate += GOST["track_separation"]
+                    if flag_2_x and dest_x_candidate < end[0] - GOST["track_separation"]:
+                        # Сдвигаем вправо с шагом track_separation
+                        dest_x_candidate += GOST["track_separation"]
+                        flag_2_x = False
+                    else:
+                        dest_x_candidate -= GOST["track_separation"]
+                        print(dest_x_candidate, conflict_attempts)
+                    # dest_x_candidate -= GOST["track_separation"]
                     conflict_attempts += 1
 
                 dest_input_x = dest_x_candidate
-
-                # === ШАГ 3: Коррекция высоты для избежания конфликтов с горизонтальными треками ===
-                # Горизонтальный сегмент над элементами: от bend_x до dest_input_x
+                print(dest_x_candidate, end[0], flag_2_x, )
+                # === ШАГ 6: Коррекция высоты для избежания конфликтов с горизонтальными треками между слоями ===
                 seg_y = base_safe_y
                 seg_start_x = min(bend_x, dest_input_x)
                 seg_end_x = max(bend_x, dest_input_x)
@@ -560,40 +660,35 @@ def route_connections(elements):
                     if not has_conflict:
                         break
 
-                    # Поднимаемся ВЫШЕ (уменьшаем Y — движение вверх по изображению)
                     seg_y -= GOST["track_separation"]
                     test_seg = (seg_y, seg_start_x, seg_end_x)
                     conflict_attempts += 1
 
                 # === СТРОГО ОРТОГОНАЛЬНЫЙ МАРШРУТ (6 точек) ===
-                # Каждый сегмент имеет одинаковую координату по одной оси:
-                # 0→1: одинаковый Y = start[1] (горизонталь до точки изгиба)
-                # 1→2: одинаковый X = bend_x (вертикальный подъем)
-                # 2→3: одинаковый Y = seg_y (горизонталь над элементами)
-                # 3→4: одинаковый X = dest_input_x (вертикальный спуск)
-                # 4→5: одинаковый Y = end[1] (горизонталь к входу)
                 route = [
                     (start[0], start[1]),  # Точка 0: выход источника (фиксированная позиция)
-                    (bend_x, start[1]),  # Точка 1: горизонталь до середины между слоями
+                    (bend_x, start[1]),  # Точка 1: горизонталь до точки изгиба (МОЖЕТ БЫТЬ УКОРОЧЕНА)
                     (bend_x, seg_y),  # Точка 2: вертикальный подъем
                     (dest_input_x, seg_y),  # Точка 3: горизонталь над элементами
                     (dest_input_x, end[1]),  # Точка 4: вертикальный спуск
                     (end[0], end[1])  # Точка 5: вход получателя (фиксированная позиция)
                 ]
+                print(route, base_safe_y)
 
-                # === ШАГ 4: Сохраняем сегменты для будущих проверок ===
+                # === ШАГ 7: Сохраняем сегменты для будущих проверок ===
                 # Горизонтальные сегменты
                 horizontal_tracks.append((start[1], min(start[0], bend_x), max(start[0], bend_x)))
                 horizontal_tracks.append((seg_y, min(bend_x, dest_input_x), max(bend_x, dest_input_x)))
                 horizontal_tracks.append((end[1], min(dest_input_x, end[0]), max(dest_input_x, end[0])))
 
-                # Вертикальные сегменты (для будущих проверок пересечений)
+                # Вертикальные сегменты
                 vertical_tracks.append((bend_x, min(start[1], seg_y), max(start[1], seg_y)))
                 vertical_tracks.append((dest_input_x, min(seg_y, end[1]), max(seg_y, end[1])))
 
                 all_routes.append((route, src, dest))
 
     return all_routes
+
 
 def draw_circuit(elements, filename):
     """Отрисовка схемы с обходом элементов"""
@@ -625,9 +720,13 @@ def draw_circuit(elements, filename):
 # === ДЕМОНСТРАЦИЯ ===
 if __name__ == "__main__":
     # Строим схему для функции (A AND B) OR (NOT C) AND ABC с A -> AND_ABC
-    circuit = build_circuit("(A AND B) OR (NOT C) AND ABC")
+    # circuit = build_circuit("(A AND B) OR (NOT C) AND ABC")
+    circ = make_function()
+    print(circ)
+    print(circ[-1])
+    print(circ[-1].get_logic_str())
 
     # Генерируем изображение
-    result_img = draw_circuit(circuit, "logic_circuit_gost_russian.png")
+    result_img = draw_circuit(circ, "logic_circuit_gost_russian.png")
 
     print("Схема успешно создана: logic_circuit_gost_russian.png")
