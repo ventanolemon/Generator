@@ -80,7 +80,7 @@ def insert_editable_latex(answers="show", variants_cnt=1):
     return word, doc
 
 
-insert_editable_latex(variants_cnt=15)
+insert_editable_latex(answers="hide", variants_cnt=50)
 
 # if answers == "show":
 #     pass

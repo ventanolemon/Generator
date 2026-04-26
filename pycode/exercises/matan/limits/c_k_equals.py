@@ -31,7 +31,7 @@ def get_c_k_equals():
     # a, m = random.randint(2, 10), random.randint(2, 10)
     # cool_equals = [1 - sp.cos(res), a ** res - 1, (1 + res) ** m - 1]
     ind_1, ind_2 = random.sample(range(0, 3), 2)
-    print(c0, k)
+    # print(c0, k)
     zero_ev, first_ev = get_ev(x ** k, ind_1), get_ev(res * c0, ind_2)
 
     c_e = random.randint(0, 2)
@@ -49,7 +49,7 @@ def get_c_k_equals():
         second_ev = (1 + first_ev) ** m - 1
         second_ev, first_ev = second_ev, zero_ev
         c0 = m ** k * c0 ** k
-    print(first_ev, second_ev, c0, k)
+    # print(first_ev, second_ev, c0, k)
     res_C = r"\alpha(x)=C(" + sp.latex(first_ev) +  ")"
     res_k = r"  и    β(x)=(" + sp.latex(second_ev) + ")^k"
     res = clear_latex(res_C + res_k)

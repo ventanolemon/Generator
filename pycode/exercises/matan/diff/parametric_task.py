@@ -50,15 +50,16 @@ def generate_term(t):
     return random.choice(terms)
 
 
-def generate_expression(t):
+def generate_expression(t, t0):
     # 2–3 терма + константа с вероятностью 60%
     n = random.randint(2, 3)
     expr = sum(generate_term(t) for _ in range(n))
-    if random.random() < 0.6:
-        expr += random.randint(-3, 3)
+    if expr.subs({t:t0}):
+        expr -= expr.subs({t:t0})
+        # expr += random.randint(-3, 3)
 
     if t not in expr.free_symbols:
-        return sp.simplify(generate_expression(t))
+        return sp.simplify(generate_expression(t, t0))
     return sp.simplify(expr)
 
 
@@ -69,8 +70,8 @@ def get_parametric_task(max_attempts=20):
 
     for _ in range(max_attempts):
         # try:
-            x = generate_expression(t)
-            y = generate_expression(t)
+            x = generate_expression(t, t0)
+            y = generate_expression(t, t0)
 
             dx = sp.diff(x, t)
             dy = sp.diff(y, t)
@@ -102,7 +103,7 @@ def get_parametric_task(max_attempts=20):
 
 # Пример использования
 if __name__ == "__main__":
-    system, answer = get_parametric_task()
+    task, system, answer = get_parametric_task()
     print("СИСТЕМА УРАВНЕНИЙ:\n", system)
     print("\nОТВЕТ:\n", answer)
     #             return ("formula", system_latex), ("formula", answer_latex)

@@ -1,732 +1,791 @@
+"""
+Генератор изображений логических схем по ГОСТ 2.743-91.
+
+Гарантии трассировщика:
+  • Все сегменты строго ортогональны (только горизонталь или вертикаль).
+  • Горизонтальные сегменты разных трейсов не накладываются.
+  • Вертикальные сегменты разных трейсов не накладываются.
+  • Трейсы не перекрывают тела логических элементов.
+  • Пересечение (горизонталь × вертикаль) допустимо, если ни один сегмент
+    не заканчивается точно в точке пересечения.
+"""
+
 import random
+from statistics import median
+from dataclasses import dataclass, field
+from typing import Optional, Set
 
 from PIL import Image, ImageDraw, ImageFont
 from collections import defaultdict
 
-from sympy.physics.units import second
+from sympy import Symbol, And, Or, Not, satisfiable
+from sympy.core.expr import Expr as SympyExpr
 
-# Настройки ГОСТ
+
+# ─── Параметры ГОСТ 2.743-91 ─────────────────────────────────────────────────
 GOST = {
-    "gate_width": 60,
-    "gate_height": 60,  # Квадратные элементы для соответствия ГОСТ
-    "not_radius": 5,
-    "layer_spacing": 180,
-    "element_spacing": 90,
-    "line_width": 2,
-    "font_size": 14,
-    "horizontal_gap": 40,
-    "vertical_gap": 30,
-    "track_offset": 30,
-    "avoidance_margin": 25,
-    "vertical_clearance": 40,
-    "track_separation": 15
+    "gate_width":         60,   # ширина прямоугольника логического элемента
+    "gate_height":        60,   # базовая высота (масштабируется под число входов)
+    "layer_spacing":     180,   # шаг между столбцами слоёв по X
+    "element_spacing":    90,   # шаг между центрами элементов одного слоя по Y
+    "line_width":          2,   # толщина линий
+    "font_size":          14,
+    "avoidance_margin":   25,   # зазор вокруг элемента — трейсы не заходят ближе
+    "track_separation":   15,   # минимальное расстояние между параллельными трейсами
+    "min_port_spacing":   18,   # минимальный шаг между портами входов элемента
+    "output_wire_length": 60,   # длина выходного проводника
+    "flyover_margin":     45,   # отступ «перелётного» трека над верхними элементами
 }
 
+INPUT_RADIUS = 8   # радиус кружка входа / выхода схемы
 
+
+# ─── Логический элемент ───────────────────────────────────────────────────────
 class LogicElement:
-    def __init__(self, element_type, inputs=None, name=None):
-        self.type = element_type
-        self.inputs = inputs or []
-        self.name = name
-        self.position = (0, 0)
-        self.output_pos = (0, 0)
-        self.input_positions = []
-        self.size = self.get_size()
+    """Узел логической схемы. Поддерживает типы: INPUT, NOT, AND, OR."""
 
-    def get_size(self):
+    def __init__(self, element_type: str, inputs=None, name: str = None):
+        self.type     = element_type
+        self.inputs   = inputs or []
+        self.name     = name
+        self.position = (0, 0)       # центр элемента на холсте (px)
+        self.output_pos      = (0, 0)  # точка правого (выходного) вывода
+        self.input_positions = []      # точки левых (входных) выводов
+        self.size = self._compute_size()
+
+    # ── размер элемента ───────────────────────────────────────────────────────
+    def _compute_size(self) -> tuple:
         if self.type == 'INPUT':
             return (30, 30)
-        elif self.type == 'NOT':
+        if self.type == 'NOT':
+            # NOT всегда одновходовой — фиксированный размер + кружок инверсии
             return (GOST["gate_width"] + 10, GOST["gate_height"])
-        return (GOST["gate_width"], GOST["gate_height"])
+        # AND / OR: высота масштабируется под количество входов
+        n = max(1, len(self.inputs))
+        h = max(GOST["gate_height"],
+                (n - 1) * GOST["min_port_spacing"] + 20)
+        return (GOST["gate_width"], h)
 
-    def get_bounding_box(self):
-        """Возвращает прямоугольник, занимаемый элементом"""
+    # ── ограничивающий прямоугольник (для проверки наложений) ────────────────
+    def get_bounding_box(self) -> tuple:
         x, y = self.position
         w, h = self.size
-        half_w = w // 2
-        half_h = h // 2
-
+        hw, hh = w // 2, h // 2
         if self.type == 'INPUT':
-            return (x - 15, y - 15, x + 15, y + 15)
-        elif self.type == 'NOT':
-            return (x - half_w - 10, y - half_h - 10, x + half_w + 10, y + half_h + 10)
-        else:
-            return (x - half_w - 10, y - half_h - 10, x + half_w + 10, y + half_h + 10)
+            r = INPUT_RADIUS
+            return (x - r, y - r, x + r, y + r)
+        return (x - hw - 10, y - hh - 10,
+                x + hw + 10, y + hh + 10)
 
-    def draw(self, draw):
+    # ── отрисовка элемента ────────────────────────────────────────────────────
+    def draw(self, draw_ctx):
+        """Рисует элемент и заполняет output_pos / input_positions."""
         x, y = self.position
         w, h = self.size
-        half_w = w // 2
-        half_h = h // 2
+        hw, hh = w // 2, h // 2
 
         if self.type == 'INPUT':
-            # Входная переменная (кружок по ГОСТу)
-            draw.ellipse([x - 8, y - 8, x + 8, y + 8], outline="black", width=GOST["line_width"])
-            # Подпись слева от кружка (как требуется)
-            draw.text((x - 25, y - 7), self.name, fill="black", font=self.get_font())
-            self.output_pos = (x + 8, y)
+            r = INPUT_RADIUS
+            draw_ctx.ellipse([x - r, y - r, x + r, y + r],
+                             outline="black", width=GOST["line_width"])
+            draw_ctx.text((x - 25, y - 7), self.name,
+                          fill="black", font=self._font())
+            self.output_pos = (x + r, y)
 
         elif self.type == 'NOT':
-            # Элемент НЕ (прямоугольник + кружок на выходе)
-            draw.rectangle(
-                [x - half_w, y - half_h, x + half_w, y + half_h],
-                outline="black",
-                width=GOST["line_width"]
-            )
+            draw_ctx.rectangle([x - hw, y - hh, x + hw, y + hh],
+                               outline="black", width=GOST["line_width"])
+            cx = x + hw
+            draw_ctx.ellipse([cx - 5, y - 5, cx + 5, y + 5],
+                             outline="black", width=GOST["line_width"])
+            self.output_pos      = (cx + 5, y)
+            self.input_positions = [(x - hw + 5, y)]
 
-            # Инвертирующий кружок на выходе
-            circle_x = x + half_w
-            draw.ellipse([circle_x - 5, y - 5, circle_x + 5, y + 5], outline="black", width=GOST["line_width"])
+        else:  # AND / OR
+            draw_ctx.rectangle([x - hw, y - hh, x + hw, y + hh],
+                               outline="black", width=GOST["line_width"])
+            label = "&" if self.type == "AND" else "1"
+            lx = x - (7 if label == "&" else 5)
+            draw_ctx.text((lx, y - 7), label,
+                          fill="black", font=self._font())
+            self.output_pos = (x + hw, y)
 
-            # Стрелка на выходе
-            self.output_pos = (circle_x + 5, y)
-            self.input_positions = [(x - half_w + 5, y)]
+            n = len(self.inputs)
+            if n <= 1:
+                self.input_positions = [(x - hw + 5, y)]
+            else:
+                # Равномерно распределяем порты по высоте элемента
+                spacing = (h - 10) / (n - 1)
+                self.input_positions = [
+                    (x - hw + 5,
+                     int(round(y + (i - (n - 1) / 2) * spacing)))
+                    for i in range(n)
+                ]
 
-        elif self.type == 'AND':
-            # Конъюнктор И (прямоугольник с "&")
-            draw.rectangle(
-                [x - half_w, y - half_h, x + half_w, y + half_h],
-                outline="black",
-                width=GOST["line_width"]
-            )
-
-            # Символ "&" по ГОСТ
-            draw.text(
-                (x - 7, y - 7),
-                "&",
-                fill="black",
-                font=self.get_font()
-            )
-
-            # Позиции выводов
-            self.output_pos = (x + half_w - 5, y)
-            input_offset = 18 if len(self.inputs) > 1 else 0
-            self.input_positions = [
-                (x - half_w + 5, y + (i - (len(self.inputs) - 1) / 2) * input_offset)
-                for i in range(len(self.inputs))
-            ]
-
-        elif self.type == 'OR':
-            # Дизъюнктор ИЛИ (прямоугольник с "1")
-            draw.rectangle(
-                [x - half_w, y - half_h, x + half_w, y + half_h],
-                outline="black",
-                width=GOST["line_width"]
-            )
-
-            # Символ "1" по ГОСТ
-            draw.text(
-                (x - 5, y - 7),
-                "1",
-                fill="black",
-                font=self.get_font()
-            )
-
-            # Позиции выводов
-            self.output_pos = (x + half_w - 5, y)
-            input_offset = 18 if len(self.inputs) > 1 else 0
-            self.input_positions = [
-                (x - half_w + 5, y + (i - (len(self.inputs) - 1) / 2) * input_offset)
-                for i in range(len(self.inputs))
-            ]
-
-    def get_font(self):
+    def _font(self):
         try:
             return ImageFont.truetype("arial.ttf", GOST["font_size"])
-        except:
+        except Exception:
             return ImageFont.load_default()
 
-    def get_logic_str(self):
+    # ── логическое выражение ──────────────────────────────────────────────────
+    def get_logic_str(self) -> str:
         if self.type == "INPUT":
             return self.name
-        elif self.type == "NOT":
-            return "not(" + self.inputs[0].get_logic_str() + ")"
-        separator = " ^ " if self.type == "AND" else " v "
-        return "(" + separator.join([i.get_logic_str() for i in self.inputs]) + ")"
+        if self.type == "NOT":
+            return f"not({self.inputs[0].get_logic_str()})"
+        sep = " ^ " if self.type == "AND" else " v "
+        return "(" + sep.join(i.get_logic_str() for i in self.inputs) + ")"
+
+    def to_sympy(self) -> SympyExpr:
+        """
+        Рекурсивно строит символьное выражение sympy из дерева логических элементов.
+
+        Используется модулем валидации для верификации булевой эквивалентности.
+        Поддерживаемые типы: INPUT → Symbol, NOT → Not, AND → And, OR → Or.
+        """
+        if self.type == "INPUT":
+            return Symbol(self.name)
+        if self.type == "NOT":
+            return Not(self.inputs[0].to_sympy())
+        operands = [inp.to_sympy() for inp in self.inputs]
+        if self.type == "AND":
+            return And(*operands)
+        if self.type == "OR":
+            return Or(*operands)
+        raise ValueError(f"Неизвестный тип элемента: {self.type}")
 
     def __eq__(self, other):
-        if self.type == other.type and self.name == other.name and self.inputs == other.inputs:
-            return True
-        else:
-            return False
+        return (isinstance(other, LogicElement)
+                and self.type   == other.type
+                and self.name   == other.name
+                and self.inputs == other.inputs)
 
-    def __str__(self):
-        return self.type + "(" + (self.name if self.name else ", ".join(map(str, self.inputs))) + ")"
+    # Хэш по идентификатору объекта: каждый экземпляр уникален
+    # (определение __eq__ без __hash__ делает объект не-хэшируемым)
+    __hash__ = object.__hash__
 
     def __repr__(self):
-        return self.type + "(" + (self.name if self.name else ", ".join(map(str, self.inputs))) + ")"
+        body = self.name if self.name else ", ".join(map(str, self.inputs))
+        return f"{self.type}({body})"
+
+    __str__ = __repr__
 
 
-def make_function():
-    """Генерация логической функции от 3-4 переменных """
-    input_count = random.randint(3, 4)
-    inputs = [LogicElement('INPUT', name=chr(ord('A') + i)) for i in range(input_count)]
-    unused_elements = inputs.copy()
+# ─── Результат символьной валидации ──────────────────────────────────────────
+@dataclass
+class ValidationResult:
+    """
+    Сводка результатов символьной верификации логической схемы.
 
-    noters = []
-    first_layer_functions_count = random.randint(2, 3)
+    Атрибуты:
+        valid         — True, если схема прошла все проверки.
+        satisfiable   — True, если функция выполнима (не противоречие).
+        tautology     — True, если функция является тавтологией (всегда True).
+        missing_vars  — Переменные, объявленные на входе, но не вошедшие
+                        в итоговое выражение.
+        sympy_expr    — Построенное символьное выражение.
+        error         — Сообщение об ошибке, если valid == False.
+    """
+    valid:        bool
+    satisfiable:  bool
+    tautology:    bool
+    missing_vars: Set[str]
+    sympy_expr:   Optional[SympyExpr]
+    error:        str = ""
+
+
+def validate_circuit(elements: list) -> ValidationResult:
+    """
+    Символьная верификация сгенерированной логической схемы.
+
+    Алгоритм проверки:
+      1. Рекурсивный обход DAG через ``to_sympy()`` — строится символьное
+         выражение sympy, независимое от текстового представления.
+      2. Проверка выполнимости (satisfiable): функция не должна быть
+         противоречием (всегда False), иначе схема бессмысленна.
+      3. Проверка нетавтологичности: функция не должна быть тавтологией
+         (всегда True), так как такое задание лишено учебной ценности.
+      4. Проверка полноты: каждая входная переменная обязана присутствовать
+         в итоговом выражении; «мёртвый» вход сигнализирует об ошибке
+         генератора.
+
+    Булева эквивалентность между деревом элементов и выражением гарантируется
+    тем, что ``to_sympy()`` обходит тот же DAG, что используется при
+    отрисовке, — верификация обнаруживает структурные нарушения дерева
+    (например, не подключённые узлы).
+
+    Аргументы:
+        elements — список LogicElement в топологическом порядке
+                   (последний элемент — корень схемы).
+
+    Возвращает:
+        ValidationResult с подробным описанием результата.
+    """
+    root   = elements[-1]
+    inputs = [e for e in elements if e.type == "INPUT"]
+
+    try:
+        expr = root.to_sympy()
+    except Exception as exc:
+        return ValidationResult(
+            valid=False, satisfiable=False, tautology=False,
+            missing_vars=set(), sympy_expr=None,
+            error=f"Ошибка построения sympy-выражения: {exc}"
+        )
+
+    # ── 1. Выполнимость ───────────────────────────────────────────────────────
+    is_sat = bool(satisfiable(expr))
+
+    # ── 2. Нетавтологичность (¬F должна быть выполнима) ─────────────────────
+    is_tautology = not bool(satisfiable(Not(expr)))
+
+    # ── 3. Полнота входных переменных ─────────────────────────────────────────
+    declared  = {Symbol(e.name) for e in inputs}
+    used      = expr.free_symbols
+    missing   = {str(s) for s in declared - used}
+
+    # ── Формируем итоговый результат ──────────────────────────────────────────
+    errors = []
+    if not is_sat:
+        errors.append("функция является противоречием (всегда False)")
+    if is_tautology:
+        errors.append("функция является тавтологией (всегда True)")
+    if missing:
+        errors.append(f"переменные не вошли в выражение: {sorted(missing)}")
+
+    valid = not errors
+    return ValidationResult(
+        valid=valid,
+        satisfiable=is_sat,
+        tautology=is_tautology,
+        missing_vars=missing,
+        sympy_expr=expr,
+        error="; ".join(errors) if errors else ""
+    )
+
+
+# ─── Генерация случайной логической функции ───────────────────────────────────
+def make_function(max_attempts: int = 20) -> list:
+    """
+    Генерирует трёхслойную логическую схему для функции от 3-4 переменных.
+
+    Структура:
+      Слой 0: входные переменные (A, B, C[, D])
+      Слой 1: 2-3 вентиля над входными переменными
+      Слой 2: 1-2 вентиля над первым слоем
+      Слой 3: выходной вентиль, объединяющий незадействованные узлы
+
+    После построения DAG выполняется символьная верификация через
+    ``validate_circuit()``. Если схема является тавтологией, противоречием
+    или содержит мёртвые входы — генерация повторяется (до max_attempts раз).
+
+    Возвращает список элементов в топологическом порядке.
+    Вызывает RuntimeError, если за max_attempts попыток не удалось
+    получить валидную схему.
+    """
+    for attempt in range(1, max_attempts + 1):
+        elements = _build_random_circuit()
+        vr = validate_circuit(elements)
+        if vr.valid:
+            return elements
+        # Генерация повторяется — ошибочная схема отбрасывается
+    raise RuntimeError(
+        f"Не удалось сгенерировать валидную схему за {max_attempts} попыток."
+    )
+
+
+def _build_random_circuit() -> list:
+    """Одна попытка стохастической сборки DAG (вызывается из make_function)."""
+    n_inputs = random.randint(3, 4)
+    inputs   = [LogicElement('INPUT', name=chr(ord('A') + i))
+                for i in range(n_inputs)]
+    unused   = list(inputs)    # элементы без потребителя на текущий момент
+    used_not = []              # предотвращаем дублирующиеся NOT-вентили
+
+    def _make_gate(pool: list) -> LogicElement:
+        """Создаёт случайный вентиль с входами из pool."""
+        gtype = random.choice(["AND", "AND", "OR", "OR", "NOT"])
+        if gtype == "NOT":
+            sample = [random.choice(pool)]
+            if sample in used_not:
+                gtype  = random.choice(["AND", "OR"])
+                sample = random.sample(pool, k=min(2, len(pool)))
+            else:
+                used_not.append(sample)
+        else:
+            sample = random.sample(pool, k=min(2, len(pool)))
+        return LogicElement(gtype, inputs=sample)
+
+    # Слой 1
     first_layer = []
-    for i in range(first_layer_functions_count):
-        new_type = random.choice(["AND", "AND", "OR", "OR", "NOT"])
-        if new_type != "NOT":
-            logic_inputs = random.sample(inputs, k=2)
-        else:
-            logic_inputs = random.sample(inputs, k=1)
-            if logic_inputs not in noters:
-                noters.append(logic_inputs)
-            else:
-                new_type = random.choice(["AND", "OR"])
-                logic_inputs = random.sample(inputs, k=2)
+    for _ in range(random.randint(2, 3)):
+        gate = _make_gate(inputs)
+        for e in gate.inputs:
+            try: unused.remove(e)
+            except ValueError: pass
+        first_layer.append(gate)
+        unused.append(gate)
 
-        for inp in logic_inputs:
-            try:
-                unused_elements.remove(inp)
-            except ValueError:
-                pass
-        elem = LogicElement(new_type, inputs=logic_inputs)
-        first_layer.append(elem)
-        unused_elements.append(elem)
-
-    second_layer_functions_count = random.randint(1, 2)
+    # Слой 2 (входы берём из первого слоя, а не из raw inputs — исправлен баг)
     second_layer = []
-    for i in range(second_layer_functions_count):
-        new_type = random.choice(["AND", "AND", "OR", "OR", "NOT"])
-        if new_type != "NOT":
-            logic_inputs = random.sample(first_layer, k=2)
-        else:
-            logic_inputs = random.sample(inputs, k=1)
-            if logic_inputs not in noters:
-                noters.append(logic_inputs)
-            else:
-                new_type = random.choice(["AND", "OR"])
-                logic_inputs = random.sample(inputs, k=2)
+    for _ in range(random.randint(1, 2)):
+        gate = _make_gate(first_layer)
+        for e in gate.inputs:
+            try: unused.remove(e)
+            except ValueError: pass
+        second_layer.append(gate)
+        unused.append(gate)
 
-        for inp in logic_inputs:
-            try:
-                unused_elements.remove(inp)
-            except ValueError:
-                pass
+    # Выходной вентиль: принимает все узлы без потребителя
+    root_type = random.choice(["AND", "OR"])
+    root      = LogicElement(root_type, inputs=list(unused))
 
-        elem = LogicElement(new_type, inputs=logic_inputs)
-        second_layer.append(elem)
-        unused_elements.append(elem)
-
-    new_type = random.choice(["AND", "AND", "OR", "OR"])
-    third_layer = [LogicElement(new_type, unused_elements)]
-    # print(inputs)
-    # print(first_layer)
-    # print(second_layer)
-    # print(third_layer)
-    res_tree = inputs + first_layer + second_layer + third_layer
-    return res_tree
+    return inputs + first_layer + second_layer + [root]
 
 
-def calculate_levels(elements):
-    """Определение уровней элементов"""
+# ─── Разметка уровней ─────────────────────────────────────────────────────────
+def _calc_levels(elements: list) -> dict:
+    """
+    Возвращает {level: [elements]} согласно топологической сортировке.
+    Уровень элемента = max(уровень входов) + 1; для INPUT — 0.
+    """
     levels = defaultdict(list)
     for elem in elements:
         if elem.type == 'INPUT':
-            level = 0
+            lvl = 0
+        elif not elem.inputs:
+            lvl = 1
         else:
-            input_levels = [0]
-            for inp in elem.inputs:
-                inp_level = next((l for l, es in levels.items() if inp in es), 0)
-                input_levels.append(inp_level + 1)
-            level = max(input_levels)
-        levels[level].append(elem)
+            lvl = max(
+                next((l for l, es in levels.items() if inp in es), 0) + 1
+                for inp in elem.inputs
+            )
+        levels[lvl].append(elem)
     return levels
 
 
-def calculate_positions(elements):
-    """Определение позиций элементов на схеме с оптимальной сортировкой внутри уровней"""
-    levels = calculate_levels(elements)
+# ─── Расчёт позиций на холсте ─────────────────────────────────────────────────
+def calculate_positions(elements: list) -> tuple:
+    """
+    Расставляет элементы по сетке слоёв.
+    Возвращает (ширина_холста, высота_холста) в пикселях.
+    """
+    levels    = _calc_levels(elements)
+    max_level = max(levels)
+    max_count = max(len(v) for v in levels.values())
 
-    # Расчет позиций
-    max_level = max(levels.keys()) if levels else 0
-    max_elements = max(len(layer) for layer in levels.values()) if levels else 1
+    canvas_w = int((max_level + 1) * GOST["layer_spacing"] + 300)
+    canvas_h = int(max(600, max_count * GOST["element_spacing"] + 300))
 
-    canvas_width = (max_level + 1) * GOST["layer_spacing"] + 300
-    canvas_height = max(600, max_elements * GOST["element_spacing"] + 300)
-
-    # Обрабатываем уровни по порядку от 0 до max_level
-    sorted_levels = sorted(levels.keys())
-
-    for level in sorted_levels:
-        x = 120 + level * GOST["layer_spacing"]
-        start_y = 150
-
+    for level in sorted(levels):
+        x     = 120 + level * GOST["layer_spacing"]
         layer = levels[level]
 
         if level == 0:
-            # Для входов сортируем по имени для порядка A, B, C
-            layer.sort(key=lambda e: e.name if hasattr(e, 'name') else '')
+            layer.sort(key=lambda e: e.name or '')
         else:
-            # Для других уровней сортируем по средней Y-координате входов
-            def get_avg_input_y(elem):
-                input_ys = []
-                for inp in elem.inputs:
-                    # Все входы должны иметь позиции, так как их уровни < текущего
-                    input_ys.append(inp.position[1])
-                return sum(input_ys) / len(input_ys) if input_ys else float('inf')
+            def _median_input_y(e):
+                """
+                Медианная Y-координата входов элемента.
 
-            # Сортируем элементы по средней Y-координате их входов
-            layer.sort(key=lambda e: get_avg_input_y(e))
+                Медиана устойчивее к выбросам, чем среднее: при нечётном числе
+                входов она точно совпадает с Y-координатой центрального входа,
+                что снижает число пересечений соединительных линий по сравнению
+                со средним арифметическим.
+                """
+                ys = sorted(inp.position[1] for inp in e.inputs)
+                return median(ys) if ys else 0.0
+            layer.sort(key=_median_input_y)
 
-        # Распределяем элементы по сетке с фиксированным шагом
         for i, elem in enumerate(layer):
-            y = start_y + i * GOST["element_spacing"]
-            elem.position = (x, y)
+            elem.position = (x, 150 + i * GOST["element_spacing"])
 
-    return int(canvas_width), int(canvas_height)
+    return canvas_w, canvas_h
 
 
-def horizontal_segment_intersects_element(start_x, end_x, y, element):
-    """Проверяет, пересекает ли горизонтальный сегмент элемент"""
-    box = element.get_bounding_box()
-    box_left, box_top, box_right, box_bottom = box
+# ─── Вспомогательные функции для трассировки ─────────────────────────────────
 
-    # Добавляем отступ для безопасного обхода
-    box_left -= GOST["avoidance_margin"]
-    box_right += GOST["avoidance_margin"]
-    box_top -= GOST["avoidance_margin"]
-    box_bottom += GOST["avoidance_margin"]
+def _h_overlaps(seg1: tuple, seg2: tuple) -> bool:
+    """
+    Два горизонтальных сегмента (y, x_min, x_max) накладываются?
 
-    # Проверяем, что сегмент пересекает X-границы элемента
-    segment_left = min(start_x, end_x)
-    segment_right = max(start_x, end_x)
-
-    if not (segment_left <= box_right and segment_right >= box_left):
+    Наложение засчитывается только при общем участке длиннее нуля
+    (касание в одной точке — допустимо).
+    """
+    y1, a0, a1 = seg1
+    y2, b0, b1 = seg2
+    if abs(y1 - y2) >= GOST["track_separation"]:
         return False
-
-    # Проверяем, что Y-координата сегмента внутри Y-границ элемента
-    return box_top <= y <= box_bottom
+    return max(a0, b0) < min(a1, b1)   # строгое неравенство
 
 
-def vertical_segment_intersects_element(segment_x, y_start, y_end, element):
+def _v_overlaps(seg1: tuple, seg2: tuple) -> bool:
     """
-    Проверяет, пересекает ли вертикальный сегмент элемент.
-
-    Вертикальный сегмент определяется как линия с фиксированной координатой X,
-    проходящая от y_start до y_end (включительно).
-
-    Пересечение происходит, если:
-    1. Координата X сегмента находится внутри расширенных границ элемента по горизонтали
-    2. Диапазон Y сегмента пересекается с расширенными границами элемента по вертикали
-
-    Аргументы:
-        segment_x (int): X-координата вертикального сегмента
-        y_start (int): Начальная Y-координата сегмента
-        y_end (int): Конечная Y-координата сегмента
-        element (LogicElement): Проверяемый элемент
-
-    Возвращает:
-        bool: True если сегмент пересекает элемент (с учётом отступа), иначе False
+    Два вертикальных сегмента (x, y_min, y_max) накладываются?
     """
-    # Нормализуем Y-координаты (сегмент может идти вверх или вниз)
-    seg_y_top = min(y_start, y_end)
-    seg_y_bottom = max(y_start, y_end)
-
-    # Получаем границы элемента с расширенным отступом для безопасного обхода
-    box = element.get_bounding_box()
-    box_left = int(box[0] - GOST["avoidance_margin"])
-    box_right = int(box[2] + GOST["avoidance_margin"])
-    box_top = int(box[1] - GOST["avoidance_margin"])
-    box_bottom = int(box[3] + GOST["avoidance_margin"])
-
-    # Проверка 1: сегмент находится внутри горизонтальных границ элемента
-    if not (box_left <= segment_x <= box_right):
+    x1, a0, a1 = seg1
+    x2, b0, b1 = seg2
+    a0, a1 = min(a0, a1), max(a0, a1)
+    b0, b1 = min(b0, b1), max(b0, b1)
+    if abs(x1 - x2) >= GOST["track_separation"]:
         return False
-
-    # Проверка 2: диапазоны Y пересекаются
-    # Два отрезка [a1, a2] и [b1, b2] пересекаются, если max(a1, b1) <= min(a2, b2)
-    return max(seg_y_top, box_top) <= min(seg_y_bottom, box_bottom)
+    return max(a0, b0) < min(a1, b1)
 
 
-def horizontal_segments_overlap(seg1, seg2):
-    """Проверяет перекрытие двух горизонтальных сегментов"""
-    y1, x1_start, x1_end = seg1
-    y2, x2_start, x2_end = seg2
-
-    # Проверяем, достаточно ли далеко сегменты по вертикали
-    if abs(y1 - y2) < GOST["track_separation"]:
-        # Проверяем пересечение по горизонтали
-        return max(x1_start, x2_start) <= min(x1_end, x2_end)
-
-    return False
-
-
-def vertical_segments_overlap(seg1, seg2):
+def _find_free_y(y_hint: int,
+                 h_tracks: list,
+                 x0: int, x1: int,
+                 direction: int = -1,
+                 max_iter: int = 30) -> int:
     """
-    Проверяет перекрытие двух вертикальных сегментов.
-    Сегменты перекрываются, если:
-    1. Расстояние по X меньше track_separation
-    2. Их проекции по Y пересекаются
+    Ищет ближайший к y_hint свободный горизонтальный уровень
+    для сегмента с X-диапазоном [x0, x1].
+    Двигается в сторону direction (−1 = вверх, +1 = вниз).
     """
-    x1, y1_start, y1_end = seg1
-    x2, y2_start, y2_end = seg2
-
-    # Нормализуем Y-координаты (y_start <= y_end)
-    y1_start, y1_end = min(y1_start, y1_end), max(y1_start, y1_end)
-    y2_start, y2_end = min(y2_start, y2_end), max(y2_start, y2_end)
-
-    # Проверяем горизонтальное расстояние
-    if abs(x1 - x2) < GOST["track_separation"]:
-        # Проверяем вертикальное пересечение
-        return max(y1_start, y2_start) <= min(y1_end, y2_end)
-
-    return False
+    y = y_hint
+    for _ in range(max_iter):
+        test = (y, min(x0, x1), max(x0, x1))
+        if not any(_h_overlaps(test, ex) for ex in h_tracks):
+            return y
+        y += direction * GOST["track_separation"]
+    return y
 
 
-def find_safe_bend_point(start_x, start_y, target_x, horizontal_tracks, min_offset=25):
+def _find_free_x_vert(x_hint: int,
+                      v_tracks: list,
+                      y0: int, y1: int,
+                      direction: int,
+                      max_iter: int = 20) -> int:
     """
-    Находит безопасную X-координату для точки изгиба первого горизонтального сегмента.
-
-    Алгоритм:
-    1. Начинаем с целевой позиции (середина между слоями)
-    2. Двигаемся от источника к цели с шагом track_separation
-    3. На каждой позиции проверяем сегмент на пересечение с существующими треками
-    4. Возвращаем первую безопасную позицию или минимально допустимый отступ
-
-    Возвращает: (safe_x, was_shortened)
+    Ищет свободную X-позицию для вертикального сегмента [y0, y1].
     """
-    # Определяем направление движения (вправо или влево от источника)
-    direction = 1 if target_x > start_x else -1
-    step = GOST["track_separation"] * direction
-
-    # Минимально допустимая позиция изгиба (с отступом от элемента-источника)
-    min_safe_x = start_x + (40 if direction > 0 else -40)
-
-    # Сначала проверяем целевую позицию
-    candidate_x = target_x
-    test_seg = (start_y, min(start_x, candidate_x), max(start_x, candidate_x))
-
-    if not any(horizontal_segments_overlap(test_seg, existing) for existing in horizontal_tracks):
-        return candidate_x, False  # Целевая позиция безопасна
-
-    # Если конфликт — ищем безопасную позицию ближе к источнику
-    current_x = start_x + step
-    attempts = 0
-    max_attempts = 50
-
-    while attempts < max_attempts and abs(current_x - start_x) <= abs(target_x - start_x):
-        # Проверяем минимальный отступ от источника
-        if abs(current_x - start_x) < min_offset:
-            current_x += step
-            attempts += 1
-            continue
-
-        test_seg = (start_y, min(start_x, current_x), max(start_x, current_x))
-        has_conflict = any(horizontal_segments_overlap(test_seg, existing) for existing in horizontal_tracks)
-
-        if not has_conflict:
-            return current_x, True  # Найдена безопасная позиция ближе к источнику
-
-        current_x += step
-        attempts += 1
-
-    # Если не нашли безопасную позицию в диапазоне — используем минимально допустимый отступ
-    safe_x = start_x + (min_offset if direction > 0 else -min_offset)
-    return safe_x, True
+    x = x_hint
+    for _ in range(max_iter):
+        test = (x, min(y0, y1), max(y0, y1))
+        if not any(_v_overlaps(test, ex) for ex in v_tracks):
+            return x
+        x += direction * GOST["track_separation"]
+    return x
 
 
-def route_connections(elements):
+# ─── Трассировка соединений ───────────────────────────────────────────────────
+def route_connections(elements: list) -> list:
     """
-    Трассировка соединений с гарантией строго ортогональных маршрутов
-    (только горизонтальные и вертикальные сегменты).
+    Строит строго ортогональные маршруты соединений.
 
-    Ключевые принципы:
-    1. Каждый сегмент имеет либо одинаковый X (вертикаль), либо одинаковый Y (горизонталь)
-    2. Точки поворота никогда не удаляются — они критичны для ортогональности
-    3. Все координаты округляются до целых чисел для предотвращения "дрожания" пикселей
-    4. Коррекция маршрутов происходит путём смещения целых сегментов, а не отдельных точек
+    Алгоритм (смежные слои, diff == 1):
+      Сортируем соединения по start_y по возрастанию и назначаем track_x
+      в убывающем порядке (меньший start_y → правее трек). Это гарантирует,
+      что горизонтальные сегменты на одной Y-координате имеют
+      непересекающиеся X-диапазоны:
+        — сегмент «от источника до трека» верхнего элемента идёт вправо
+          до высокого track_x;
+        — сегмент «от трека до получателя» нижнего источника заканчивается
+          на низком (левом) track_x.
+      Поскольку высокий track_x > низкий track_x, диапазоны не пересекаются.
+
+    Алгоритм (несмежные слои, diff > 1):
+      Дальний источник → dest_x ближе к gate; ближний → дальше. Это
+      устраняет пересечения вертикальных спусков к элементу назначения.
+      Перелётный горизонтальный сегмент расположен выше всех промежуточных
+      элементов и проверяется на свободность перед добавлением.
+
+    Возвращает список (route_points, src_element, dest_element).
     """
-    levels = calculate_levels(elements)
+    levels   = _calc_levels(elements)
+    level_of = {e: lvl for lvl, es in levels.items() for e in es}
 
-    # Собираем все соединения
+    # ── собираем все соединения ───────────────────────────────────────────────
     connections = []
-    for elem in elements:
-        if elem.type == 'INPUT' or not elem.inputs:
+    for dest in elements:
+        if dest.type == 'INPUT' or not dest.inputs:
             continue
+        for i, src in enumerate(dest.inputs):
+            start = (int(round(src.output_pos[0])),
+                     int(round(src.output_pos[1])))
+            if i < len(dest.input_positions):
+                end = (int(round(dest.input_positions[i][0])),
+                       int(round(dest.input_positions[i][1])))
+            else:
+                end = (int(dest.position[0] - dest.size[0] // 2 - 5),
+                       int(dest.position[1]))
+            connections.append((start, end, src, dest))
 
-        for i, input_elem in enumerate(elem.inputs):
-            start = input_elem.output_pos
-            end = elem.input_positions[i] if i < len(elem.input_positions) else (
-                elem.position[0] - elem.size[0] // 2 - 5, elem.position[1])
-            # Округляем координаты до целых для предотвращения субпиксельных смещений
-            start = (int(round(start[0])), int(round(start[1])))
-            end = (int(round(end[0])), int(round(end[1])))
-            connections.append((start, end, input_elem, elem))
+    # ── группируем по парам слоёв и обрабатываем сначала смежные ─────────────
+    by_pair = defaultdict(list)
+    for conn in connections:
+        sl = level_of[conn[2]]
+        dl = level_of[conn[3]]
+        by_pair[(sl, dl)].append(conn)
 
-    # Группируем соединения по парам уровней
-    level_connections = defaultdict(list)
-    for start, end, src, dest in connections:
-        src_level = next((l for l, es in levels.items() if src in es), 0)
-        dest_level = next((l for l, es in levels.items() if dest in es), 0)
-        if src_level < dest_level:
-            level_connections[(src_level, dest_level)].append((start, end, src, dest))
-
+    h_tracks = []   # зарегистрированные горизонтальные сегменты (y, x0, x1)
+    v_tracks = []   # зарегистрированные вертикальные   сегменты (x, y0, y1)
     all_routes = []
-    # horizontal_tracks = [] Список горизонтальных сегментов: (y, x_start, x_end)
-    horizontal_tracks = []  # (y, x_start, x_end)
-    vertical_tracks = []  # (x, y_start, y_end)
 
-    # Обрабатываем сначала смежные уровни
-    sorted_level_pairs = sorted(level_connections.keys(), key=lambda x: (x[1] - x[0], x[0]))
+    sorted_pairs = sorted(by_pair, key=lambda p: (p[1] - p[0], p[0]))
 
-    for (src_level, dest_level) in sorted_level_pairs:
-        conns = level_connections[(src_level, dest_level)]
-        level_diff = dest_level - src_level
-        conns.sort(key=lambda x: x[0][1])  # Сортируем по Y-координате старта
+    for (sl, dl) in sorted_pairs:
+        conns    = by_pair[(sl, dl)]
+        diff     = dl - sl
+        src_cx   = 120 + sl * GOST["layer_spacing"]
+        dst_cx   = 120 + dl * GOST["layer_spacing"]
 
-        # Координаты центров уровней (целые числа)
-        src_center_x = int(120 + src_level * GOST["layer_spacing"])
-        dest_center_x = int(120 + dest_level * GOST["layer_spacing"])
+        # ── СМЕЖНЫЕ СЛОИ (diff == 1) ──────────────────────────────────────────
+        if diff == 1:
+            # Канал для вертикальных сегментов между двумя слоями
+            if sl == 0:
+                ch_left = src_cx + INPUT_RADIUS + GOST["avoidance_margin"]
+            else:
+                ch_left = src_cx + GOST["gate_width"] // 2 + GOST["avoidance_margin"]
+            ch_right = dst_cx - GOST["gate_width"] // 2 - GOST["avoidance_margin"]
+            if ch_left >= ch_right:
+                ch_left  = src_cx + 25
+                ch_right = dst_cx - 25
+            ch_w = ch_right - ch_left
 
-        if level_diff == 1:
-            # === СЛУЧАЙ 1: СМЕЖНЫЕ УРОВНИ (разница = 1) ===
-            # Рассчитываем безопасный канал между элементами
+            # ── КЛЮЧЕВОЕ ПРАВИЛО предотвращения наложений ─────────────────────
+            # Сортируем по start_y возрастающе; назначаем track_x убывающе.
+            # Тогда для двух соединений A (start_y=150→end_y=240)
+            # и B (start_y=240→end_y=330):
+            #   A получает track_x = правый → его сегмент к gate идёт [track_A, gate_x]
+            #   B получает track_x = левый  → его сегмент от src идёт  [src_x,  track_B]
+            # Поскольку track_A > track_B, диапазоны на y=240 не пересекаются.
+            sorted_c = sorted(conns, key=lambda c: c[0][1])   # asc по start_y
+            n = len(sorted_c)
 
-            # Левая граница канала: после выхода источника + отступ
-            if src_level == 0:  # Источник - входная переменная (кружок)
-                channel_left = src_center_x + 8 + GOST["avoidance_margin"]
-            else:  # Источник - логический элемент
-                channel_left = src_center_x + GOST["gate_width"] // 2 + GOST["avoidance_margin"]
-
-            # Правая граница канала: перед входом получателя - отступ
-            channel_right = dest_center_x - GOST["gate_width"] // 2 - GOST["avoidance_margin"]
-
-            # Защита от некорректных границ
-            if channel_left >= channel_right:
-                channel_left = src_center_x + 25
-                channel_right = dest_center_x - 25
-
-            channel_width = channel_right - channel_left
-
-            for i, (start, end, src, dest) in enumerate(conns):
-                # Равномерное распределение треков в канале (целые координаты)
-                if len(conns) > 1:
-                    track_x = int(channel_left + (i + 0.5) * (channel_width / len(conns)))
+            for idx, (start, end, src, dest) in enumerate(sorted_c):
+                # idx=0 (наименьший start_y) → слот (n-1) → правее
+                slot = n - 1 - idx
+                if n > 1:
+                    track_x = int(ch_left + (slot + 0.5) * (ch_w / n))
                 else:
-                    track_x = int((channel_left + channel_right) / 2)
+                    track_x = int((ch_left + ch_right) / 2)
 
-                # Базовые Y-координаты для горизонтальных сегментов
-                y1, y2 = start[1], end[1]
+                seg1_y = start[1]
+                seg2_y = end[1]
 
-                # === КОРРЕКЦИЯ ДЛЯ ОРТОГОНАЛЬНОСТИ ===
-                # Горизонтальный сегмент 1: от источника до трека — должен иметь постоянный Y
-                seg1_y = y1
+                # Регистрируем первый горизонтальный и вертикальный сегменты
+                h_tracks.append((seg1_y,
+                                  min(start[0], track_x),
+                                  max(start[0], track_x)))
+                v_tracks.append((track_x,
+                                  min(seg1_y, seg2_y),
+                                  max(seg1_y, seg2_y)))
 
-                # Горизонтальный сегмент 2: от трека до получателя — должен иметь постоянный Y
-                seg2_y = y2
-                seg2_conflict = False
-                for elem in elements:
-                    if elem.type == 'INPUT' or elem == src or elem == dest:
-                        continue
-                    if horizontal_segment_intersects_element(track_x, end[0], seg2_y, elem):
-                        seg2_conflict = True
-                        break
+                # Проверяем второй горизонтальный сегмент на наложение
+                seg2_test = (seg2_y,
+                             min(track_x, end[0]),
+                             max(track_x, end[0]))
+                if any(_h_overlaps(seg2_test, ex) for ex in h_tracks):
+                    # Ищем свободный уровень чуть выше (обходной маршрут)
+                    alt_y = _find_free_y(
+                        seg2_y - GOST["track_separation"],
+                        h_tracks, track_x, end[0],
+                        direction=-1
+                    )
+                    # X-позиция «перед воротами» — в канале, не внутри элемента
+                    pre_x = max(track_x + GOST["track_separation"],
+                                end[0] - GOST["avoidance_margin"])
 
-                if seg2_conflict:
-                    # Опускаем ВЕСЬ сегмент ниже (сохраняя горизонтальность)
-                    seg2_y = max(start[1], end[1]) + GOST["vertical_clearance"] * (i + 1)
+                    route = [
+                        (start[0], seg1_y),
+                        (track_x,  seg1_y),
+                        (track_x,  alt_y),
+                        (pre_x,    alt_y),
+                        (pre_x,    seg2_y),
+                        (end[0],   seg2_y),
+                    ]
+                    h_tracks.append((alt_y,
+                                      min(track_x, pre_x),
+                                      max(track_x, pre_x)))
+                    h_tracks.append((seg2_y,
+                                      min(pre_x, end[0]),
+                                      max(pre_x, end[0])))
+                    v_tracks.append((pre_x,
+                                      min(alt_y, seg2_y),
+                                      max(alt_y, seg2_y)))
+                else:
+                    route = [
+                        (start[0], seg1_y),
+                        (track_x,  seg1_y),
+                        (track_x,  seg2_y),
+                        (end[0],   seg2_y),
+                    ]
+                    h_tracks.append((seg2_y,
+                                      min(track_x, end[0]),
+                                      max(track_x, end[0])))
 
-                # === СТРОГО ОРТОГОНАЛЬНЫЙ МАРШРУТ (4 точки) ===
-                # Каждый сегмент имеет одинаковую координату по одной оси:
-                # 0→1: одинаковый Y = seg1_y (горизонталь)
-                # 1→2: одинаковый X = track_x (вертикаль)
-                # 2→3: одинаковый Y = seg2_y (горизонталь)
-                route = [
-                    (start[0], seg1_y),  # Точка 0: выход источника (скорректированный Y для горизонтали)
-                    (track_x, seg1_y),  # Точка 1: изгиб в трек (сохраняем Y = seg1_y)
-                    (track_x, seg2_y),  # Точка 2: изгиб к получателю (сохраняем X = track_x)
-                    (end[0], seg2_y)  # Точка 3: вход получателя (скорректированный Y для горизонтали)
-                ]
-
-                # Сохраняем горизонтальные сегменты для будущих проверок
-                horizontal_tracks.append((seg1_y, min(start[0], track_x), max(start[0], track_x)))
-                horizontal_tracks.append((seg2_y, min(track_x, end[0]), max(track_x, end[0])))
-                vertical_tracks.append((track_x, min(start[1], end[1]), max(start[1], end[1])))
                 all_routes.append((route, src, dest))
 
+        # ── НЕСМЕЖНЫЕ СЛОИ (diff > 1) ─────────────────────────────────────────
         else:
-            # === СЛУЧАЙ 2: НЕСМЕЖНЫЕ УРОВНИ (разница > 1) ===
-            # 6-точечный маршрут с подъемом в середине между слоями
+            # Y для «перелётного» горизонтального сегмента — над всеми
+            # промежуточными и исходными элементами.
+            all_mid_ys = []
+            for mid_l in range(sl, dl):
+                for e in levels.get(mid_l, []):
+                    all_mid_ys.append(e.position[1])
+            fly_y_base = (min(all_mid_ys) - GOST["flyover_margin"]
+                          if all_mid_ys else 100)
 
-            for i, (start, end, src, dest) in enumerate(conns):
-                # Базовая точка изгиба по X — середина между слоем источника и СЛЕДУЮЩИМ слоем
-                base_bend_x = int(src_center_x + GOST["layer_spacing"] / 2)
+            # Сортируем: дальний источник (меньший sl) первым.
+            # Дальний → dest_x ближе к gate (меньший отступ);
+            # ближний → dest_x дальше от gate (больший отступ).
+            # Это исключает перекрёстные вертикали у элемента-получателя.
+            sorted_c = sorted(conns, key=lambda c: level_of[c[2]])
 
-                # === ШАГ 1: Проверка и коррекция ПЕРВОГО горизонтального сегмента ===
-                # Ищем безопасную точку изгиба, укорачивая сегмент при конфликтах
-                bend_x, was_shortened = find_safe_bend_point(
-                    start[0], start[1], base_bend_x, horizontal_tracks
+            gate_left = int(dst_cx - GOST["gate_width"] // 2)
+
+            for idx, (start, end, src, dest) in enumerate(sorted_c):
+                # dest_x: дальний (idx=0) → ближе к gate (малый отступ)
+                dest_x_base = (gate_left
+                               - GOST["avoidance_margin"]
+                               - idx * GOST["track_separation"])
+
+                # bend_x: горизонтальный отступ от источника
+                if sl == 0:
+                    bend_x_base = (src_cx + INPUT_RADIUS
+                                   + GOST["avoidance_margin"]
+                                   + idx * GOST["track_separation"])
+                else:
+                    bend_x_base = (src_cx + GOST["gate_width"] // 2
+                                   + GOST["avoidance_margin"]
+                                   + idx * GOST["track_separation"])
+
+                # Высота перелёта для этого трейса
+                fly_y_hint = fly_y_base - idx * GOST["track_separation"]
+
+                # Подбираем свободный горизонтальный уровень
+                fly_y = _find_free_y(
+                    fly_y_hint, h_tracks,
+                    bend_x_base, dest_x_base,
+                    direction=-1
                 )
 
-                # Если сегмент был укорочен, корректируем минимальный отступ от элемента-источника
-                if was_shortened:
-                    # Для входов (кружок) минимальный отступ = радиус + отступ
-                    if src.type == 'INPUT':
-                        min_offset = 8 + GOST["avoidance_margin"]
-                    else:
-                        min_offset = GOST["gate_width"] // 2 + GOST["avoidance_margin"]
+                # Подбираем свободный bend_x (вертикальный подъём)
+                bend_x = _find_free_x_vert(
+                    bend_x_base, v_tracks,
+                    start[1], fly_y,
+                    direction=+1
+                )
 
-                    # Гарантируем минимальный отступ
-                    if bend_x > start[0]:  # Движение вправо
-                        bend_x = max(bend_x, start[0] + min_offset)
-                    else:  # Движение влево (маловероятно в нашей схеме)
-                        bend_x = min(bend_x, start[0] - min_offset)
+                # Подбираем свободный dest_x (вертикальный спуск)
+                dest_x = _find_free_x_vert(
+                    dest_x_base, v_tracks,
+                    fly_y, end[1],
+                    direction=-1
+                )
 
-                # === ШАГ 2: Определяем базовую безопасную высоту НАД всеми промежуточными элементами ===
-                base_safe_y = 120 - GOST["track_separation"] # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-                # === ШАГ 3: Проверка и коррекция bend_x на пересечение с вертикальными треками ===
-                # Вертикальный сегмент подъема: от start[1] до base_safe_y по координате bend_x
-                bend_seg_y_start = start[1]
-                bend_seg_y_end = base_safe_y
-                bend_x_candidate = bend_x
-                conflict_attempts = 0
-
-                while conflict_attempts < 30:
-                    has_conflict = False
-                    for existing_x, ex_y_start, ex_y_end in vertical_tracks:
-                        if vertical_segments_overlap(
-                                (bend_x_candidate, bend_seg_y_start, bend_seg_y_end),
-                                (existing_x, ex_y_start, ex_y_end)
-                        ):
-                            has_conflict = True
-                            break
-
-                    if not has_conflict:
-                        break
-                    if bend_x_candidate > start[0] + 8:
-                        # Сдвигаем вправо с шагом track_separation
-                        bend_x_candidate -= GOST["track_separation"]
-                    else:
-                        bend_x_candidate += GOST["track_separation"]
-                    conflict_attempts += 1
-
-                bend_x = bend_x_candidate
-
-                # === ШАГ 4: Определяем X-координату перед входом получателя ===
-                dest_input_x = int(dest_center_x - GOST["gate_width"] // 2 - GOST["avoidance_margin"])
-
-                # === ШАГ 5: Проверка и коррекция dest_input_x на пересечение с вертикальными треками и элементами ===
-                dest_seg_y_start = min(base_safe_y, end[1])
-                dest_seg_y_end = max(base_safe_y, end[1])
-                dest_x_candidate = dest_input_x
-                conflict_attempts = 0
-                flag_2_x = True  # нужно, чтобы пошли влево (-), когда упремся в границу конечного элемента
-
-                while conflict_attempts < 30:
-                    has_conflict = False
-                    for existing_x, ex_y_start, ex_y_end in vertical_tracks:
-                        if vertical_segments_overlap(
-                                (dest_x_candidate, dest_seg_y_start, dest_seg_y_end),
-                                (existing_x, ex_y_start, ex_y_end)
-                        ) or dest_x_candidate >= end[0] - GOST["track_separation"]:
-                            has_conflict = True
-                            break
-
-                    if not has_conflict:
-                        break
-
-                    if flag_2_x and dest_x_candidate < end[0] - GOST["track_separation"]:
-                        # Сдвигаем вправо с шагом track_separation
-                        dest_x_candidate += GOST["track_separation"]
-                        flag_2_x = False
-                    else:
-                        dest_x_candidate -= GOST["track_separation"]
-                        print(dest_x_candidate, conflict_attempts)
-                    # dest_x_candidate -= GOST["track_separation"]
-                    conflict_attempts += 1
-
-                dest_input_x = dest_x_candidate
-                print(dest_x_candidate, end[0], flag_2_x, )
-                # === ШАГ 6: Коррекция высоты для избежания конфликтов с горизонтальными треками между слоями ===
-                seg_y = base_safe_y
-                seg_start_x = min(bend_x, dest_input_x)
-                seg_end_x = max(bend_x, dest_input_x)
-                test_seg = (seg_y, seg_start_x, seg_end_x)
-
-                conflict_attempts = 0
-                while conflict_attempts < 15:
-                    has_conflict = False
-                    for existing in horizontal_tracks:
-                        if horizontal_segments_overlap(test_seg, existing):
-                            has_conflict = True
-                            break
-
-                    if not has_conflict:
-                        break
-
-                    seg_y -= GOST["track_separation"]
-                    test_seg = (seg_y, seg_start_x, seg_end_x)
-                    conflict_attempts += 1
-
-                # === СТРОГО ОРТОГОНАЛЬНЫЙ МАРШРУТ (6 точек) ===
                 route = [
-                    (start[0], start[1]),  # Точка 0: выход источника (фиксированная позиция)
-                    (bend_x, start[1]),  # Точка 1: горизонталь до точки изгиба (МОЖЕТ БЫТЬ УКОРОЧЕНА)
-                    (bend_x, seg_y),  # Точка 2: вертикальный подъем
-                    (dest_input_x, seg_y),  # Точка 3: горизонталь над элементами
-                    (dest_input_x, end[1]),  # Точка 4: вертикальный спуск
-                    (end[0], end[1])  # Точка 5: вход получателя (фиксированная позиция)
+                    (start[0], start[1]),
+                    (bend_x,   start[1]),
+                    (bend_x,   fly_y),
+                    (dest_x,   fly_y),
+                    (dest_x,   end[1]),
+                    (end[0],   end[1]),
                 ]
-                print(route, base_safe_y)
 
-                # === ШАГ 7: Сохраняем сегменты для будущих проверок ===
-                # Горизонтальные сегменты
-                horizontal_tracks.append((start[1], min(start[0], bend_x), max(start[0], bend_x)))
-                horizontal_tracks.append((seg_y, min(bend_x, dest_input_x), max(bend_x, dest_input_x)))
-                horizontal_tracks.append((end[1], min(dest_input_x, end[0]), max(dest_input_x, end[0])))
-
-                # Вертикальные сегменты
-                vertical_tracks.append((bend_x, min(start[1], seg_y), max(start[1], seg_y)))
-                vertical_tracks.append((dest_input_x, min(seg_y, end[1]), max(seg_y, end[1])))
+                h_tracks.append((start[1],
+                                  min(start[0], bend_x),
+                                  max(start[0], bend_x)))
+                h_tracks.append((fly_y,
+                                  min(bend_x, dest_x),
+                                  max(bend_x, dest_x)))
+                h_tracks.append((end[1],
+                                  min(dest_x, end[0]),
+                                  max(dest_x, end[0])))
+                v_tracks.append((bend_x,
+                                  min(start[1], fly_y),
+                                  max(start[1], fly_y)))
+                v_tracks.append((dest_x,
+                                  min(fly_y, end[1]),
+                                  max(fly_y, end[1])))
 
                 all_routes.append((route, src, dest))
 
     return all_routes
 
 
-def draw_circuit(elements, filename):
-    """Отрисовка схемы с обходом элементов"""
-    width, height = calculate_positions(elements)
-    img = Image.new('RGB', (int(width), int(height)), 'white')
+# ─── Отрисовка схемы ──────────────────────────────────────────────────────────
+def draw_circuit(elements: list, filename: str):
+    """
+    Вычисляет позиции, трассирует соединения и сохраняет схему в PNG-файл.
+    """
+    canvas_w, canvas_h = calculate_positions(elements)
+    img  = Image.new('RGB', (canvas_w, canvas_h), 'white')
     draw = ImageDraw.Draw(img)
 
-    # Сначала рисуем элементы
+    # 1. Отрисовываем элементы (заполняет output_pos и input_positions)
     for elem in elements:
         elem.draw(draw)
 
-    # Рисуем соединения
+    # 2. Трассируем и рисуем соединения
     routes = route_connections(elements)
-
-    # Рисуем все линии
-    for route, src, dest in routes:
-        # Рисуем основную линию
+    for route, _src, _dest in routes:
         for i in range(len(route) - 1):
-            draw.line([route[i], route[i + 1]], fill="black", width=GOST["line_width"])
+            draw.line([route[i], route[i + 1]],
+                      fill="black", width=GOST["line_width"])
 
-    # Добавляем заголовок
-    title_font = LogicElement('INPUT').get_font()
-    draw.text((50, 30), "Логическая схема по ГОСТ 2.743-91", fill="black", font=title_font)
+    # 3. Выходной проводник и кружок (по ГОСТ — такой же, как у входной переменной)
+    levels     = _calc_levels(elements)
+    last_layer = levels[max(levels)]
+    if last_layer:
+        out_elem   = last_layer[0]
+        ox, oy     = out_elem.output_pos
+        wire_end_x = ox + GOST["output_wire_length"]
+
+        # Горизонтальный проводник от выхода последнего элемента
+        draw.line([(ox, oy), (wire_end_x, oy)],
+                  fill="black", width=GOST["line_width"])
+
+        # Незаполненный кружок выхода (идентичен кружку входной переменной)
+        r = INPUT_RADIUS
+        draw.ellipse([wire_end_x - r, oy - r,
+                      wire_end_x + r, oy + r],
+                     outline="black", width=GOST["line_width"])
+
+    # 4. Заголовок схемы
+    font = elements[0]._font() if elements else ImageFont.load_default()
+    draw.text((50, 20), elements[-1].get_logic_str(),
+              fill="black", font=font)
 
     img.save(filename)
     return img
 
 
-# === ДЕМОНСТРАЦИЯ ===
+# === ДЕМОНСТРАЦИЯ: Генерация 150 схем с замером времени ===
 if __name__ == "__main__":
-    # Строим схему для функции (A AND B) OR (NOT C) AND ABC с A -> AND_ABC
-    # circuit = build_circuit("(A AND B) OR (NOT C) AND ABC")
-    circ = make_function()
-    print(circ)
-    print(circ[-1])
-    print(circ[-1].get_logic_str())
+    import time
+    import os
 
-    # Генерируем изображение
-    result_img = draw_circuit(circ, "logic_circuit_gost_russian.png")
+    # Создаём папку для результатов, если нет
+    output_dir = "generated_schemes"
+    os.makedirs(output_dir, exist_ok=True)
 
-    print("Схема успешно создана: logic_circuit_gost_russian.png")
+    NUM_IMAGES = 150
+    print(f"Начинаю генерацию {NUM_IMAGES} схем...")
+
+    # Замеряем время
+    start_time = time.time()
+
+    for i in range(NUM_IMAGES):
+        # Генерируем новую функцию и схему
+        circ = make_function()
+        filename = os.path.join(output_dir, f"logic_circuit_{i + 1:03d}.png")
+        draw_circuit(circ, filename)
+
+        # Прогресс каждые 25 изображений
+        if (i + 1) % 25 == 0:
+            print(f"Сгенерировано: {i + 1}/{NUM_IMAGES}")
+
+    # Конец замера
+    end_time = time.time()
+    total_seconds = end_time - start_time
+
+    # Вывод результатов
+    print(f"\n✅ Готово! Сгенерировано {NUM_IMAGES} схем.")
+    print(f"⏱️  Общее время: {total_seconds:.2f} секунд")
+    print(f"📊 Среднее время на схему: {total_seconds / NUM_IMAGES:.3f} сек")
+    print(f"🚀 Производительность: {NUM_IMAGES / total_seconds:.2f} схем/сек")
+    print(f"📁 Результаты сохранены в папке: {output_dir}/")

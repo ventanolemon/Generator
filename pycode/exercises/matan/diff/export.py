@@ -112,4 +112,4 @@ def _insert_part(selection, part):
 # system_latex = r"\cases{3 \sin(2 t) - 1 - 3 e^{-2 t} & @ -3 t^{2} - 3 \sin(2 t) - 1 & }"
 # insert_formula(selection, system_latex)
 
-insert_editable_latex(variants_cnt=15)
+insert_editable_latex(answers="hide", variants_cnt=50)
