@@ -1,0 +1,52 @@
+[
+    {
+        "template": "Computers ___ developed in the 20th century to solve complex calculations.",
+        "answers": ["were"],
+        "translation": "Компьютеры были разработаны в 20 веке для решения сложных вычислений."
+    },
+    {
+        "template": "The CPU ___ instructions and ___ them.",
+        "answers": ["fetches", "executes"],
+        "translation": "ЦП получает команды и выполняет их."
+    },
+    {
+        "template": "RAM ___ used for temporary data storage.",
+        "answers": ["is"],
+        "translation": "ОЗУ используется для временного хранения данных."
+    },
+    {
+        "template": "If you ___ a strong password, your account will be safer.",
+        "answers": ["use"],
+        "translation": "Если ты используешь надёжный пароль, твой аккаунт будет безопаснее."
+    },
+    {
+        "template": "Programmers usually ___ their code in version control systems.",
+        "answers": ["store"],
+        "translation": "Программисты обычно хранят свой код в системах контроля версий."
+    },
+    {
+        "template": "She ___ been studying programming for two years.",
+        "answers": ["has"],
+        "translation": "Она изучает программирование уже два года."
+    },
+    {
+        "template": "The hard drive ___ data even when the computer is turned off.",
+        "answers": ["keeps"],
+        "translation": "Жёсткий диск хранит данные, даже когда компьютер выключен."
+    },
+    {
+        "template": "An algorithm ___ a sequence of steps that ___ a problem.",
+        "answers": ["is", "solves"],
+        "translation": "Алгоритм — это последовательность шагов, которая решает задачу."
+    },
+    {
+        "template": "Without a backup, important files ___ be lost.",
+        "answers": ["may"],
+        "translation": "Без резервной копии важные файлы могут быть потеряны."
+    },
+    {
+        "template": "Modern operating systems ___ multitasking efficiently.",
+        "answers": ["handle"],
+        "translation": "Современные операционные системы эффективно обрабатывают многозадачность."
+    }
+]
