@@ -13,7 +13,8 @@ GeneratorRegistry (модули).
 """
 
 from __future__ import annotations
-from typing import Callable
+from pathlib import Path
+from typing import Callable, Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -24,17 +25,19 @@ from PyQt6.QtWidgets import (
 
 from core import (
     Capability, GeneratorRegistry, Repository, Subject, Partition,
-    TaskGenerator
+    TaskGenerator, WordStatsStore,
 )
 from ui.views import (
     StaticTaskView, TableTaskView, InteractiveTaskView, TestExportView
 )
 from ui.editors import create_editor, PartitionEditor
 from ui.utils import clear_layout
+from .stats_window import StatsWindow
 
 
 # Тип фабрики, пересобирающей реестр после изменений в БД.
 RegistryBuilder = Callable[[], GeneratorRegistry]
+UserIdProvider = Callable[[], Optional[str]]
 
 
 class GeneratorWindow(QMainWindow):
@@ -45,18 +48,30 @@ class GeneratorWindow(QMainWindow):
         repository: Repository,
         registry: GeneratorRegistry,
         registry_builder: RegistryBuilder | None = None,
+        *,
+        stats_store: WordStatsStore | None = None,
+        user_id_provider: UserIdProvider | None = None,
+        words_dir: Path | None = None,
     ):
         """
         registry_builder — опциональная функция, которая пересобирает реестр
         после изменения БД. Без неё кнопки правки/создания не показываются.
+
+        stats_store + user_id_provider — если переданы, в шапке появляется
+        кнопка «Моя статистика», открывающая StatsWindow. words_dir нужен
+        окну статистики, чтобы рядом с термином показывать перевод.
         """
         super().__init__()
         self.repo = repository
         self.registry = registry
         self.registry_builder = registry_builder
+        self.stats_store = stats_store
+        self.user_id_provider = user_id_provider
+        self.words_dir = words_dir
         self.subjects: list[Subject] = []
         self.partitions: list[Partition] = []
         self._editor_window: PartitionEditor | None = None
+        self._stats_window: StatsWindow | None = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -72,6 +87,18 @@ class GeneratorWindow(QMainWindow):
 
         # ---- Левая панель ----
         left = QVBoxLayout()
+
+        # Кнопка просмотра статистики — только если есть хранилище.
+        if self.stats_store is not None:
+            self.stats_btn = QPushButton("Моя статистика", self)
+            self.stats_btn.setToolTip(
+                "История прохождения словарного тренажёра "
+                "(межсессионная для авторизованных, "
+                "в рамках запуска — для гостей)."
+            )
+            self.stats_btn.clicked.connect(self._open_stats_window)
+            left.addWidget(self.stats_btn)
+
         left.addWidget(QLabel("Предмет:"))
         self.subject_combo = QComboBox(self)
         left.addWidget(self.subject_combo)
@@ -128,6 +155,34 @@ class GeneratorWindow(QMainWindow):
         controls.addWidget(self.delete_btn)
 
         parent_layout.addLayout(controls)
+
+    # ---------- Окно статистики ----------
+
+    def _open_stats_window(self) -> None:
+        """
+        Открыть окно «Моя статистика». Если уже открыто — выводим на передний
+        план и обновляем данные (на случай, если пользователь успел пройти
+        ещё один словарь).
+        """
+        if self.stats_store is None or self.user_id_provider is None:
+            return
+        if self._stats_window is None:
+            self._stats_window = StatsWindow(
+                stats_store=self.stats_store,
+                user_id_provider=self.user_id_provider,
+                words_dir=self.words_dir,
+            )
+            # При закрытии — забыть ссылку, чтобы следующий клик создал заново
+            # и подхватил актуального пользователя (на случай перелогина).
+            self._stats_window.destroyed.connect(self._on_stats_window_destroyed)
+        else:
+            self._stats_window.refresh()
+        self._stats_window.show()
+        self._stats_window.raise_()
+        self._stats_window.activateWindow()
+
+    def _on_stats_window_destroyed(self, *_args) -> None:
+        self._stats_window = None
 
     # ---------- Загрузка данных ----------
 
