@@ -53,6 +53,9 @@ def main() -> int:
         repository=repo,
         registry=registry,
         registry_builder=make_registry,
+        stats_store=stats_store,
+        user_id_provider=user_id_provider,
+        words_dir=WORDS_DIR,
     )
 
     def on_auth(user_info):

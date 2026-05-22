@@ -116,6 +116,21 @@ class WordStatsStore:
             stat.last_seen = ts
             bucket[term] = stat
 
+    def fetch_all(self, user_id: str | None) -> list[WordStat]:
+        """
+        Все слова со статистикой для пользователя. Для гостей — содержимое
+        in-memory bucket; для авторизованных — запрос к БД, отсортированный
+        по last_seen DESC.
+        """
+        if self._is_guest(user_id):
+            stats = list(self._guest[_GUEST_BUCKET].values())
+            stats.sort(key=lambda s: s.last_seen, reverse=True)
+            return stats
+        try:
+            return self._repo.fetch_all_word_stats(user_id)
+        except Exception:
+            return []
+
     # ---------- Вспомогательное ----------
 
     @staticmethod

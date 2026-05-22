@@ -363,3 +363,28 @@ class Repository:
                  delta_correct, delta_wrong, now),
             )
             conn.commit()
+
+    def fetch_all_word_stats(self, user_id: str) -> list:
+        """
+        Все слова, по которым у пользователя есть статистика.
+        Возвращает list[WordStat], отсортированный по last_seen DESC.
+        """
+        from .word_stats import WordStat
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT term, times_shown, times_correct, times_wrong, last_seen "
+                "FROM WordStats WHERE user_id = ? "
+                "ORDER BY last_seen DESC",
+                (user_id,),
+            ).fetchall()
+        return [
+            WordStat(
+                term=r[0],
+                times_shown=r[1],
+                times_correct=r[2],
+                times_wrong=r[3],
+                last_seen=r[4],
+            )
+            for r in rows
+        ]
