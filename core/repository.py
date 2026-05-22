@@ -281,3 +281,85 @@ class Repository:
                 "WHERE login = ? AND password = ?",
                 (login, password),
             ).fetchone()
+
+    # ---------- WordStats (межсессионная статистика по словам) ----------
+
+    def ensure_word_stats_table(self) -> None:
+        """
+        Гарантировать наличие таблицы WordStats. Идемпотентно.
+        Ключ — (user_id, term); счётчики и timestamp последнего показа.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS WordStats ("
+                "  user_id TEXT NOT NULL,"
+                "  term TEXT NOT NULL,"
+                "  times_shown INTEGER NOT NULL DEFAULT 0,"
+                "  times_correct INTEGER NOT NULL DEFAULT 0,"
+                "  times_wrong INTEGER NOT NULL DEFAULT 0,"
+                "  last_seen REAL NOT NULL DEFAULT 0,"
+                "  PRIMARY KEY (user_id, term)"
+                ")"
+            )
+            conn.commit()
+
+    def fetch_word_stats(
+        self, user_id: str, terms: List[str]
+    ) -> dict:
+        """
+        Прочитать статистику по списку слов для пользователя.
+        Возвращает dict[term, WordStat]. Отсутствующие в БД пропускаются.
+        """
+        # Локальный импорт чтобы избежать циклической зависимости с core.__init__.
+        from .word_stats import WordStat
+
+        if not terms:
+            return {}
+        # SQLite ограничивает количество параметров в одном запросе (по умолчанию
+        # ~999). Разбиваем на чанки, чтобы корректно работать на больших словарях.
+        out: dict[str, WordStat] = {}
+        chunk_size = 500
+        with self._connect() as conn:
+            for i in range(0, len(terms), chunk_size):
+                chunk = terms[i:i + chunk_size]
+                placeholders = ",".join("?" * len(chunk))
+                rows = conn.execute(
+                    f"SELECT term, times_shown, times_correct, times_wrong, "
+                    f"       last_seen "
+                    f"FROM WordStats "
+                    f"WHERE user_id = ? AND term IN ({placeholders})",
+                    (user_id, *chunk),
+                ).fetchall()
+                for r in rows:
+                    out[r[0]] = WordStat(
+                        term=r[0],
+                        times_shown=r[1],
+                        times_correct=r[2],
+                        times_wrong=r[3],
+                        last_seen=r[4],
+                    )
+        return out
+
+    def upsert_word_stat(
+        self, user_id: str, term: str, correct: bool, now: float
+    ) -> None:
+        """
+        Зафиксировать один показ: +1 к times_shown, +1 к correct/wrong,
+        last_seen = now. Использует ON CONFLICT для атомарного UPSERT.
+        """
+        delta_correct = 1 if correct else 0
+        delta_wrong = 0 if correct else 1
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO WordStats "
+                "(user_id, term, times_shown, times_correct, times_wrong, last_seen) "
+                "VALUES (?, ?, 1, ?, ?, ?) "
+                "ON CONFLICT(user_id, term) DO UPDATE SET "
+                "  times_shown = times_shown + 1, "
+                "  times_correct = times_correct + ?, "
+                "  times_wrong = times_wrong + ?, "
+                "  last_seen = ?",
+                (user_id, term, delta_correct, delta_wrong, now,
+                 delta_correct, delta_wrong, now),
+            )
+            conn.commit()

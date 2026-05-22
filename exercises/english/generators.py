@@ -25,14 +25,33 @@
 from __future__ import annotations
 import json
 import random
+import time
 from pathlib import Path
-from typing import List
+from typing import Callable, List, Optional
 
 from core import (
     TaskGenerator, InteractiveTask, TurnResult, Capability,
     Block, TextBlock, StaticTask, STATIC_DEFAULT,
     FillInTheBlankBlock, WordCorrectionBlock,
+    WordStat, WordStatsStore,
 )
+
+
+# Тип источника текущего user_id. Возвращает строку логина для авторизованного
+# пользователя и None/"" для гостя. Передаётся в генератор замыканием — это
+# позволяет один и тот же экземпляр генератора переключать пользователя
+# (например, при перелогине) без пересоздания реестра.
+UserIdProvider = Callable[[], Optional[str]]
+
+# Конфигурация приоритизации в spaced-repetition. Подобрано эмпирически
+# и зафиксировано как константы — менять можно через параметры конструктора.
+DEFAULT_PRIORITY_RECENT_WRONG = 0.4    # вероятность взять «исторически ошибочное»
+WEIGHT_BASE_UNSEEN = 1.0               # вес для слов без истории
+WEIGHT_BASE_MASTERED = 0.4             # минимальный вес для уже знакомых
+WEIGHT_PER_WRONG = 1.0                 # +1.0 за каждую прошлую ошибку
+WEIGHT_PER_CORRECT = 0.3               # -0.3 за каждый правильный ответ
+WEIGHT_AGE_DAYS_CAP = 14.0             # потолок «давности»
+WEIGHT_AGE_GAIN = 0.15                 # вес единицы дня давности
 
 
 def _read_json_lenient(path: Path):
@@ -85,26 +104,44 @@ def _tolerant_threshold(word: str) -> int:
 
 class WordsSession(InteractiveTask):
     """
-    Сессия тренировки слов.
+    Сессия тренировки слов с межсессионной памятью.
 
-    Алгоритм (адаптирован из исходного words_test.py):
+    Алгоритм (расширение исходного words_test.py):
 
-      * Пул `_remaining` — все слова, ещё не отгаданные пользователем.
-        Сессия идёт, пока пул не опустеет. Лимита на количество вопросов нет.
-      * `_last` — FIFO недавно показанных слов (≈ треть пула).
-        Алгоритм избегает повторов: новое слово выбирается так, чтобы оно
-        не было в `_last`. Когда `_last` переполняется — самое старое слово
-        удаляется и снова может попасть в выдачу.
-      * `_last_wrong` — недавние ошибки. При переполнении (>5) самое старое
-        слово из ошибок удаляется и из `_last`, чтобы быстрее вернуться
-        к нему на повторение.
-      * При правильном ответе слово удаляется из `_remaining`.
-      * При неправильном — остаётся, и его задание увидят снова.
+      * Пул `_remaining` — все слова, ещё не отгаданные пользователем
+        в текущей сессии. Сессия идёт, пока пул не опустеет.
+      * `_last` — FIFO недавно показанных слов (≈ треть пула), как и раньше.
+      * `_last_wrong` — недавние ошибки текущей сессии, балансирует FIFO.
+      * `_stats` — снимок межсессионной статистики из WordStatsStore,
+        загружается один раз при старте сессии. Используется только при
+        выборе следующего слова (вес = функция от times_wrong, times_correct,
+        давности last_seen). На каждом ответе пишется обратно через store.
+      * При правильном ответе слово удаляется из `_remaining`;
+        при неправильном — остаётся.
+
+    Spaced-repetition поверх «локального» алгоритма:
+      * С вероятностью `priority_recent_wrong` следующим словом выбирается
+        исторически ошибочное (times_wrong > times_correct ИЛИ когда-либо
+        ошибались и не видели давно). Это даёт быстрое возвращение
+        проблемных слов в новую сессию, а не только в ту же.
+      * Иначе — взвешенный случайный выбор по «приоритетности»:
+        давно не виденные и часто ошибочные имеют больше шансов.
+
+    Состояние store: для гостей (user_id == None/'') хранится в памяти
+    процесса и обнуляется при перезапуске; для авторизованных — в SQLite.
     """
 
     meta: dict = {}
 
-    def __init__(self, words_dict: dict[str, str], tolerant: bool = False):
+    def __init__(
+        self,
+        words_dict: dict[str, str],
+        tolerant: bool = False,
+        *,
+        stats_store: WordStatsStore | None = None,
+        user_id: str | None = None,
+        priority_recent_wrong: float = DEFAULT_PRIORITY_RECENT_WRONG,
+    ):
         # _remaining: {english: russian}
         self._remaining: dict[str, str] = dict(words_dict)
         self._total: int = len(self._remaining)
@@ -118,6 +155,22 @@ class WordsSession(InteractiveTask):
         # засчитываются как правильные. Переключается из GUI на лету.
         self.tolerant: bool = bool(tolerant)
 
+        # Межсессионная статистика
+        self._stats_store = stats_store
+        self._user_id = user_id
+        self._priority_recent_wrong = max(
+            0.0, min(1.0, float(priority_recent_wrong))
+        )
+
+        # Снимок stats для всех слов словаря. Подгружаем один раз —
+        # дальше держим в памяти и обновляем после submit, параллельно
+        # пробрасывая в store.
+        self._stats: dict[str, WordStat] = {}
+        if self._stats_store is not None and self._remaining:
+            self._stats = self._stats_store.fetch(
+                self._user_id, list(self._remaining.keys())
+            )
+
     # ---------- Выбор следующего слова ----------
 
     def _last_capacity(self) -> int:
@@ -127,10 +180,56 @@ class WordsSession(InteractiveTask):
         """
         return max(3, self._total // 3)
 
+    def _word_weight(self, term: str) -> float:
+        """
+        Приоритет слова для следующего выбора. Чем выше — тем чаще выпадает.
+        Используется только для слов из `_remaining`.
+        """
+        stat = self._stats.get(term)
+        if stat is None or stat.times_shown == 0:
+            return WEIGHT_BASE_UNSEEN
+
+        wrong = max(0, stat.times_wrong)
+        correct = max(0, stat.times_correct)
+        weight = (
+            WEIGHT_BASE_MASTERED
+            + WEIGHT_PER_WRONG * wrong
+            - WEIGHT_PER_CORRECT * correct
+        )
+
+        # Бонус за давность (только если когда-то видели)
+        if stat.last_seen > 0:
+            age_days = max(0.0, (time.time() - stat.last_seen) / 86400.0)
+            weight += min(age_days, WEIGHT_AGE_DAYS_CAP) * WEIGHT_AGE_GAIN
+
+        # Не позволяем весу уйти в ноль/отрицательное — выбор всё равно
+        # должен быть возможен. Минимальный пол — четверть базы.
+        return max(WEIGHT_BASE_MASTERED * 0.25, weight)
+
+    def _historically_wrong(self, pool: list[str]) -> list[str]:
+        """
+        Слова из пула, которые в истории чаще ошибались, чем угадывались
+        (или ошибались и давно не виделись). Используется при бросании
+        кубика `priority_recent_wrong`.
+        """
+        out: list[str] = []
+        now = time.time()
+        for term in pool:
+            stat = self._stats.get(term)
+            if stat is None or stat.times_wrong == 0:
+                continue
+            if stat.times_wrong >= stat.times_correct:
+                out.append(term)
+                continue
+            # Ошибались, но в целом справлялись — добавляем если давно не виделись
+            if stat.last_seen > 0 and (now - stat.last_seen) > 3 * 86400:
+                out.append(term)
+        return out
+
     def _pick_next(self) -> str:
         """
-        Выбрать следующее слово, избегая недавно показанных.
-        Если в пуле «свежих» слов нет — допускаем повтор.
+        Выбрать следующее слово, избегая недавно показанных, с учётом
+        межсессионной статистики.
         """
         # Балансировка last_wrong: при переполнении самое старое из ошибок
         # удаляется из «недавно показанных», чтобы быстрее вернулось.
@@ -143,12 +242,26 @@ class WordsSession(InteractiveTask):
         all_keys = list(self._remaining.keys())
         # Кандидаты — те, кого нет в недавно показанных
         candidates = [w for w in all_keys if w not in self._last]
+        if not candidates:
+            candidates = all_keys  # все «свежие» закончились — допускаем повтор
 
-        if candidates:
-            word = random.choice(candidates)
-        else:
-            # Все слова в _last — допускаем повтор
-            word = random.choice(all_keys)
+        word: str | None = None
+
+        # С вероятностью priority_recent_wrong — пытаемся взять исторически ошибочное
+        if self._stats and self._priority_recent_wrong > 0.0 \
+                and random.random() < self._priority_recent_wrong:
+            wrong_pool = self._historically_wrong(candidates)
+            if wrong_pool:
+                word = random.choice(wrong_pool)
+
+        # Иначе — взвешенный случайный выбор по приоритетности
+        if word is None:
+            if self._stats:
+                weights = [self._word_weight(w) for w in candidates]
+                # random.choices безопасен на положительных весах
+                word = random.choices(candidates, weights=weights, k=1)[0]
+            else:
+                word = random.choice(candidates)
 
         # Добавляем в FIFO и подрезаем размер
         self._last.append(word)
@@ -199,6 +312,9 @@ class WordsSession(InteractiveTask):
             )
         ]
 
+        # Обновляем межсессионную статистику (и снимок в памяти, и store).
+        self._record_stat(expected, ok)
+
         if ok:
             self._remaining.pop(expected, None)
         else:
@@ -218,11 +334,39 @@ class WordsSession(InteractiveTask):
     def is_finished(self) -> bool:
         return not self._remaining
 
+    # ---------- Stats ----------
+
+    def _record_stat(self, term: str, correct: bool) -> None:
+        """Обновить in-memory снимок и пробросить в store (если задан)."""
+        now = time.time()
+        stat = self._stats.get(term)
+        if stat is None:
+            stat = WordStat(term=term)
+            self._stats[term] = stat
+        stat.times_shown += 1
+        if correct:
+            stat.times_correct += 1
+        else:
+            stat.times_wrong += 1
+        stat.last_seen = now
+
+        if self._stats_store is not None:
+            self._stats_store.record(self._user_id, term, correct, now)
+
 
 class WordsTrainerGenerator(TaskGenerator):
     capabilities = Capability.INTERACTIVE
 
-    def __init__(self, name: str, words_path, partition_id: int | None = None):
+    def __init__(
+        self,
+        name: str,
+        words_path,
+        partition_id: int | None = None,
+        *,
+        stats_store: WordStatsStore | None = None,
+        user_id_provider: UserIdProvider | None = None,
+        priority_recent_wrong: float = DEFAULT_PRIORITY_RECENT_WRONG,
+    ):
         self.name = name
         self.partition_id = partition_id
         self.words_path = Path(words_path)
@@ -230,6 +374,13 @@ class WordsTrainerGenerator(TaskGenerator):
         # Состояние мягкой проверки. Хранится на генераторе, чтобы при
         # рестарте сессии (кнопка «Заново») значение из GUI сохранялось.
         self.tolerant: bool = False
+
+        # Межсессионная статистика. user_id берётся через провайдер
+        # на момент generate(), чтобы тот же экземпляр генератора корректно
+        # обслуживал разные пользователи в течение жизни приложения.
+        self.stats_store = stats_store
+        self.user_id_provider = user_id_provider
+        self.priority_recent_wrong = priority_recent_wrong
 
     def _load(self) -> dict[str, str]:
         if self._cache is None:
@@ -315,7 +466,19 @@ class WordsTrainerGenerator(TaskGenerator):
         return title
 
     def generate(self) -> InteractiveTask:
-        return WordsSession(self._load(), tolerant=self.tolerant)
+        user_id: str | None = None
+        if self.user_id_provider is not None:
+            try:
+                user_id = self.user_id_provider()
+            except Exception:
+                user_id = None
+        return WordsSession(
+            self._load(),
+            tolerant=self.tolerant,
+            stats_store=self.stats_store,
+            user_id=user_id,
+            priority_recent_wrong=self.priority_recent_wrong,
+        )
 
 
 # ---------- SentenceFillGenerator (STATIC + динамический блок) ----------
@@ -408,13 +571,19 @@ def _detect_kind(path: Path) -> str:
 
 
 def english_generators_for_path(
-    path: Path, partition_id: int, name: str | None = None
+    path: Path,
+    partition_id: int,
+    name: str | None = None,
+    *,
+    stats_store: WordStatsStore | None = None,
+    user_id_provider: UserIdProvider | None = None,
 ) -> TaskGenerator | None:
     kind = _detect_kind(path)
     display = name or f"Английский: {path.stem}"
     if kind == "words":
         return WordsTrainerGenerator(
             name=display, words_path=path, partition_id=partition_id,
+            stats_store=stats_store, user_id_provider=user_id_provider,
         )
     if kind == "sentences":
         return SentenceFillGenerator(
@@ -423,13 +592,21 @@ def english_generators_for_path(
     return None
 
 
-def all_generators(words_dir) -> list[TaskGenerator]:
+def all_generators(
+    words_dir,
+    *,
+    stats_store: WordStatsStore | None = None,
+    user_id_provider: UserIdProvider | None = None,
+) -> list[TaskGenerator]:
     words_dir = Path(words_dir)
     if not words_dir.exists():
         return []
     out: list[TaskGenerator] = []
     for path in sorted(words_dir.glob("*.json")):
-        gen = english_generators_for_path(path, partition_id=0)
+        gen = english_generators_for_path(
+            path, partition_id=0,
+            stats_store=stats_store, user_id_provider=user_id_provider,
+        )
         if gen is not None:
             out.append(gen)
     return out
