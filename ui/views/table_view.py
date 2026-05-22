@@ -2,17 +2,21 @@
 TableTaskView — табличное представление: накапливает N сгенерированных
 заданий, показывает условия и ответы рядом, можно удалять отдельные строки
 и экспортировать всё в Word.
+
+Содержимое ячеек строится через render_qt каждого блока — поэтому формулы
+показываются как картинки, текст как текст, а изображения как изображения.
 """
 
 from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox, QLabel,
-    QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox
+    QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox,
+    QSizePolicy
 )
 
 from core import Capability, StaticTask, TaskGenerator
-from ui.utils import blocks_to_plain
+from ui.utils import render_blocks
 from ui.exporter import export_tasks_to_docx
 
 
@@ -33,7 +37,7 @@ class TableTaskView(QWidget):
             )
 
         self.generator = generator
-        self.tasks: list[StaticTask] = []   # параллельно строкам таблицы
+        self.tasks: list[StaticTask] = []
 
         self._build_ui()
 
@@ -64,17 +68,16 @@ class TableTaskView(QWidget):
         )
         self.table.setColumnWidth(0, 40)
         self.table.setColumnWidth(3, 60)
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        # Вертикальная высота строк по контенту
         self.table.verticalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents
         )
+        # Сами ячейки нельзя редактировать
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         root.addWidget(self.table, stretch=1)
 
         self.gen_btn.clicked.connect(self._on_generate)
         self.export_btn.clicked.connect(self._on_export)
         self.show_answers_chk.stateChanged.connect(self._refresh_answers_column)
-        self.table.cellClicked.connect(self._on_cell_clicked)
 
     def _on_generate(self) -> None:
         task = self.generator.generate()
@@ -87,13 +90,12 @@ class TableTaskView(QWidget):
         self.table.insertRow(row)
         self.table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
 
-        # Условие — текстовое представление блоков
-        cond_item = QTableWidgetItem(blocks_to_plain(task.statement))
-        cond_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        self.table.setItem(row, 1, cond_item)
+        # Условие — рендерим через render_qt каждого блока в один виджет
+        cond_widget = self._build_cell_widget(task.statement)
+        self.table.setCellWidget(row, 1, cond_widget)
 
-        # Ответ
-        self.table.setItem(row, 2, self._make_answer_item(task))
+        # Ответ — отдельный виджет, видимость зависит от чекбокса
+        self._set_answer_cell(row, task)
 
         # Кнопка удаления
         del_btn = QPushButton("✕", self)
@@ -102,30 +104,52 @@ class TableTaskView(QWidget):
 
         self.table.resizeRowsToContents()
 
-    def _make_answer_item(self, task: StaticTask) -> QTableWidgetItem:
-        text = blocks_to_plain(task.answer)
+    def _build_cell_widget(self, blocks) -> QWidget:
+        """
+        Сделать виджет для ячейки таблицы из списка блоков.
+        Каждый блок рисуется через свой render_qt — формулы как картинки,
+        текст как текст, изображения как изображения.
+        """
+        widget = render_blocks(blocks, self.table)
+        widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        return widget
+
+    def _set_answer_cell(self, row: int, task: StaticTask) -> None:
+        """Поставить виджет ответа в ячейку, учитывая режим показа."""
         if self.show_answers_chk.isChecked():
-            item = QTableWidgetItem(text)
+            widget = self._build_cell_widget(task.answer)
         else:
-            item = QTableWidgetItem("Нажмите для просмотра")
-            item.setData(Qt.ItemDataRole.UserRole, text)
-        item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        return item
+            widget = QLabel("Нажмите, чтобы показать", self.table)
+            widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            widget.setStyleSheet("color: #888; font-style: italic;")
+            # Делаем clickable: при клике — показать ответ для этой строки
+            def show_for_row(event, _t=task, _r=row):
+                self._show_answer_popup(_t)
+            widget.mousePressEvent = show_for_row
+        self.table.setCellWidget(row, 2, widget)
+
+    def _show_answer_popup(self, task: StaticTask) -> None:
+        """
+        Показать ответ во всплывающем окне (если в таблице ответы скрыты).
+        Делаем простое модальное окно с render_blocks ответа.
+        """
+        from PyQt6.QtWidgets import QDialog
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Ответ")
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(render_blocks(task.answer, dlg))
+        close_btn = QPushButton("Закрыть", dlg)
+        close_btn.clicked.connect(dlg.accept)
+        layout.addWidget(close_btn)
+        dlg.resize(500, 200)
+        dlg.exec()
 
     def _refresh_answers_column(self) -> None:
         for row, task in enumerate(self.tasks):
-            self.table.setItem(row, 2, self._make_answer_item(task))
+            self._set_answer_cell(row, task)
         self.table.resizeRowsToContents()
-
-    def _on_cell_clicked(self, row: int, col: int) -> None:
-        if col != 2 or self.show_answers_chk.isChecked():
-            return
-        item = self.table.item(row, col)
-        if item is None:
-            return
-        hidden = item.data(Qt.ItemDataRole.UserRole)
-        if hidden:
-            QMessageBox.information(self, "Ответ", hidden)
 
     def _delete_task(self, task: StaticTask) -> None:
         try:
@@ -134,7 +158,6 @@ class TableTaskView(QWidget):
             return
         self.tasks.pop(idx)
         self.table.removeRow(idx)
-        # Перенумеровать
         for r in range(self.table.rowCount()):
             self.table.setItem(r, 0, QTableWidgetItem(str(r + 1)))
 

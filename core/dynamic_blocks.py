@@ -204,3 +204,163 @@ class _FlowLayout(QLayout):
             x += wid + spacing
             line_height = max(line_height, hgt)
         return y + line_height - rect.y()
+
+
+# ---------- WordCorrectionBlock ----------
+#
+# Используется тренажёром английского при ответе пользователя.
+# Показывает три строки:
+#   1) Перевод (русский) — что было задано.
+#   2) Ответ пользователя с подсветкой неправильных букв (через diff).
+#   3) Правильное английское слово.
+#
+# В Qt-режиме рендерится одним QLabel с rich HTML, без extra-зависимостей.
+# В plain/docx — обычное текстовое представление с пометками.
+
+import difflib
+
+
+class WordCorrectionBlock(Block):
+    """
+    Показ результата ответа в тренажёре слов с подсветкой ошибок.
+
+    Параметры:
+      translation     — задание (русский перевод)
+      user_answer     — что ввёл пользователь
+      expected        — правильное английское слово
+      correct         — True/False общая оценка
+    """
+
+    def __init__(
+        self,
+        translation: str,
+        user_answer: str,
+        expected: str,
+        correct: bool,
+    ):
+        self.translation = translation
+        self.user_answer = user_answer
+        self.expected = expected
+        self.correct = correct
+
+    # --- Qt ---
+
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        wrap = QWidget(parent)
+        v = QVBoxLayout(wrap)
+        v.setContentsMargins(4, 4, 4, 4)
+        v.setSpacing(2)
+
+        # Иконка-маркер + перевод
+        marker = "✓" if self.correct else "✗"
+        color = "#2a7a2a" if self.correct else "#aa2a2a"
+        head = QLabel(
+            f"<span style='color:{color}; font-weight:bold;'>{marker}</span> "
+            f"<span style='color:#555;'>{_html_escape(self.translation)}</span>",
+            wrap,
+        )
+        head.setTextFormat(Qt.TextFormat.RichText)
+        head.setWordWrap(True)
+        v.addWidget(head)
+
+        # Ответ пользователя с подсветкой
+        if self.correct:
+            user_html = (
+                f"<span style='font-family: Consolas, monospace; color:#2a7a2a;'>"
+                f"{_html_escape(self.user_answer)}</span>"
+            )
+        else:
+            user_html = _diff_highlight_html(self.user_answer, self.expected)
+
+        user_lbl = QLabel(f"&nbsp;&nbsp;ввод: {user_html}", wrap)
+        user_lbl.setTextFormat(Qt.TextFormat.RichText)
+        user_lbl.setWordWrap(True)
+        v.addWidget(user_lbl)
+
+        # Правильный ответ (показываем только если ошибка)
+        if not self.correct:
+            right = QLabel(
+                f"&nbsp;&nbsp;ответ: "
+                f"<span style='font-family: Consolas, monospace; color:#2a5a8a;'>"
+                f"{_html_escape(self.expected)}</span>",
+                wrap,
+            )
+            right.setTextFormat(Qt.TextFormat.RichText)
+            right.setWordWrap(True)
+            v.addWidget(right)
+
+        return wrap
+
+    # --- Plain / Docx ---
+
+    def render_plain(self) -> str:
+        marker = "✓" if self.correct else "✗"
+        lines = [
+            f"{marker} {self.translation}",
+            f"   ввод: {self.user_answer}",
+        ]
+        if not self.correct:
+            lines.append(f"   ответ: {self.expected}")
+        return "\n".join(lines)
+
+    def render_docx(self, doc) -> None:
+        marker = "✓" if self.correct else "✗"
+        p = doc.add_paragraph()
+        p.add_run(f"{marker} {self.translation}").bold = True
+        p2 = doc.add_paragraph()
+        p2.add_run(f"  ввод: {self.user_answer}")
+        if not self.correct:
+            p3 = doc.add_paragraph()
+            run = p3.add_run(f"  ответ: {self.expected}")
+            run.italic = True
+
+
+def _html_escape(s: str) -> str:
+    return (
+        s.replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+         .replace(" ", "&nbsp;")
+    )
+
+
+def _diff_highlight_html(user: str, expected: str) -> str:
+    """
+    Сравнить введённое и ожидаемое посимвольно через SequenceMatcher.
+    Возвращает HTML, где:
+      * совпавшие буквы — обычные (зелёные)
+      * лишние/неверные буквы пользователя — красные с подчёркиванием
+      * пропущенные буквы (из expected) — серые в скобках
+    """
+    matcher = difflib.SequenceMatcher(a=user, b=expected, autojunk=False)
+    out: list[str] = []
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == "equal":
+            out.append(
+                f"<span style='color:#2a7a2a;'>{_html_escape(user[i1:i2])}</span>"
+            )
+        elif op == "replace":
+            # Сначала показываем что ввёл пользователь (красным), потом — что
+            # должно было быть (серым в скобках).
+            out.append(
+                f"<span style='color:#aa2a2a; text-decoration: underline;'>"
+                f"{_html_escape(user[i1:i2])}</span>"
+                f"<span style='color:#999;'>"
+                f"[{_html_escape(expected[j1:j2])}]</span>"
+            )
+        elif op == "delete":
+            # Лишние буквы пользователя
+            out.append(
+                f"<span style='color:#aa2a2a; text-decoration: underline;'>"
+                f"{_html_escape(user[i1:i2])}</span>"
+            )
+        elif op == "insert":
+            # Пропущенные буквы из expected
+            out.append(
+                f"<span style='color:#999;'>[{_html_escape(expected[j1:j2])}]</span>"
+            )
+    return (
+        "<span style='font-family: Consolas, monospace;'>"
+        + "".join(out)
+        + "</span>"
+    )

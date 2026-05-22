@@ -1,243 +1,259 @@
-import random
-import math
+"""
+Главный модуль генерации физических задач.
+
+Публичный API:
+  * generate_fisic_task(config_str_or_dict) -> (condition, solution)
+        Старый интерфейс, оставлен для обратной совместимости с БД и адаптерами.
+  * FisicTask                                — готовый dataclass с условием,
+        решением и метаданными (для нового кода).
+  * generate_task(config) -> FisicTask        — основной точка входа.
+
+Структура config (JSON или dict):
+
+  {
+    "condition":     "Найдите силу при массе #m# и ускорении #a#",
+    "result_letter": "F",
+    "formula":       "m * a",                  // поддерживается ^, √, π
+    "dimension":     "Н",
+    "result": {                                 // опционально
+        "kind": "natural",                      // natural | integer | real
+        "min": 1,
+        "max": 1000
+    },
+    "max_attempts": 100,                        // опционально
+    "variables": {
+        "m": {
+            "min": 1,
+            "max": 100,
+            "kind": "natural",                  // natural | integer | real | auto
+            "step": 1,                          // опционально
+            "forbidden": [0],
+            "decimals": 2,
+            "dimension": "кг"
+        },
+        "a": {
+            "min": "0.5",
+            "max": "10^2",                      // формула в диапазоне разрешена
+            "kind": "real",
+            "decimals": 1,
+            "dimension": "м/с^2"
+        }
+    }
+  }
+"""
+
+from __future__ import annotations
 import json
+import math
+from dataclasses import dataclass, field
+from typing import Any, Mapping
+
+from .constraints import ResultConstraint
+from .expression import (
+    FormulaError, evaluate_formula, parse_formula, extract_variable_names,
+)
+from .formatting import format_number
+from .generation import VariableSpec, generate_value, parse_variable_spec
 
 
-def generate_fisic_task(task_config: str):
-    # Извлекаем данные из конфигурации
-    task_config = json.loads(task_config)
-    condition_template = task_config['condition']
-    result_letter = task_config['result_letter']
-    formula = task_config['formula']
-    dimension = task_config['dimension']
-    variables = task_config['variables']
+# ---------- Структуры данных ----------
 
-    # Максимальное количество попыток генерации
-    max_attempts = 100
-    attempt = 0
+@dataclass
+class FisicTask:
+    """Результат успешной генерации."""
+    condition: str
+    solution: str
+    values: dict[str, float] = field(default_factory=dict)
+    result: float = 0.0
+    formula: str = ""
+    meta: dict = field(default_factory=dict)
 
-    while attempt < max_attempts:
-        attempt += 1
 
-        # Генерируем случайные значения для переменных
-        generated_values = {}
-        valid_generation = True
+@dataclass
+class TaskConfig:
+    """Полностью разобранная конфигурация задачи."""
+    condition_template: str
+    result_letter: str
+    formula: str
+    dimension: str
+    variables: dict[str, VariableSpec]
+    result_constraint: ResultConstraint
+    max_attempts: int = 100
 
-        for var_name, var_config in variables.items():
-            min_val = var_config['min']
-            max_val = var_config['max']
-            forbidden = var_config.get('forbidden', [])
+    @classmethod
+    def parse(cls, config: str | dict) -> "TaskConfig":
+        if isinstance(config, str):
+            config = json.loads(config)
+        if not isinstance(config, dict):
+            raise ValueError("Конфиг задачи должен быть dict или JSON-строкой.")
 
-            # Определяем тип генерации на основе диапазона
-            value = generate_smart_value(min_val, max_val, forbidden)
+        try:
+            condition = config["condition"]
+            result_letter = config["result_letter"]
+            formula = config["formula"]
+            dimension = config.get("dimension", "")
+        except KeyError as e:
+            raise ValueError(f"В конфиге не хватает ключа: {e}")
 
-            if value is None:
-                valid_generation = False
-                break
+        # Проверим формулу заранее — лучше упасть здесь, чем в цикле генерации
+        parse_formula(formula)
 
-            generated_values[var_name] = value
+        variables = {}
+        for name, var_cfg in (config.get("variables") or {}).items():
+            variables[name] = parse_variable_spec(name, var_cfg)
 
-        if not valid_generation:
+        # Сверим, что переменные из формулы покрыты конфигом
+        used_in_formula = extract_variable_names(formula)
+        missing = used_in_formula - set(variables.keys())
+        if missing:
+            raise ValueError(
+                f"В формуле использованы переменные {sorted(missing)}, "
+                "но они не описаны в конфиге."
+            )
+
+        result_constraint = ResultConstraint.parse(config.get("result"))
+        max_attempts = int(config.get("max_attempts", 100))
+
+        return cls(
+            condition_template=condition,
+            result_letter=result_letter,
+            formula=formula,
+            dimension=dimension,
+            variables=variables,
+            result_constraint=result_constraint,
+            max_attempts=max_attempts,
+        )
+
+
+# ---------- Основной алгоритм ----------
+
+def generate_task(config: str | dict | TaskConfig) -> FisicTask:
+    """
+    Сгенерировать задачу с заданными ограничениями.
+
+    Алгоритм:
+      1. Разобрать конфиг и формулу один раз (а не в каждой попытке).
+      2. До max_attempts раз:
+         a) сгенерировать значения переменных по их спецификациям;
+         b) вычислить формулу;
+         c) проверить результат на ResultConstraint;
+         d) если ОК — собрать FisicTask и вернуть.
+      3. Если все попытки провалились — RuntimeError с диагностикой.
+    """
+    cfg = config if isinstance(config, TaskConfig) else TaskConfig.parse(config)
+
+    # Разбираем формулу один раз: это важно для производительности при
+    # большом max_attempts (ResultConstraint может потребовать много попыток).
+    parsed = parse_formula(cfg.formula)
+
+    last_error: Exception | None = None
+
+    for _ in range(cfg.max_attempts):
+        try:
+            values = {
+                name: generate_value(spec)
+                for name, spec in cfg.variables.items()
+            }
+        except RuntimeError as e:
+            # Не получилось сгенерировать одну из переменных — нет смысла
+            # продолжать, проблема в конфиге переменной.
+            raise
+
+        try:
+            result = evaluate_formula(parsed, values)
+        except (OverflowError, ValueError, ZeroDivisionError) as e:
+            last_error = e
             continue
 
-        # Вычисляем результат по формуле
-        try:
-            # Создаём локальный scope для вычислений
-            local_scope = {
-                **generated_values,
-                'sin': math.sin,
-                'cos': math.cos,
-                'tan': math.tan,
-                'sqrt': math.sqrt,
-                'log': math.log,
-                'log10': math.log10,
-                'log2': math.log2,
-                'exp': math.exp,
-                'pi': math.pi,
-                'e': math.e,
-                'g': 9.81,
-                'G': 6.67e-11,
-                'R': 8.31,
-                'k': 1.38e-23
-            }
+        if math.isinf(result) or math.isnan(result):
+            continue
 
-            # Безопасное вычисление формулы
-            result = safe_eval_formula(formula, local_scope)
+        if not cfg.result_constraint.check(result):
+            continue
 
-            # Проверяем на особые случаи
-            if math.isinf(result) or math.isnan(result):
-                continue  # Пробуем снова с другими значениями
+        result = cfg.result_constraint.normalize(result)
+        return _build_task(cfg, values, result)
 
-            # Если результат слишком большой/малый, но не бесконечность - принимаем
-            break
+    raise RuntimeError(
+        f"Не удалось сгенерировать задачу за {cfg.max_attempts} попыток. "
+        f"Возможно, ограничение на результат (kind={cfg.result_constraint.kind}) "
+        "слишком жёсткое для заданных диапазонов переменных. "
+        + (f"Последняя ошибка вычисления: {last_error}" if last_error else "")
+    )
 
-        except (OverflowError, ValueError, ZeroDivisionError):
-            continue  # Пробуем снова с другими значениями
 
-    if attempt >= max_attempts:
-        raise ValueError("Не удалось сгенерировать задание с допустимыми значениями переменных")
-
-    # Форматируем результат
-    def format_result(value):
-        if math.isinf(value):
-            return "∞" if value > 0 else "-∞"
-        elif math.isnan(value):
-            return "неопределено"
-        elif value == 0:
-            return "0"
+def _build_task(
+    cfg: TaskConfig, values: Mapping[str, float], result: float
+) -> FisicTask:
+    """Собрать готовую FisicTask из значений переменных и результата."""
+    # Подставляем значения в шаблон условия
+    condition = cfg.condition_template
+    for name, value in values.items():
+        spec = cfg.variables[name]
+        # Натуральные/целые значения форматируем без научной нотации
+        if spec.kind in ("natural", "integer"):
+            formatted = format_number(
+                value, scientific_threshold_high=float("inf")
+            )
         else:
-            abs_value = abs(value)
-            try:
-                if abs_value >= 1e6 or (abs_value < 1e-6 and abs_value > 1e-100):
-                    # Научная нотация для очень больших/малых чисел
-                    exponent = math.floor(math.log10(abs_value))
-                    coefficient = value / (10 ** exponent)
-                    # Стараемся показать коэффициент как целое число, если возможно
-                    if abs(coefficient - round(coefficient)) < 1e-10:
-                        return f"{int(round(coefficient))}×10^{exponent}"
-                    else:
-                        return f"{coefficient:.2f}×10^{exponent}"
-                elif abs_value >= 1000 or (abs_value < 0.001 and abs_value > 1e-15):
-                    # Научная нотация с меньшей точностью
-                    exponent = math.floor(math.log10(abs_value))
-                    coefficient = value / (10 ** exponent)
-                    if abs(coefficient - round(coefficient)) < 1e-10:
-                        return f"{int(round(coefficient))}×10^{exponent}"
-                    else:
-                        return f"{coefficient:.2f}×10^{exponent}"
-                else:
-                    # Обычная запись, стараемся показывать целые числа
-                    if abs(value - round(value)) < 1e-10:
-                        return str(int(round(value)))
-                    else:
-                        return f"{value:.4f}".rstrip('0').rstrip('.')
-            except (OverflowError, ValueError):
-                # Резервное форматирование
-                return f"{value:.2e}"
+            formatted = format_number(value, decimals=spec.decimals)
+        replacement = f"{formatted} {spec.dimension}".strip()
+        condition = condition.replace(f"#{name}#", replacement)
 
-    formatted_result = format_result(result)
+    # Форматируем результат. Для натуральных/целых результатов отключаем
+    # научную нотацию, иначе 87000 покажется как 8.7×10^4 — менее наглядно.
+    if cfg.result_constraint.kind in ("natural", "integer"):
+        formatted_result = format_number(
+            result, scientific_threshold_high=float("inf")
+        )
+    else:
+        formatted_result = format_number(result)
 
-    def format_variable_value(value: float) -> str:
-        # Научная нотация для очень больших/малых
-        abs_v = abs(value)
-        if abs_v >= 1e4 or (abs_v != 0 and abs_v < 1e-3):
-            # Пример: 1.23×10^5, 4.56×10^{-3}
-            exp = math.floor(math.log10(abs_v)) if abs_v > 0 else 0
-            coeff = value / (10 ** exp)
-            # coeff с 2–3 значащими цифрами
-            coeff_str = f"{coeff:.3g}"  # .3g = до 3 значащих цифр
-            return f"{coeff_str}×10^{{{exp}}}"
+    solution = f"{cfg.result_letter} = {formatted_result}"
+    if cfg.dimension:
+        solution += f" {cfg.dimension}"
 
-        # Обычные числа: убираем лишние нули
-        if abs(value - round(value)) < 1e-10:
-            return str(int(round(value)))
-        s = f"{value:.3f}".rstrip('0').rstrip('.')
-        return s or '0'
-
-    # Формируем условие задачи
-    condition = condition_template
-    for var_name, value in generated_values.items():
-        dim = variables[var_name]["dimension"]
-        formatted_value = format_variable_value(value)
-        condition = condition.replace(f'#{var_name}#', f"{formatted_value} {dim}")
-
-    # Формируем итоговое задание
-    task = {
-        'условие': condition,
-        'решение': f"{result_letter} = {formatted_result} {dimension}",
-        'исходные_данные': generated_values,
-        'формула': formula
-    }
-
-    return task["условие"], task["решение"]
+    return FisicTask(
+        condition=condition,
+        solution=solution,
+        values=dict(values),
+        result=result,
+        formula=cfg.formula,
+        meta={
+            "result_kind": cfg.result_constraint.kind,
+        },
+    )
 
 
-def generate_smart_value(min_val: float, max_val: float, forbidden: list = None, max_attempts: int = 20) -> float:
+# ---------- Старый API для обратной совместимости ----------
+
+def generate_fisic_task(task_config: str | dict) -> tuple[str, str]:
     """
-    Генерирует значение в [min_val, max_val], избегая forbidden.
-    Отдаёт предпочтение целым числам, иначе — дробям с ≤3 знаками после запятой.
+    Старый интерфейс. Возвращает кортеж (условие, решение).
+    Используется адаптером FisicConstructorGenerator и тестами.
     """
-    if forbidden is None:
-        forbidden = []
-
-    for _ in range(max_attempts):
-        # Пытаемся сгенерировать целое число (если диапазон ≥1)
-        if max_val - min_val >= 1.0:
-            lo = math.ceil(min_val)
-            hi = math.floor(max_val)
-            if lo <= hi:
-                value = float(random.randint(lo, hi))
-            else:
-                value = round(random.uniform(min_val, max_val), 2)
-        else:
-            # Дробное число → округляем до 3 знаков
-            value = round(random.uniform(min_val, max_val), 2)
-
-        # Проверка на запрещённые значения (с учётом погрешности float)
-        if not any(abs(value - f) < 1e-9 for f in forbidden):
-            return value
-
-    # Fallback: просто возвращаем округлённое случайное
-    return round(random.uniform(min_val, max_val), 2)
+    task = generate_task(task_config)
+    return task.condition, task.solution
 
 
-def safe_eval_formula(formula, local_scope):
-    """
-    Безопасное вычисление математических формул с обработкой больших значений
-    """
-    try:
-        result = eval(formula, {}, local_scope)
+# ---------- Пример конфигурации (для ручного запуска) ----------
 
-        # Проверяем на переполнение
-        if abs(result) > 1e100 and ('**' in formula or 'exp(' in formula):
-            # Для формул с экспонентами пытаемся вычислить логарифм
-            try:
-                log_formula = f"math.log(abs({formula}))" if formula else "0"
-                log_result = eval(log_formula, {}, {**local_scope, 'math': math})
-                if log_result > 700:  # e^700 ~ 10^304
-                    return float('inf')
-                # Восстанавливаем знак
-                sign = eval(f"1 if ({formula}) >= 0 else -1", {}, local_scope)
-                return sign * math.exp(log_result)
-            except:
-                return float('inf')
-
-        return result
-    except OverflowError:
-        # Для формул с экспонентами пытаемся вычислить логарифм
-        try:
-            log_formula = f"math.log(abs({formula}))" if formula else "0"
-            log_result = eval(log_formula, {}, {**local_scope, 'math': math})
-            if log_result > 700:
-                return float('inf')
-            # Восстанавливаем знак
-            sign = eval(f"1 if ({formula}) >= 0 else -1", {}, local_scope)
-            return sign * math.exp(log_result)
-        except:
-            raise OverflowError("Результат слишком большой для вычисления")
-
-
-# Пример конфигурации для формулы мощности сигнала
-config_example = '''
+EXAMPLE_CONFIG = '''
 {
-    "condition": "Дана спектральная плотность мощности шума N0 = #N0# Вт/Гц, объём канала связи V = #V# бит, полоса пропускания сигнала Δf = #Δf# Гц, время передачи T = #T# с. Найдите мощность сигнала Pc.",
-    "result_letter": "Pc",
-    "formula": "N0 * Δf * (2 ** (V / (Δf * T)) - 1)",
-    "dimension": "Вт",
-    "variables": {
-        "N0": {"min": 1e-20, "max": 1e-15, "dimension": "Вт/Гц", "forbidden": []},
-        "V": {"min": 1000, "max": 10000, "dimension": "бит", "forbidden": []},
-        "Δf": {"min": 1000, "max": 10000, "dimension": "Гц", "forbidden": []},
-        "T": {"min": 0.1, "max": 10.0, "dimension": "с", "forbidden": []}
-    }
+  "condition": "В книге #pages# страниц. На каждой странице #words# слов. Сколько всего слов в книге?",
+  "result_letter": "N",
+  "formula": "pages * words",
+  "dimension": "слов",
+  "result": {"kind": "natural", "min": 100},
+  "variables": {
+    "pages":  {"min": 50,  "max": 500,  "kind": "natural", "dimension": "стр"},
+    "words":  {"min": 100, "max": 400,  "kind": "natural", "dimension": "сл/стр"}
+  }
 }
 '''
 
-# Пример использования
+
 if __name__ == "__main__":
-    try:
-        condition, solution = generate_fisic_task(config_example)
-        print("Условие:", condition)
-        print("Решение:", solution)
-    except Exception as e:
-        print(f"Ошибка: {e}")
+    cond, sol = generate_fisic_task(EXAMPLE_CONFIG)
+    print("Условие:", cond)
+    print("Решение:", sol)

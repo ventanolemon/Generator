@@ -1,7 +1,8 @@
 """
 Инфраструктурные функции рендеринга.
 
-Используются блоками и не предназначены для прямого вызова из модулей.
+Вся логика нормализации LaTeX вынесена в core/latex.py. Здесь только
+конкретные пайплайны рендера: matplotlib mathtext, PIL → Qt, и т.п.
 """
 
 from __future__ import annotations
@@ -11,6 +12,12 @@ from typing import Optional
 
 from PyQt6.QtGui import QPixmap, QImage
 
+from .latex import canonical_latex
+
+
+# ============================================================
+# Рендер LaTeX в QPixmap (Qt-предпросмотр)
+# ============================================================
 
 def latex_to_pixmap(latex: str, fontsize: int = 14, dpi: int = 130) -> Optional[QPixmap]:
     """
@@ -27,9 +34,9 @@ def latex_to_pixmap(latex: str, fontsize: int = 14, dpi: int = 130) -> Optional[
 
     try:
         buf = io.BytesIO()
-        # mathtext умеет рендерить ограниченный набор LaTeX, но достаточный для математики
         prop = font_manager.FontProperties(size=fontsize)
-        mathtext.math_to_image(f"${latex}$", buf, prop=prop, dpi=dpi, format="png")
+        s = canonical_latex(latex)
+        mathtext.math_to_image(f"${s}$", buf, prop=prop, dpi=dpi, format="png")
         buf.seek(0)
         img = QImage()
         img.loadFromData(buf.getvalue(), "PNG")
@@ -41,7 +48,8 @@ def latex_to_pixmap(latex: str, fontsize: int = 14, dpi: int = 130) -> Optional[
 def latex_to_docx_image(doc, latex: str, fontsize: int = 14, dpi: int = 200) -> None:
     """
     Вставить LaTeX-формулу в docx-документ как изображение.
-    Если рендер не удался — пишем формулу как текст.
+    При ошибке рендера — вставляем как текст с долларами (визуально видно
+    пользователю, что именно сломалось).
     """
     try:
         import matplotlib
@@ -51,17 +59,20 @@ def latex_to_docx_image(doc, latex: str, fontsize: int = 14, dpi: int = 200) -> 
 
         buf = io.BytesIO()
         prop = font_manager.FontProperties(size=fontsize)
-        mathtext.math_to_image(f"${latex}$", buf, prop=prop, dpi=dpi, format="png")
+        s = canonical_latex(latex)
+        mathtext.math_to_image(f"${s}$", buf, prop=prop, dpi=dpi, format="png")
         buf.seek(0)
         doc.add_picture(buf)
     except Exception:
         doc.add_paragraph(f"${latex}$")
 
 
+# ============================================================
+# Конвертация PIL.Image / bytes / путь → QPixmap
+# ============================================================
+
 def pil_to_qpixmap(image) -> Optional[QPixmap]:
-    """
-    Конвертировать PIL.Image / bytes / путь в QPixmap.
-    """
+    """Конвертировать PIL.Image / bytes / путь в QPixmap."""
     from PIL import Image as PILImage
 
     try:

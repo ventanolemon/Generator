@@ -51,6 +51,14 @@ class InteractiveTaskView(QWidget):
         self.history_scroll.setWidget(self.history_holder)
         root.addWidget(self.history_scroll, stretch=1)
 
+        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        # Подключаем автоматическую прокрутку вниз при любом изменении высоты контента
+        v_scrollbar = self.history_scroll.verticalScrollBar()
+        v_scrollbar.rangeChanged.connect(
+            lambda min_val, max_val: v_scrollbar.setValue(max_val)
+        )
+        # -------------------------
+
         # Текущий промпт
         self.prompt_holder = QWidget(self)
         self.prompt_layout = QVBoxLayout(self.prompt_holder)
@@ -93,9 +101,9 @@ class InteractiveTaskView(QWidget):
         if not text:
             return
         result = self.task.submit(text)
-        # перенесём текущий промпт в историю
-        self._archive_current_prompt(text, result.correct)
-        # покажем фидбек в истории
+        # Просто добавляем feedback. Сам блок (например, WordCorrectionBlock)
+        # уже содержит и условие, и ответ пользователя, и правильный ответ —
+        # дублировать вручную не надо.
         self._append_history(result.feedback)
 
         self.score_total += 1
@@ -114,22 +122,10 @@ class InteractiveTaskView(QWidget):
         widget = render_blocks(blocks, self.prompt_holder)
         self.prompt_layout.addWidget(widget)
 
-    def _archive_current_prompt(self, user_answer: str, correct: bool) -> None:
-        # Снимаем текущий промпт и кладём его в историю с пометкой
-        # Простой способ: текстовая запись
-        marker = "✓" if correct else "✗"
-        lbl = QLabel(f"  {marker} ваш ответ: {user_answer}", self.history_holder)
-        lbl.setStyleSheet(
-            "color: #2a7a2a;" if correct else "color: #aa2a2a;"
-        )
-        self.history_layout.addWidget(lbl)
-
     def _append_history(self, blocks) -> None:
         widget = render_blocks(blocks, self.history_holder)
         self.history_layout.addWidget(widget)
-        # автоскролл вниз
-        bar = self.history_scroll.verticalScrollBar()
-        bar.setValue(bar.maximum())
+        # Автоскролл вниз обрабатывается через сигнал rangeChanged в _build_ui
 
     def _update_score(self) -> None:
         self.score_label.setText(

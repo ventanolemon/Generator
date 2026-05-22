@@ -136,11 +136,16 @@ def build_registry(repo: Repository, words_dir: Path) -> GeneratorRegistry:
 # ---------- Фабрики ----------
 
 def _register_fisic(registry: GeneratorRegistry, part) -> None:
-    raw_config = json.dumps(part.generation_params, ensure_ascii=False) \
-        if "raw" not in part.generation_params \
-        else part.generation_params["raw"]
+    """Раздел-конструктор физики. Конфиг передаётся как dict."""
+    config_dict = part.generation_params
+    # Если конфиг был не-JSON (хранится под "raw") — попытаемся распарсить.
+    if "raw" in config_dict:
+        try:
+            config_dict = json.loads(config_dict["raw"])
+        except (json.JSONDecodeError, TypeError):
+            config_dict = {}
 
-    def factory(_params: dict, _pid=part.id, _name=part.name, _cfg=raw_config):
+    def factory(_params: dict, _pid=part.id, _name=part.name, _cfg=config_dict):
         return FisicConstructorGenerator(
             partition_id=_pid, name=_name, config=_cfg
         )
