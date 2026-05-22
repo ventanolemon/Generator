@@ -9,7 +9,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-    QScrollArea, QLabel
+    QScrollArea, QLabel, QCheckBox
 )
 
 from core import Capability, InteractiveTask, TaskGenerator
@@ -40,8 +40,24 @@ class InteractiveTaskView(QWidget):
         title.setStyleSheet("font-size: 14pt; font-weight: bold;")
         root.addWidget(title)
 
+        # Строка со счётом и (если поддерживается) переключателем мягкой проверки
+        status_row = QHBoxLayout()
         self.score_label = QLabel("", self)
-        root.addWidget(self.score_label)
+        status_row.addWidget(self.score_label)
+        status_row.addStretch()
+
+        self.tolerant_chk: QCheckBox | None = None
+        if hasattr(self.generator, "tolerant"):
+            self.tolerant_chk = QCheckBox("Толерантная проверка (опечатки)", self)
+            self.tolerant_chk.setToolTip(
+                "Принимать мелкие опечатки: расстояние Левенштейна "
+                "≤ 1 для слов длиной до 6 символов и ≤ 2 для более длинных. "
+                "Правильное написание всё равно показывается в обратной связи."
+            )
+            self.tolerant_chk.setChecked(bool(self.generator.tolerant))
+            self.tolerant_chk.toggled.connect(self._on_tolerant_toggled)
+            status_row.addWidget(self.tolerant_chk)
+        root.addLayout(status_row)
 
         # История ходов
         self.history_scroll = QScrollArea(self)
@@ -131,6 +147,17 @@ class InteractiveTaskView(QWidget):
         self.score_label.setText(
             f"Счёт: {self.score_correct} / {self.score_total}"
         )
+
+    def _on_tolerant_toggled(self, checked: bool) -> None:
+        """
+        Переключение мягкой проверки из GUI. Записываем флаг и в генератор
+        (чтобы рестарт сохранил выбор), и в текущую сессию (чтобы применился
+        к следующему же ответу без перезапуска).
+        """
+        if hasattr(self.generator, "tolerant"):
+            self.generator.tolerant = checked
+        if self.task is not None and hasattr(self.task, "tolerant"):
+            self.task.tolerant = checked
 
     def _show_finish(self) -> None:
         clear_layout(self.prompt_layout)

@@ -229,6 +229,10 @@ class WordCorrectionBlock(Block):
       user_answer     — что ввёл пользователь
       expected        — правильное английское слово
       correct         — True/False общая оценка
+      tolerant_accept — ответ принят мягким режимом (Левенштейн), но
+                        не совпадает посимвольно с expected. В этом случае
+                        diff и правильное написание всё равно показываются,
+                        чтобы формирующая обратная связь не терялась.
     """
 
     def __init__(
@@ -237,11 +241,13 @@ class WordCorrectionBlock(Block):
         user_answer: str,
         expected: str,
         correct: bool,
+        tolerant_accept: bool = False,
     ):
         self.translation = translation
         self.user_answer = user_answer
         self.expected = expected
         self.correct = correct
+        self.tolerant_accept = tolerant_accept
 
     # --- Qt ---
 
@@ -251,9 +257,13 @@ class WordCorrectionBlock(Block):
         v.setContentsMargins(4, 4, 4, 4)
         v.setSpacing(2)
 
-        # Иконка-маркер + перевод
-        marker = "✓" if self.correct else "✗"
-        color = "#2a7a2a" if self.correct else "#aa2a2a"
+        # Иконка-маркер + перевод. Принято с опечатками — отдельный знак "≈".
+        if self.correct and self.tolerant_accept:
+            marker, color = "≈", "#a07a1a"
+        elif self.correct:
+            marker, color = "✓", "#2a7a2a"
+        else:
+            marker, color = "✗", "#aa2a2a"
         head = QLabel(
             f"<span style='color:{color}; font-weight:bold;'>{marker}</span> "
             f"<span style='color:#555;'>{_html_escape(self.translation)}</span>",
@@ -263,8 +273,9 @@ class WordCorrectionBlock(Block):
         head.setWordWrap(True)
         v.addWidget(head)
 
-        # Ответ пользователя с подсветкой
-        if self.correct:
+        # Ответ пользователя. Зелёный сплошной — только при строгом совпадении.
+        # Если принято мягко — рисуем тот же diff, что и при ошибке.
+        if self.correct and not self.tolerant_accept:
             user_html = (
                 f"<span style='font-family: Consolas, monospace; color:#2a7a2a;'>"
                 f"{_html_escape(self.user_answer)}</span>"
@@ -277,8 +288,8 @@ class WordCorrectionBlock(Block):
         user_lbl.setWordWrap(True)
         v.addWidget(user_lbl)
 
-        # Правильный ответ (показываем только если ошибка)
-        if not self.correct:
+        # Правильный ответ — при ошибке или при мягком принятии.
+        if not self.correct or self.tolerant_accept:
             right = QLabel(
                 f"&nbsp;&nbsp;ответ: "
                 f"<span style='font-family: Consolas, monospace; color:#2a5a8a;'>"
@@ -294,22 +305,32 @@ class WordCorrectionBlock(Block):
     # --- Plain / Docx ---
 
     def render_plain(self) -> str:
-        marker = "✓" if self.correct else "✗"
+        if self.correct and self.tolerant_accept:
+            marker = "≈"
+        elif self.correct:
+            marker = "✓"
+        else:
+            marker = "✗"
         lines = [
             f"{marker} {self.translation}",
             f"   ввод: {self.user_answer}",
         ]
-        if not self.correct:
+        if not self.correct or self.tolerant_accept:
             lines.append(f"   ответ: {self.expected}")
         return "\n".join(lines)
 
     def render_docx(self, doc) -> None:
-        marker = "✓" if self.correct else "✗"
+        if self.correct and self.tolerant_accept:
+            marker = "≈"
+        elif self.correct:
+            marker = "✓"
+        else:
+            marker = "✗"
         p = doc.add_paragraph()
         p.add_run(f"{marker} {self.translation}").bold = True
         p2 = doc.add_paragraph()
         p2.add_run(f"  ввод: {self.user_answer}")
-        if not self.correct:
+        if not self.correct or self.tolerant_accept:
             p3 = doc.add_paragraph()
             run = p3.add_run(f"  ответ: {self.expected}")
             run.italic = True
