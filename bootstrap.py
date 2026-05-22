@@ -15,10 +15,11 @@ Bootstrap — единственное место, где соединяются
 from __future__ import annotations
 import json
 from pathlib import Path
+from typing import Callable, Optional
 
 from core import (
     Capability, GeneratorRegistry, Repository, TaskGenerator,
-    GroupGenerator, TestGenerator,
+    GroupGenerator, TestGenerator, WordStatsStore,
 )
 
 from exercises.linal.generators import (
@@ -32,6 +33,10 @@ from exercises.opvs.generators import (
 )
 from exercises.fisic import FisicConstructorGenerator
 from exercises.english.generators import english_generators_for_path
+
+
+# Поставщик текущего user_id. Передаётся замыканием из main.py.
+UserIdProvider = Callable[[], Optional[str]]
 
 
 # ---------- Конфигурация: какой code-генератор к какому subject_id ----------
@@ -68,6 +73,9 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
     repo.ensure_subject(10, "Производные",           "Математический анализ")
     repo.ensure_subject(11, "ОПВС",                  "ОПВС")
 
+    # Таблица WordStats для межсессионной памяти словарного тренажёра.
+    repo.ensure_word_stats_table()
+
     for subject_id, gen in CODE_GENERATORS:
         if gen.partition_id is None:
             continue
@@ -101,7 +109,13 @@ def _english_display_name(path: Path) -> str:
 
 # ---------- Сборка реестра ----------
 
-def build_registry(repo: Repository, words_dir: Path) -> GeneratorRegistry:
+def build_registry(
+    repo: Repository,
+    words_dir: Path,
+    *,
+    stats_store: WordStatsStore | None = None,
+    user_id_provider: UserIdProvider | None = None,
+) -> GeneratorRegistry:
     registry = GeneratorRegistry()
 
     # 1. Code-only генераторы
@@ -114,7 +128,11 @@ def build_registry(repo: Repository, words_dir: Path) -> GeneratorRegistry:
         for i, path in enumerate(sorted(words_dir.glob("*.json"))):
             pid = 1000 + i
             display = _english_display_name(path)
-            gen = english_generators_for_path(path, pid, name=display)
+            gen = english_generators_for_path(
+                path, pid, name=display,
+                stats_store=stats_store,
+                user_id_provider=user_id_provider,
+            )
             if gen is not None:
                 registry.register(gen)
 

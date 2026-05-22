@@ -13,6 +13,7 @@ from .generator import TaskGenerator, Capability, STATIC_DEFAULT
 from .registry import GeneratorRegistry, GeneratorFactory
 from .composites import GroupGenerator, TestGenerator
 from .repository import Repository, Subject, Partition
+from .word_stats import WordStat, WordStatsStore
 
 __all__ = [
     # content
@@ -29,4 +30,5 @@ __all__ = [
     "GroupGenerator", "TestGenerator",
     # data
     "Repository", "Subject", "Partition",
+    "WordStat", "WordStatsStore",
 ]
