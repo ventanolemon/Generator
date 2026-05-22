@@ -49,6 +49,38 @@ def _read_json_lenient(path: Path):
     raise OSError(f"Не удалось прочитать JSON {path!s}.")
 
 
+def _levenshtein(a: str, b: str) -> int:
+    """
+    Расстояние Левенштейна — минимальное число односимвольных операций
+    (вставка, удаление, замена), переводящих строку a в b.
+    Классическая ДП с двумя строками — O(len(a) * len(b)) по времени,
+    O(len(b)) по памяти.
+    """
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        curr = [i] + [0] * len(b)
+        for j, cb in enumerate(b, start=1):
+            cost = 0 if ca == cb else 1
+            curr[j] = min(
+                curr[j - 1] + 1,     # вставка
+                prev[j] + 1,         # удаление
+                prev[j - 1] + cost,  # замена
+            )
+        prev = curr
+    return prev[-1]
+
+
+def _tolerant_threshold(word: str) -> int:
+    """Порог расстояния Левенштейна для слова: 1 при длине ≤ 6, иначе 2."""
+    return 1 if len(word) <= 6 else 2
+
+
 # ---------- WordsTrainerGenerator (INTERACTIVE) ----------
 
 class WordsSession(InteractiveTask):
@@ -72,7 +104,7 @@ class WordsSession(InteractiveTask):
 
     meta: dict = {}
 
-    def __init__(self, words_dict: dict[str, str]):
+    def __init__(self, words_dict: dict[str, str], tolerant: bool = False):
         # _remaining: {english: russian}
         self._remaining: dict[str, str] = dict(words_dict)
         self._total: int = len(self._remaining)
@@ -81,6 +113,10 @@ class WordsSession(InteractiveTask):
         # Буферы антиповтора и ошибок (имена и логика — из words_test.py)
         self._last: list[str] = []
         self._last_wrong: list[str] = []
+
+        # Мягкая проверка: ответы с расстоянием Левенштейна ≤ порога
+        # засчитываются как правильные. Переключается из GUI на лету.
+        self.tolerant: bool = bool(tolerant)
 
     # ---------- Выбор следующего слова ----------
 
@@ -143,7 +179,14 @@ class WordsSession(InteractiveTask):
         expected = self._current
         translation = self._remaining[expected]
         user = user_input.strip()
-        ok = user.lower() == expected.lower()
+
+        strict_ok = user.lower() == expected.lower()
+        # tolerant_accept — приняли благодаря мягкому режиму, посимвольно не равно.
+        tolerant_accept = False
+        if self.tolerant and not strict_ok and user:
+            distance = _levenshtein(user.lower(), expected.lower())
+            tolerant_accept = distance <= _tolerant_threshold(expected)
+        ok = strict_ok or tolerant_accept
 
         # Feedback с подсветкой ошибок: новый блок WordCorrectionBlock
         feedback: List[Block] = [
@@ -152,6 +195,7 @@ class WordsSession(InteractiveTask):
                 user_answer=user,
                 expected=expected,
                 correct=ok,
+                tolerant_accept=tolerant_accept,
             )
         ]
 
@@ -183,6 +227,9 @@ class WordsTrainerGenerator(TaskGenerator):
         self.partition_id = partition_id
         self.words_path = Path(words_path)
         self._cache = None
+        # Состояние мягкой проверки. Хранится на генераторе, чтобы при
+        # рестарте сессии (кнопка «Заново») значение из GUI сохранялось.
+        self.tolerant: bool = False
 
     def _load(self) -> dict[str, str]:
         if self._cache is None:
@@ -268,7 +315,7 @@ class WordsTrainerGenerator(TaskGenerator):
         return title
 
     def generate(self) -> InteractiveTask:
-        return WordsSession(self._load())
+        return WordsSession(self._load(), tolerant=self.tolerant)
 
 
 # ---------- SentenceFillGenerator (STATIC + динамический блок) ----------
