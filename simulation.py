@@ -53,7 +53,6 @@ sys.path.insert(0, str(ROOT))
 from exercises.english.generators import (
     WordsSession, WordsTrainerGenerator, _read_json_lenient,
 )
-from core import WordStatsStore, WordStat
 
 
 # ---------- Baseline ----------
@@ -216,159 +215,6 @@ def _extract_metrics(
     )
 
 
-# ---------- Межсессионный бенчмарк (две сессии подряд) ----------
-
-class _NullRepo:
-    """
-    Заглушка Repository для гостевого WordStatsStore. Гостевой режим
-    (user_id=None) хранит статистику в памяти и к БД не обращается; нужен
-    лишь no-op ensure_word_stats_table при конструировании store.
-
-    Так межсессионный прогон не зависит от файла БД и быстр, при этом
-    использует ровно ту же логику WordStatsStore.fetch/record и
-    WordsSession._pick_next, что и SQLite-путь авторизованных пользователей.
-    """
-
-    def ensure_word_stats_table(self) -> None:
-        return None
-
-
-@dataclass
-class CrossSessionMetrics:
-    """Метрики одного двухсессионного прогона над общим словарём."""
-    config: str               # "baseline" (без памяти) или "smart"
-    priority_recent_wrong: float | None
-    trial_id: int
-    pool_size: int
-    n_first: int              # фактически измерено шагов в начале сессии 2
-    hist_wrong_count: int     # сколько слов стали «исторически ошибочными»
-    chance_frac: float        # hist_wrong_count / pool_size — уровень случайности
-    observed_first_n: int     # из первых N шагов попали в hist_wrong
-    observed_frac: float      # observed_first_n / n_first
-    lift: float               # observed_frac / chance_frac (во сколько раз выше случайности)
-
-
-def _historically_wrong_set(stats: dict[str, WordStat]) -> set[str]:
-    """
-    «Исторически ошибочные» слова: ошибались хотя бы раз и не реже, чем
-    отвечали верно. Совпадает с критерием WordsSession._historically_wrong
-    (без учёта давности, т.к. сессии идут подряд).
-    """
-    return {
-        term for term, st in stats.items()
-        if st.times_wrong > 0 and st.times_wrong >= st.times_correct
-    }
-
-
-def _drain_session(sess, words: dict[str, str], p: float, max_steps: int) -> None:
-    """Прогнать сессию до конца с виртуальным учеником (вероятность p)."""
-    while not sess.is_finished():
-        w = sess._current
-        if w is None:
-            break
-        ok = random.random() < p
-        sess.submit(w if ok else "WRONG_ANSWER")
-        if max_steps <= 0:
-            break
-        max_steps -= 1
-
-
-def _capture_first_n(sess, p: float, n_first: int) -> list[str]:
-    """
-    Снять слова, показанные на первых n_first шагах сессии (промпт перед
-    ответом), параллельно отвечая с вероятностью p, чтобы сессия жила.
-    """
-    shown: list[str] = []
-    steps = 0
-    while not sess.is_finished() and steps < n_first:
-        w = sess._current
-        if w is None:
-            break
-        shown.append(w)
-        ok = random.random() < p
-        sess.submit(w if ok else "WRONG_ANSWER")
-        steps += 1
-    return shown
-
-
-# pr сессии 1 фиксирован — это «обычная первая тренировка» штатным алгоритмом.
-# На множество ошибочных слов pr не влияет (оно определяется ответами ученика).
-SESSION1_PRIORITY = 0.4
-
-
-def run_cross_session_trial(
-    config: str,
-    pr: float | None,
-    words: dict[str, str],
-    p1: float,
-    p2: float,
-    n_first: int,
-    trial_id: int,
-) -> CrossSessionMetrics:
-    """
-    Один двухсессионный прогон над одним словарём:
-
-      1. Сессия 1 (p=p1) штатным WordsSession с общим WordStatsStore —
-         накапливает ошибки в память.
-      2. Снимаем «исторически ошибочный» набор после сессии 1.
-      3. Сессия 2 (p=p2) на тех же словах:
-           * config="baseline" — RandomChoiceSession, статистику игнорирует
-             (контрфактическое «без памяти»);
-           * config="smart"    — WordsSession с подгруженной из store
-             статистикой и заданным priority_recent_wrong.
-      4. Метрика — доля «исторически ошибочных» среди первых n_first шагов
-         сессии 2 и её отношение к уровню случайности (lift).
-
-    Гостевой store создаётся свежим на каждый прогон, поэтому статистика
-    одного прогона не протекает в другой.
-    """
-    pool_size = len(words)
-    store = WordStatsStore(_NullRepo())  # свежая in-memory память на прогон
-    max_steps = MAX_STEPS_FACTOR * max(1, pool_size)
-
-    # --- Сессия 1: накапливаем ошибки ---
-    s1 = WordsSession(
-        words, stats_store=store, user_id=None,
-        priority_recent_wrong=SESSION1_PRIORITY,
-    )
-    s1.initial_prompt()
-    _drain_session(s1, words, p1, max_steps)
-
-    # --- «Истина»: исторически ошибочные после сессии 1 ---
-    stats_after = store.fetch(None, list(words.keys()))
-    hist_wrong = _historically_wrong_set(stats_after)
-    chance_frac = (len(hist_wrong) / pool_size) if pool_size else 0.0
-
-    # --- Сессия 2: тот же словарь, статистика подгружена ---
-    if config == "baseline":
-        s2 = RandomChoiceSession(words)  # память игнорируется
-    else:
-        s2 = WordsSession(
-            words, stats_store=store, user_id=None,
-            priority_recent_wrong=(pr if pr is not None else 0.0),
-        )
-    s2.initial_prompt()
-    first_words = _capture_first_n(s2, p2, n_first)
-
-    n = len(first_words)
-    observed = sum(1 for w in first_words if w in hist_wrong)
-    observed_frac = (observed / n) if n else 0.0
-    lift = (observed_frac / chance_frac) if chance_frac > 0 else 0.0
-
-    return CrossSessionMetrics(
-        config=config,
-        priority_recent_wrong=pr,
-        trial_id=trial_id,
-        pool_size=pool_size,
-        n_first=n,
-        hist_wrong_count=len(hist_wrong),
-        chance_frac=chance_frac,
-        observed_first_n=observed,
-        observed_frac=observed_frac,
-        lift=lift,
-    )
-
-
 # ---------- CSV ----------
 
 def write_csvs(trials: list[TrialMetrics], out_dir: Path) -> None:
@@ -417,66 +263,6 @@ def write_csvs(trials: list[TrialMetrics], out_dir: Path) -> None:
                 f"{statistics.mean(max_shows):.2f}",
                 f"{statistics.mean(dists):.3f}",
                 f"{statistics.mean(fracs):.4f}",
-            ])
-
-
-def _cross_key(m: CrossSessionMetrics) -> tuple[str, float]:
-    """Ключ группировки межсессионных прогонов: (config, pr|-1)."""
-    return (m.config, m.priority_recent_wrong
-            if m.priority_recent_wrong is not None else -1.0)
-
-
-def _cross_label(config: str, pr: float) -> str:
-    if config == "baseline":
-        return "baseline\n(без памяти)"
-    return f"smart\npr={pr:g}"
-
-
-def write_cross_csvs(cross: list[CrossSessionMetrics], out_dir: Path) -> None:
-    # Построчно
-    with (out_dir / "cross_session_trials.csv").open(
-        "w", newline="", encoding="utf-8"
-    ) as f:
-        w = csv.writer(f)
-        w.writerow([
-            "trial_id", "config", "priority_recent_wrong", "pool_size",
-            "n_first", "hist_wrong_count", "chance_frac",
-            "observed_first_n", "observed_frac", "lift",
-        ])
-        for m in cross:
-            w.writerow([
-                m.trial_id, m.config,
-                "" if m.priority_recent_wrong is None else m.priority_recent_wrong,
-                m.pool_size, m.n_first, m.hist_wrong_count,
-                f"{m.chance_frac:.4f}", m.observed_first_n,
-                f"{m.observed_frac:.4f}", f"{m.lift:.3f}",
-            ])
-
-    # Агрегаты по (config, pr)
-    grouped: dict[tuple[str, float], list[CrossSessionMetrics]] = defaultdict(list)
-    for m in cross:
-        grouped[_cross_key(m)].append(m)
-
-    with (out_dir / "cross_session_summary.csv").open(
-        "w", newline="", encoding="utf-8"
-    ) as f:
-        w = csv.writer(f)
-        w.writerow([
-            "config", "priority_recent_wrong", "trials",
-            "mean_observed_frac", "std_observed_frac",
-            "mean_chance_frac", "mean_lift",
-        ])
-        for key in sorted(grouped.keys(), key=lambda k: (k[0] != "baseline", k[1])):
-            ms = grouped[key]
-            obs = [m.observed_frac for m in ms]
-            chance = [m.chance_frac for m in ms]
-            lifts = [m.lift for m in ms]
-            w.writerow([
-                key[0], "" if key[1] < 0 else key[1], len(ms),
-                f"{statistics.mean(obs):.4f}",
-                f"{statistics.stdev(obs) if len(obs) > 1 else 0.0:.4f}",
-                f"{statistics.mean(chance):.4f}",
-                f"{statistics.mean(lifts):.3f}",
             ])
 
 
@@ -610,57 +396,12 @@ def plot_repeat_distances(trials, out_path: Path) -> None:
     plt.close()
 
 
-def plot_cross_session(cross: list[CrossSessionMetrics], out_path: Path) -> None:
-    """
-    Бар: доля «исторически ошибочных» слов среди первых N шагов сессии 2,
-    по конфигурациям. Пунктир — уровень случайности (средний chance_frac):
-    столько ошибочных слов попало бы в начало при выборе без памяти.
-    """
-    grouped: dict[tuple[str, float], list[CrossSessionMetrics]] = defaultdict(list)
-    for m in cross:
-        grouped[_cross_key(m)].append(m)
-    keys = sorted(grouped.keys(), key=lambda k: (k[0] != "baseline", k[1]))
-
-    obs_means = [statistics.mean([m.observed_frac for m in grouped[k]]) for k in keys]
-    obs_stds = [
-        statistics.stdev([m.observed_frac for m in grouped[k]])
-        if len(grouped[k]) > 1 else 0.0 for k in keys
-    ]
-    chance_mean = statistics.mean([m.chance_frac for m in cross]) if cross else 0.0
-    n_first = cross[0].n_first if cross else 0
-
-    colors = ["#7f7f7f" if k[0] == "baseline" else "#2ca02c" for k in keys]
-
-    fig, ax = plt.subplots(figsize=(9, 5.5))
-    x = np.arange(len(keys))
-    bars = ax.bar(x, obs_means, yerr=obs_stds, color=colors,
-                  capsize=4, edgecolor="#333")
-    ax.axhline(chance_mean, color="#d62728", linestyle="--", linewidth=1.5,
-               label=f"уровень случайности ≈ {chance_mean:.2f}")
-    ax.set_xticks(x)
-    ax.set_xticklabels([_cross_label(k[0], k[1]) for k in keys])
-    ax.set_ylabel(f"Доля среди первых {n_first} шагов сессии 2")
-    ax.set_ylim(0, 1.0)
-    ax.set_title("Межсессионная память: доля «исторически ошибочных» слов\n"
-                 "в начале второй сессии (тот же словарь, p=0.5 → p=0.5)")
-    # Подписи значений над столбиками
-    for rect, val in zip(bars, obs_means):
-        ax.text(rect.get_x() + rect.get_width() / 2, val + 0.02,
-                f"{val:.2f}", ha="center", va="bottom", fontsize=9)
-    ax.legend(loc="upper left")
-    ax.grid(axis="y", linestyle=":", alpha=0.5)
-    plt.tight_layout()
-    plt.savefig(out_path, dpi=120)
-    plt.close()
-
-
 # ---------- Отчёт ----------
 
 def build_report(
     trials: list[TrialMetrics],
     out_dir: Path,
     config: dict,
-    cross: list[CrossSessionMetrics] | None = None,
 ) -> Path:
     """
     Markdown-отчёт со сводными таблицами и встроенными графиками.
@@ -676,13 +417,6 @@ def build_report(
     lines.append(f"Пробегов на конфигурацию: **{config['trials']}**  ")
     lines.append(f"Вероятности: {', '.join(str(p) for p in config['probs'])}  ")
     lines.append(f"priority_recent_wrong: **{config['priority_recent_wrong']}**  ")
-    lines.append("")
-    lines.append("Отчёт состоит из двух частей: **(1)** внутрисессионное "
-                 "поведение (smart vs baseline за одну сессию) и **(2)** "
-                 "межсессионная память — эффект WordStatsStore при двух "
-                 "сессиях подряд над одним словарём.")
-    lines.append("")
-    lines.append("## Часть 1. Внутри одной сессии")
     lines.append("")
 
     lines.append("## Сводная таблица")
@@ -754,94 +488,16 @@ def build_report(
                  "выбора без памяти.")
     lines.append("")
 
-    # ----- Часть 2. Межсессионная память -----
-    if cross:
-        _append_cross_report(lines, cross, config)
-
     lines.append("## Файлы")
     lines.append("")
-    lines.append("- `trials.csv` — построчные метрики внутрисессионных пробегов")
+    lines.append("- `trials.csv` — построчные метрики каждого пробега")
     lines.append("- `summary.csv` — агрегаты по (kind, p)")
-    if cross:
-        lines.append("- `cross_session_trials.csv` — построчные межсессионные прогоны")
-        lines.append("- `cross_session_summary.csv` — агрегаты по (config, pr)")
     lines.append("- `plots/*.png` — графики")
     lines.append("")
 
     report_path = out_dir / "report.md"
     report_path.write_text("\n".join(lines), encoding="utf-8")
     return report_path
-
-
-def _append_cross_report(
-    lines: list[str],
-    cross: list[CrossSessionMetrics],
-    config: dict,
-) -> None:
-    """Дописать в отчёт раздел про межсессионную память."""
-    grouped: dict[tuple[str, float], list[CrossSessionMetrics]] = defaultdict(list)
-    for m in cross:
-        grouped[_cross_key(m)].append(m)
-    keys = sorted(grouped.keys(), key=lambda k: (k[0] != "baseline", k[1]))
-
-    chance_mean = statistics.mean([m.chance_frac for m in cross])
-    n_first = cross[0].n_first
-    cc = config.get("cross", {})
-
-    lines.append("## Часть 2. Межсессионная память (две сессии подряд)")
-    lines.append("")
-    lines.append(
-        f"Схема прогона: один и тот же словарь, виртуальный ученик проходит "
-        f"**две сессии**. Сессия 1 (p={cc.get('p1', 0.5)}) штатным алгоритмом "
-        f"накапливает ошибки в `WordStatsStore`. Сессия 2 (p={cc.get('p2', 0.5)}) "
-        f"стартует на тех же словах с подгруженной статистикой. Метрика — "
-        f"**доля «исторически ошибочных» слов среди первых N={n_first} шагов "
-        f"сессии 2**."
-    )
-    lines.append("")
-    lines.append(
-        "«Исторически ошибочное» слово — то, в котором после сессии 1 ошибок "
-        "не меньше, чем верных ответов (`times_wrong ≥ times_correct`). "
-        "Это ровно тот критерий, по которому `WordsSession` отбирает слова при "
-        "срабатывании `priority_recent_wrong`."
-    )
-    lines.append("")
-    lines.append(
-        f"**Уровень случайности** ≈ {chance_mean:.2f}: столько ошибочных слов "
-        "попало бы в начало сессии 2 при выборе без памяти (их доля в пуле). "
-        "Конфигурация `baseline` (сессия 2 = случайный выбор, статистика "
-        "игнорируется) эмпирически подтверждает этот уровень. Превышение над "
-        "ним — и есть измеренный эффект межсессионной памяти."
-    )
-    lines.append("")
-    lines.append("| Конфигурация | pr | Прогонов | Доля ошибочных в первых "
-                 f"{n_first} | Уровень случайности | Lift (×) |")
-    lines.append("|---|---|---|---|---|---|")
-    for key in keys:
-        ms = grouped[key]
-        obs = statistics.mean([m.observed_frac for m in ms])
-        std = statistics.stdev([m.observed_frac for m in ms]) if len(ms) > 1 else 0.0
-        chance = statistics.mean([m.chance_frac for m in ms])
-        lift = statistics.mean([m.lift for m in ms])
-        pr_label = "—" if key[1] < 0 else f"{key[1]:g}"
-        cfg_label = "baseline (без памяти)" if key[0] == "baseline" else "smart"
-        lines.append(
-            f"| {cfg_label} | {pr_label} | {len(ms)} | "
-            f"{obs:.1%} ± {std:.1%} | {chance:.1%} | {lift:.2f} |"
-        )
-    lines.append("")
-    lines.append("![Cross-session memory](plots/cross_session.png)")
-    lines.append("")
-    lines.append(
-        "**Вывод.** У `baseline` доля держится на уровне случайности — без "
-        "использования памяти начало второй сессии ничем не выделяет ранее "
-        "проваленные слова. У `smart` доля растёт вместе с `priority_recent_wrong`: "
-        "память действительно выводит в начало повторной тренировки именно те "
-        "слова, что были провалены в первой сессии. Это и есть эмпирическое "
-        "подтверждение работы spaced-repetition-каркаса, а не только описание "
-        "алгоритма."
-    )
-    lines.append("")
 
 
 # ---------- Пакетная упаковка ----------
@@ -899,20 +555,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Фиксировать random seed для воспроизводимости.")
     p.add_argument("--no-zip", action="store_true",
                    help="Не паковать выходной каталог в zip.")
-
-    # ----- Межсессионный бенчмарк -----
-    p.add_argument("--cross-trials", type=int, default=60,
-                   help="Прогонов на каждую межсессионную конфигурацию. По умолчанию 60.")
-    p.add_argument("--first-n", type=int, default=15,
-                   help="Сколько первых шагов сессии 2 измерять (N=10–20). По умолчанию 15.")
-    p.add_argument("--p1", type=float, default=0.5,
-                   help="Вероятность правильного ответа в сессии 1 (накопление ошибок).")
-    p.add_argument("--p2", type=float, default=0.5,
-                   help="Вероятность правильного ответа в сессии 2 (повтор).")
-    p.add_argument("--cross-priorities", type=str, default="0.0,0.4,0.8",
-                   help="Значения priority_recent_wrong для smart-сессии 2 через запятую.")
-    p.add_argument("--no-cross", action="store_true",
-                   help="Пропустить межсессионный бенчмарк (только часть 1).")
     return p.parse_args(argv)
 
 
@@ -954,45 +596,14 @@ def main(argv: list[str] | None = None) -> int:
                     trial_id=trial_id,
                 ))
 
-    # ----- Часть 2: межсессионный бенчмарк -----
-    cross: list[CrossSessionMetrics] = []
-    if not args.no_cross:
-        try:
-            cross_priorities = [
-                float(x) for x in args.cross_priorities.split(",") if x.strip()
-            ]
-        except ValueError:
-            print(f"Не удалось разобрать --cross-priorities="
-                  f"{args.cross_priorities!r}", file=sys.stderr)
-            return 2
-        # Конфигурации: baseline (без памяти) + smart для каждого pr
-        cross_configs: list[tuple[str, float | None]] = [("baseline", None)]
-        cross_configs += [("smart", pr) for pr in cross_priorities]
-
-        print(f"\nМежсессионный бенчмарк (две сессии, N={args.first_n}, "
-              f"p1={args.p1}, p2={args.p2}):", flush=True)
-        for ci, (cfg, pr) in enumerate(cross_configs, 1):
-            label = "baseline" if cfg == "baseline" else f"smart pr={pr}"
-            print(f"  [{ci}/{len(cross_configs)}] {label} ...", flush=True)
-            for trial_id in range(args.cross_trials):
-                cross.append(run_cross_session_trial(
-                    cfg, pr, words,
-                    p1=args.p1, p2=args.p2,
-                    n_first=args.first_n, trial_id=trial_id,
-                ))
-
-    print("\nЗапись CSV ...", flush=True)
+    print("Запись CSV ...", flush=True)
     write_csvs(trials, out_dir)
-    if cross:
-        write_cross_csvs(cross, out_dir)
 
     print("Построение графиков ...", flush=True)
     plot_total_steps(trials, out_dir / "plots" / "total_steps.png")
     plot_return_5_frac(trials, out_dir / "plots" / "wrong_returns_5.png")
     plot_shows_distribution(trials, out_dir / "plots" / "shows_distribution.png")
     plot_repeat_distances(trials, out_dir / "plots" / "repeat_distances.png")
-    if cross:
-        plot_cross_session(cross, out_dir / "plots" / "cross_session.png")
 
     config = {
         "timestamp": ts,
@@ -1001,14 +612,8 @@ def main(argv: list[str] | None = None) -> int:
         "trials": args.trials,
         "probs": probs,
         "priority_recent_wrong": args.priority_recent_wrong,
-        "cross": {
-            "trials": args.cross_trials,
-            "first_n": args.first_n,
-            "p1": args.p1,
-            "p2": args.p2,
-        },
     }
-    report_path = build_report(trials, out_dir, config, cross=cross)
+    report_path = build_report(trials, out_dir, config)
     print(f"Отчёт: {report_path}")
 
     if not args.no_zip:
