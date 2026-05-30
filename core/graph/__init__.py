@@ -19,6 +19,7 @@ from .node import ExecContext, Node, Port
 from .port_types import PortType, is_compatible
 from .registry import NodeRegistry
 from .spec import EdgeSpec, GraphSpec, NodeSpec
+from .document import DocEdge, DocNode, GraphDocument
 from .nodes import DEFAULT_REGISTRY, build_default_registry
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "Node", "Port", "ExecContext",
     "NodeRegistry", "DEFAULT_REGISTRY", "build_default_registry",
     "GraphSpec", "NodeSpec", "EdgeSpec",
+    "GraphDocument", "DocNode", "DocEdge",
     "GraphExecutor",
     "GraphError", "GraphValidationError", "RetryGeneration",
 ]
