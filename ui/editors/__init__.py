@@ -2,8 +2,9 @@ from .base import PartitionEditor
 from .group_editor import GroupEditor
 from .test_editor import TestEditor
 from .fisic_editor import FisicEditor
+from .graph_editor import GraphEditor
 
-__all__ = ["PartitionEditor", "GroupEditor", "TestEditor", "FisicEditor"]
+__all__ = ["PartitionEditor", "GroupEditor", "TestEditor", "FisicEditor", "GraphEditor"]
 
 
 def create_editor(kind: str, **kwargs) -> PartitionEditor:
@@ -20,4 +21,8 @@ def create_editor(kind: str, **kwargs) -> PartitionEditor:
         # FisicEditor не нужен registry
         kwargs.pop("registry", None)
         return FisicEditor(**kwargs)
+    if kind == "graph":
+        # GraphEditor не нужен registry
+        kwargs.pop("registry", None)
+        return GraphEditor(**kwargs)
     raise ValueError(f"Неизвестный тип редактора: {kind}")

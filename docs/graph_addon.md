@@ -4,9 +4,10 @@
 node-graph программирования для ручной сборки генераторов заданий — по образцу
 LabVIEW — переиспользуя существующий движок генерации, БД и слой представлений.
 
-Статус: **Фаза 0 реализована** (чистый headless-движок `core/graph/` + адаптер
-`exercises/graph/` + тесты). Фазы 1–4 — впереди. Документ фиксирует архитектуру
-целиком; раздел 10 отмечает, что сделано.
+Статус: **Фазы 0 и 1 реализованы** (headless-движок `core/graph/` + адаптер
+`exercises/graph/` + врезка в БД/bootstrap/редакторы для `constracted=4`).
+Фазы 2–4 — впереди. Документ фиксирует архитектуру целиком; раздел 10 отмечает,
+что сделано.
 
 ---
 
@@ -276,11 +277,20 @@ UI. Тот же приём уже работает для `Block` и `TaskGenera
 (контракт, задачи, движок графа) теперь импортируются без PyQt6. Это и есть
 фундамент «headless-ядра» из раздела 3.
 
-**Фаза 1 — врезка в БД/bootstrap.**
-`constracted = 4`; `_register_graph` в `bootstrap.py`; `4: "table"` в
-`_VIEW_KIND_BY_CONSTRACTED`; ветка `"graph"` в `create_editor`. После этого
-руками написанный JSON-граф в БД уже генерирует и экспортируется через
-существующее окно.
+**Фаза 1 — врезка в БД/bootstrap. ✅ СДЕЛАНО.**
+`4: "table"` в `_VIEW_KIND_BY_CONSTRACTED` и `4: "graph"` в
+`EDITOR_KIND_BY_CONSTRACTED` (`core/repository.py`); `_register_graph` + ветка
+`constracted == 4` в `bootstrap.build_registry`; диспетчеризация `"graph"` в
+`ui/editors/create_editor`; пункт «Граф» в меню «+ Создать»
+(`ui/windows/generator_window.py`). Минимальный `ui/editors/graph_editor.py`
+(`GraphEditor`): ввод графа JSON-текстом, кнопки «Проверить»/«Предпросмотр» —
+вся валидация и предпросмотр переиспользуют движок (`GraphExecutor`,
+`GraphConstructorGenerator`). Полноценный канвас — Фаза 2.
+
+Headless-тесты Фазы 1 (`tests/test_graph_phase1.py`): маппинги репозитория для
+`constracted=4` и приём конфига графа во всех формах (dict / JSON / `{"raw":...}`).
+GUI-часть (редактор, меню, регистрация в bootstrap) тянет Qt и проверяется в
+среде с PyQt6.
 
 **Фаза 2 — Qt-канвас** (`ui/editors/graph_editor/`).
 `QGraphicsScene`, узлы/провода, палитра из `NodeRegistry`, типизированные

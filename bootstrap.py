@@ -32,6 +32,7 @@ from exercises.opvs.generators import (
     LogicCircuitGenerator, CCodeMistakesGenerator,
 )
 from exercises.fisic import FisicConstructorGenerator
+from exercises.graph import GraphConstructorGenerator
 from exercises.english.generators import english_generators_for_path
 
 
@@ -147,6 +148,8 @@ def build_registry(
                 _register_group(registry, repo, part)
             elif part.constracted == 3:
                 _register_test(registry, repo, part)
+            elif part.constracted == 4:
+                _register_graph(registry, part)
 
     return registry
 
@@ -165,6 +168,24 @@ def _register_fisic(registry: GeneratorRegistry, part) -> None:
 
     def factory(_params: dict, _pid=part.id, _name=part.name, _cfg=config_dict):
         return FisicConstructorGenerator(
+            partition_id=_pid, name=_name, config=_cfg
+        )
+
+    registry.register_factory(part.id, factory)
+
+
+def _register_graph(registry: GeneratorRegistry, part) -> None:
+    """Раздел-граф (constracted=4). Описание графа передаётся как dict/JSON."""
+    config_dict = part.generation_params
+    # Если конфиг хранится как сырая строка под "raw" — попытаемся распарсить.
+    if "raw" in config_dict:
+        try:
+            config_dict = json.loads(config_dict["raw"])
+        except (json.JSONDecodeError, TypeError):
+            config_dict = {}
+
+    def factory(_params: dict, _pid=part.id, _name=part.name, _cfg=config_dict):
+        return GraphConstructorGenerator(
             partition_id=_pid, name=_name, config=_cfg
         )
 
