@@ -41,6 +41,7 @@ _VIEW_KIND_BY_CONSTRACTED = {
     1: "table",
     2: "table",
     3: "test",
+    4: "table",
 }
 
 
@@ -263,6 +264,7 @@ class Repository:
         1: "fisic",
         2: "group",
         3: "test",
+        4: "graph",
     }
 
     def editor_kind_for(self, partition: Partition) -> str | None:
