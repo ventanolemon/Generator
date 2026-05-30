@@ -4,8 +4,9 @@
 node-graph программирования для ручной сборки генераторов заданий — по образцу
 LabVIEW — переиспользуя существующий движок генерации, БД и слой представлений.
 
-Статус: **дизайн, код не написан.** Документ фиксирует архитектурные решения
-до начала реализации.
+Статус: **Фаза 0 реализована** (чистый headless-движок `core/graph/` + адаптер
+`exercises/graph/` + тесты). Фазы 1–4 — впереди. Документ фиксирует архитектуру
+целиком; раздел 10 отмечает, что сделано.
 
 ---
 
@@ -261,12 +262,19 @@ UI. Тот же приём уже работает для `Block` и `TaskGenera
 
 ## 10. План реализации по фазам
 
-**Фаза 0 — чистый движок + тесты, без UI.**
+**Фаза 0 — чистый движок + тесты, без UI. ✅ СДЕЛАНО.**
 `core/graph/`: `PortType`, `Node`+`NodeRegistry`, `GraphSpec`, `GraphExecutor`
-(топосорт + retry всего графа), `GraphTaskGenerator(TaskGenerator)`. ~8 узлов:
-`random_natural`, `random_real`, `constant_number`, `var_dict`, `formula`,
-`constraint`, `template`, `text_block`, `static_task`. Юнит-тесты доказывают
-воспроизведение физики headless — до единого пикселя UI.
+(топосорт + whole-graph retry), адаптер `GraphConstructorGenerator(TaskGenerator)`
+в `exercises/graph/`. 10 узлов: `constant_number`, `random_natural`,
+`random_real`, `var_dict`, `formula`, `constraint`, `template`, `text_block`,
+`block_list`, `static_task`. Тела вычислительных узлов — функции
+`exercises/fisic/*` (без дублирования). Юнит-тесты (`tests/test_graph_engine.py`,
+`tests/test_graph_physics.py`) доказывают воспроизведение физики headless.
+
+Побочно: `core/__init__.py` и `exercises/fisic/__init__.py` переведены на
+ленивый импорт (PEP 562) — публичный API без изменений, но чистые слои
+(контракт, задачи, движок графа) теперь импортируются без PyQt6. Это и есть
+фундамент «headless-ядра» из раздела 3.
 
 **Фаза 1 — врезка в БД/bootstrap.**
 `constracted = 4`; `_register_graph` в `bootstrap.py`; `4: "table"` в
