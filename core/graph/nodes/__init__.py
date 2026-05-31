@@ -11,6 +11,9 @@ from ..registry import NodeRegistry
 from .assembly import BlockListNode, StaticTaskNode
 from .compute import ConstraintNode, FormulaNode, TemplateNode, VarDictNode
 from .content import TextBlockNode
+from .control import (
+    CompareNode, ConstantBoolNode, NumberCheckNode, SelectNode,
+)
 from .sources import (
     ConstantNumberNode, RandomNaturalNode, RandomRealNode,
 )
@@ -20,6 +23,8 @@ _ALL_NODES = [
     ConstantNumberNode, RandomNaturalNode, RandomRealNode,
     # compute
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
+    # control
+    ConstantBoolNode, CompareNode, NumberCheckNode, SelectNode,
     # content
     TextBlockNode,
     # assembly

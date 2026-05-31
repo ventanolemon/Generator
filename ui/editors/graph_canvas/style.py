@@ -25,6 +25,7 @@ PORT_COLORS: dict[PortType, QColor] = {
 CATEGORY_COLORS: dict[str, QColor] = {
     "source":   QColor("#6C3483"),   # источники — фиолетовые
     "compute":  QColor("#117864"),   # вычисление — бирюзовые
+    "control":  QColor("#B9770E"),   # управление — янтарные
     "content":  QColor("#A93226"),   # контент — коралловые
     "assembly": QColor("#1F618D"),   # сборка — синие
 }
