@@ -75,7 +75,7 @@ class ParamInspector(QWidget):
         if kind == "subgraph":
             # Тело вложенного графа не редактируется формой — открывается
             # отдельным холстом. Кнопка делегирует это редактору.
-            btn = QPushButton("Открыть тело цикла…")
+            btn = QPushButton("Открыть подграф…")
             btn.clicked.connect(
                 lambda _checked=False, k=key: self.open_subgraph.emit(self.node_id, k)
             )

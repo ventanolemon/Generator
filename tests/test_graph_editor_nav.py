@@ -70,6 +70,16 @@ class SubgraphNavTests(unittest.TestCase):
         # UI остался во вложенном уровне (неразрушающе).
         self.assertEqual(len(ed._nav_stack), 1)
 
+    def test_enter_map_body(self):
+        # map тоже имеет тело-подграф (param 'body') — навигация общая.
+        ed = self._editor()
+        mp = ed.scene.add_node("map", _pt(100, 100))
+        ed._enter_subgraph(mp.node_id, "body")
+        ed.scene.add_node("map_item", _pt(40, 40))
+        ed._exit_subgraph()
+        body = ed.doc.nodes[mp.node_id].params.get("body")
+        self.assertEqual(body["nodes"][0]["type"], "map_item")
+
     def test_breadcrumb_updates(self):
         ed = self._editor()
         rep = ed.scene.add_node("repeat", _pt(100, 100))

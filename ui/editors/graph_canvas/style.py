@@ -18,6 +18,7 @@ PORT_COLORS: dict[PortType, QColor] = {
     PortType.BLOCK:       QColor("#E74C3C"),   # коралловый
     PortType.BLOCK_LIST:  QColor("#C0392B"),   # тёмно-коралловый
     PortType.BOOL:        QColor("#7F8C8D"),   # серый
+    PortType.LIST:        QColor("#9CCC65"),   # салатовый — коллекция
     PortType.TASK:        QColor("#27AE60"),   # зелёный
 }
 

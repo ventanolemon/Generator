@@ -14,21 +14,22 @@ from .content import TextBlockNode
 from .control import (
     CompareNode, NumberCheckNode, SelectNode,
 )
-from .loop import LoopIndexNode, RepeatNode
+from .loop import LoopIndexNode, MapItemNode, MapNode, RepeatNode
 from .sources import (
     ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
-    RandomNaturalNode, RandomRealNode,
+    NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
 )
 
 _ALL_NODES = [
     # source
     ConstantNumberNode, ConstantStringNode, ConstantBoolNode,
     RandomNaturalNode, RandomRealNode,
+    StringListNode, NumberRangeNode,
     # compute
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
     # control
     CompareNode, NumberCheckNode, SelectNode,
-    LoopIndexNode, RepeatNode,
+    LoopIndexNode, RepeatNode, MapItemNode, MapNode,
     # content
     TextBlockNode,
     # assembly

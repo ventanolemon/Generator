@@ -98,3 +98,101 @@ class RepeatNode(Node):
         # Тело использует тот же реестр узлов, что и внешний граф.
         from . import DEFAULT_REGISTRY
         return DEFAULT_REGISTRY
+
+
+# Ключ в ExecContext.extra, под которым map кладёт текущий элемент.
+MAP_ITEM_KEY = "__map_item__"
+
+# Типы элемента, которые map_item умеет отдавать в тело.
+_ITEM_TYPES = {
+    "number": PortType.NUMBER,
+    "string": PortType.STRING,
+    "block": PortType.BLOCK,
+}
+
+
+class MapItemNode(Node):
+    """Текущий элемент коллекции внутри тела map. Источник."""
+    type_id = "map_item"
+    category = "control"
+    display_name = "Элемент (map)"
+    PARAMS_SCHEMA = {
+        "type": {"type": "enum", "values": list(_ITEM_TYPES), "default": "string"},
+    }
+
+    def validate_params(self) -> None:
+        t = self.params.get("type", "string")
+        if t not in _ITEM_TYPES:
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: неизвестный тип элемента {t!r}. "
+                f"Допустимы: {list(_ITEM_TYPES)}"
+            )
+
+    def output_ports(self):
+        return [Port("out", _ITEM_TYPES.get(self.params.get("type", "string"),
+                                            PortType.STRING))]
+
+    def compute(self, inputs, ctx: ExecContext):
+        v = ctx.extra.get(MAP_ITEM_KEY)
+        t = self.params.get("type", "string")
+        if t == "number":
+            try:
+                return {"out": float(v)}
+            except (TypeError, ValueError):
+                raise RetryGeneration(
+                    f"map_item {self.node_id!r}: элемент {v!r} не число."
+                )
+        if t == "string":
+            return {"out": "" if v is None else str(v)}
+        return {"out": v}  # block — передаём как есть
+
+
+class MapNode(Node):
+    """
+    Применить тело к каждому элементу входного списка, собрать BLOCK-результаты
+    в BLOCK_LIST.
+
+    Вход items:LIST — коллекция. Внутри тела доступны map_item (текущий элемент)
+    и loop_index (его индекс 0..N-1). Результат итерации — свободный выход тела
+    типа BLOCK. Тело хранится в params['body'] (вложенный граф) и исполняется
+    отдельным GraphExecutor по образцу repeat.
+    """
+    type_id = "map"
+    category = "control"
+    display_name = "Map (по списку)"
+    INPUTS = [Port("items", PortType.LIST)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+    PARAMS_SCHEMA = {
+        "body": {"type": "subgraph", "default": {"nodes": [], "edges": [], "meta": {}}},
+    }
+
+    def validate_params(self) -> None:
+        body = self.params.get("body")
+        if body is not None and not isinstance(body, dict):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: 'body' должен быть вложенным графом (объектом)."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        from ..executor import GraphExecutor
+        from ..spec import GraphSpec
+
+        body = self.params.get("body") or {"nodes": [], "edges": [], "meta": {}}
+        spec = GraphSpec.parse(body)
+
+        items = inputs.get("items") or []
+        if not isinstance(items, (list, tuple)):
+            raise RetryGeneration(
+                f"map {self.node_id!r}: на вход items пришёл не список ({type(items).__name__})."
+            )
+
+        from . import DEFAULT_REGISTRY
+        collected: list = []
+        for i, el in enumerate(items):
+            ex = GraphExecutor(spec, registry=DEFAULT_REGISTRY)
+            result_ep = ex.free_output_of_type(PortType.BLOCK)
+            outputs = ex.run_full(extra={MAP_ITEM_KEY: el, LOOP_INDEX_KEY: i})
+            if result_ep is not None:
+                node_id, port = result_ep
+                collected.append(outputs[node_id][port])
+        return {"out": collected}

@@ -109,3 +109,46 @@ class RandomRealNode(_RandomVarNode):
         "step": {"type": "number", "optional": True},
         "forbidden": {"type": "list", "default": [], "optional": True},
     }
+
+
+class StringListNode(Node):
+    """Список строк-литералов (например, набор слов). Источник LIST."""
+    type_id = "string_list"
+    category = "source"
+    display_name = "Список строк"
+    OUTPUTS = [Port("out", PortType.LIST)]
+    PARAMS_SCHEMA = {"items": {"type": "list", "default": []}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        return {"out": [str(x) for x in (self.params.get("items") or [])]}
+
+
+class NumberRangeNode(Node):
+    """Диапазон чисел [start; stop] с шагом step. Источник LIST чисел."""
+    type_id = "number_range"
+    category = "source"
+    display_name = "Диапазон чисел"
+    OUTPUTS = [Port("out", PortType.LIST)]
+    PARAMS_SCHEMA = {
+        "start": {"type": "number", "default": 1},
+        "stop": {"type": "number", "default": 5},
+        "step": {"type": "number", "default": 1, "optional": True},
+    }
+
+    _CAP = 10_000
+
+    def compute(self, inputs, ctx: ExecContext):
+        start = float(self.params.get("start", 1))
+        stop = float(self.params.get("stop", 5))
+        step = float(self.params.get("step", 1) or 1)
+        if step == 0:
+            step = 1.0
+        out: list[float] = []
+        v = start
+        # Включительно по stop, с защитой по числу элементов.
+        while (step > 0 and v <= stop + 1e-9) or (step < 0 and v >= stop - 1e-9):
+            out.append(round(v, 9))
+            if len(out) >= self._CAP:
+                break
+            v += step
+        return {"out": out}

@@ -19,6 +19,7 @@ class PortType(Enum):
     BLOCK = "block"              # объект core.Block любого подтипа
     BLOCK_LIST = "block_list"    # list[Block]
     BOOL = "bool"                # результат проверки
+    LIST = "list"                # list[Any] — универсальная коллекция (для map)
     TASK = "task"                # StaticTask / InteractiveTask — финал графа
 
 
