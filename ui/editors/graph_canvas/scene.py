@@ -203,7 +203,11 @@ class GraphScene(QGraphicsScene):
 
 
 class GraphCanvasView(QGraphicsView):
-    """Вид с зумом и панорамой."""
+    """Вид с зумом и панорамой.
+
+    Панорама: зажать пробел — курсор превращается в «руку», ЛКМ тянет холст.
+    Отпустить пробел — возврат к рамочному выделению.
+    """
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -211,6 +215,7 @@ class GraphCanvasView(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self._zoom = 1.0
+        self._space_pan = False        # активен ли режим панорамы по пробелу
 
     def wheelEvent(self, event):
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
@@ -226,4 +231,23 @@ class GraphCanvasView(QGraphicsView):
                 sc.delete_selected()
                 event.accept()
                 return
+        # Пробел — включить «руку» для панорамы (игнорируем автоповтор).
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            if not self._space_pan:
+                self._space_pan = True
+                self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+                self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+            event.accept()
+            return
         super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        # Отпустили пробел — вернуть рамочное выделение и обычный курсор.
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            if self._space_pan:
+                self._space_pan = False
+                self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+                self.viewport().unsetCursor()
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
