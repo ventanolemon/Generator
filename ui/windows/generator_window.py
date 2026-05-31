@@ -141,6 +141,8 @@ class GeneratorWindow(QMainWindow):
         create_menu.addAction("Тест",   lambda: self._open_editor_new("test"))
         create_menu.addAction("Задачу по физике",
                               lambda: self._open_editor_new("fisic"))
+        create_menu.addAction("Граф (визуальный конструктор)",
+                              lambda: self._open_editor_new("graph"))
         self.create_btn.setMenu(create_menu)
         controls.addWidget(self.create_btn)
 
