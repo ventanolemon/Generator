@@ -12,20 +12,26 @@ from typing import Optional
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QLineEdit, QSpinBox, QComboBox, QLabel, QPlainTextEdit,
+    QPushButton,
 )
 
 from core.graph import GraphDocument
 
 
-# Параметры, изменение которых меняет набор портов узла.
-_PORT_AFFECTING = {"names", "count"}
+# Параметры, изменение которых меняет набор портов узла — по типам узлов.
+# (var_dict.names и block_list.count влияют на порты; repeat.count — нет.)
+_PORT_AFFECTING = {
+    "var_dict": {"names"},
+    "block_list": {"count"},
+}
 
 
 class ParamInspector(QWidget):
     """Редактор параметров одного узла."""
 
-    ports_changed = pyqtSignal(str)     # node_id — перестроить порты на сцене
-    params_changed = pyqtSignal(str)    # node_id — параметры изменились (перерисовать)
+    ports_changed = pyqtSignal(str)        # node_id — перестроить порты на сцене
+    params_changed = pyqtSignal(str)       # node_id — параметры изменились (перерисовать)
+    open_subgraph = pyqtSignal(str, str)   # node_id, param_key — открыть тело-подграф
 
     def __init__(self, doc: GraphDocument, parent=None):
         super().__init__(parent)
@@ -66,6 +72,16 @@ class ParamInspector(QWidget):
         kind = meta.get("type", "string")
         cur = node.params.get(key, meta.get("default"))
 
+        if kind == "subgraph":
+            # Тело вложенного графа не редактируется формой — открывается
+            # отдельным холстом. Кнопка делегирует это редактору.
+            btn = QPushButton("Открыть тело цикла…")
+            btn.clicked.connect(
+                lambda _checked=False, k=key: self.open_subgraph.emit(self.node_id, k)
+            )
+            self._form.addRow(key, btn)
+            return
+
         if kind == "enum":
             w = QComboBox()
             w.addItems([str(v) for v in meta.get("values", [])])
@@ -99,10 +115,14 @@ class ParamInspector(QWidget):
         # Параметры, меняющие набор портов (var_dict.names, block_list.count),
         # перестраивают порты не на каждый символ, а по завершении ввода
         # (Enter / потеря фокуса) — иначе холст моргает и теряется фокус.
-        if key in _PORT_AFFECTING and hasattr(w, "editingFinished"):
+        if key in self._port_affecting_keys(node) and hasattr(w, "editingFinished"):
             w.editingFinished.connect(self._commit_ports)
 
         self._form.addRow(key, w)
+
+    @staticmethod
+    def _port_affecting_keys(node) -> set:
+        return _PORT_AFFECTING.get(node.type, set())
 
     def _commit(self, key: str) -> None:
         if self.node_id is None:
