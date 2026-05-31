@@ -15,8 +15,9 @@ from core.graph import (
     GraphValidationError, PortType,
 )
 from core.graph.nodes.control import (
-    CompareNode, ConstantBoolNode, NumberCheckNode, SelectNode,
+    CompareNode, NumberCheckNode, SelectNode,
 )
+from core.graph.nodes.sources import ConstantBoolNode
 
 
 def _ctx():
