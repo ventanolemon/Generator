@@ -7,14 +7,12 @@
 переписывания исполнителя — узлы остаются обычными вершинами DAG.
 
 Узлы:
-  constant_bool — источник BOOL;
   compare       — NUMBER op NUMBER -> BOOL (==, !=, <, <=, >, >=);
   number_check  — NUMBER -> BOOL (even/odd/positive/negative/divisible_by);
   select        — BOOL + on_true:T + on_false:T -> T (тип T параметризуется).
 
-До этой фазы тип BOOL был объявлен (PortType.BOOL), но ни один узел его не
-производил. Теперь constant_bool/compare/number_check его производят, а select
-потребляет — булева подсистема замкнута.
+Источник BOOL — constant_bool — живёт в sources (категория source), рядом с
+константами числа/строки.
 """
 
 from __future__ import annotations
@@ -22,20 +20,6 @@ from __future__ import annotations
 from ..errors import GraphValidationError
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
-
-
-class ConstantBoolNode(Node):
-    """Литерал-истинность."""
-    type_id = "constant_bool"
-    category = "control"
-    display_name = "Константа (да/нет)"
-    OUTPUTS = [Port("out", PortType.BOOL)]
-    PARAMS_SCHEMA = {
-        "value": {"type": "enum", "values": ["true", "false"], "default": "true"},
-    }
-
-    def compute(self, inputs, ctx: ExecContext):
-        return {"out": str(self.params.get("value", "true")).lower() == "true"}
 
 
 # Операторы сравнения. Имя → функция от (a, b).

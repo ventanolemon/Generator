@@ -11,7 +11,7 @@ from typing import Optional
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
-    QGraphicsScene, QGraphicsView, QGraphicsPathItem,
+    QGraphicsScene, QGraphicsView, QGraphicsPathItem, QMenu,
 )
 
 from core.graph import DocEdge, GraphDocument
@@ -200,6 +200,70 @@ class GraphScene(QGraphicsScene):
     def _on_selection(self) -> None:
         sel = [it for it in self.selectedItems() if isinstance(it, NodeItem)]
         self.selection_node.emit(sel[0].node_id if len(sel) == 1 else None)
+
+    # ---------- Порядок наложения узлов (z-order) ----------
+
+    def _normalize_z(self) -> None:
+        """
+        Пере-нумеровать узлы целыми z = 1..N в текущем порядке наложения
+        (по zValue, затем по порядку вставки). Провода остаются на z=0 —
+        узлы всегда выше них. Делает шаги вперёд/назад однозначными.
+        """
+        items = list(self.node_items.values())
+        idx = {it: i for i, it in enumerate(items)}
+        ordered = sorted(items, key=lambda it: (it.zValue(), idx[it]))
+        for i, it in enumerate(ordered, start=1):
+            it.setZValue(float(i))
+
+    def node_to_front(self, item: NodeItem) -> None:
+        item.setZValue(len(self.node_items) + 10.0)
+        self._normalize_z()
+
+    def node_to_back(self, item: NodeItem) -> None:
+        item.setZValue(-10.0)
+        self._normalize_z()
+
+    def raise_node(self, item: NodeItem) -> None:
+        """На один слой вперёд (выше)."""
+        item.setZValue(item.zValue() + 1.5)
+        self._normalize_z()
+
+    def lower_node(self, item: NodeItem) -> None:
+        """На один слой назад (ниже)."""
+        item.setZValue(item.zValue() - 1.5)
+        self._normalize_z()
+
+    @staticmethod
+    def _climb_to_node(item) -> Optional[NodeItem]:
+        while item is not None and not isinstance(item, NodeItem):
+            item = item.parentItem()
+        return item
+
+    def contextMenuEvent(self, event):
+        node = None
+        for it in self.items(event.scenePos()):
+            node = self._climb_to_node(it)
+            if node is not None:
+                break
+        if node is None:
+            return super().contextMenuEvent(event)
+
+        menu = QMenu()
+        a_front = menu.addAction("На передний план")
+        a_back = menu.addAction("На задний план")
+        menu.addSeparator()
+        a_fwd = menu.addAction("Переместить вперёд")
+        a_bwd = menu.addAction("Переместить назад")
+        chosen = menu.exec(event.screenPos())
+        if chosen is a_front:
+            self.node_to_front(node)
+        elif chosen is a_back:
+            self.node_to_back(node)
+        elif chosen is a_fwd:
+            self.raise_node(node)
+        elif chosen is a_bwd:
+            self.lower_node(node)
+        event.accept()
 
 
 class GraphCanvasView(QGraphicsView):

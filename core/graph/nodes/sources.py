@@ -34,6 +34,32 @@ class ConstantNumberNode(Node):
         return {"out": float(self.params.get("value", 0))}
 
 
+class ConstantStringNode(Node):
+    """Литерал-строка."""
+    type_id = "constant_string"
+    category = "source"
+    display_name = "Константа (строка)"
+    OUTPUTS = [Port("out", PortType.STRING)]
+    PARAMS_SCHEMA = {"value": {"type": "string", "default": ""}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        return {"out": str(self.params.get("value", ""))}
+
+
+class ConstantBoolNode(Node):
+    """Литерал-истинность (источник BOOL)."""
+    type_id = "constant_bool"
+    category = "source"
+    display_name = "Константа (да/нет)"
+    OUTPUTS = [Port("out", PortType.BOOL)]
+    PARAMS_SCHEMA = {
+        "value": {"type": "enum", "values": ["true", "false"], "default": "true"},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        return {"out": str(self.params.get("value", "true")).lower() == "true"}
+
+
 class _RandomVarNode(Node):
     """Общая база для случайных источников. KIND задаёт тип значения."""
     KIND = "real"

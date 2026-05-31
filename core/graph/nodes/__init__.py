@@ -12,20 +12,22 @@ from .assembly import BlockListNode, StaticTaskNode
 from .compute import ConstraintNode, FormulaNode, TemplateNode, VarDictNode
 from .content import TextBlockNode
 from .control import (
-    CompareNode, ConstantBoolNode, NumberCheckNode, SelectNode,
+    CompareNode, NumberCheckNode, SelectNode,
 )
 from .loop import LoopIndexNode, RepeatNode
 from .sources import (
-    ConstantNumberNode, RandomNaturalNode, RandomRealNode,
+    ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
+    RandomNaturalNode, RandomRealNode,
 )
 
 _ALL_NODES = [
     # source
-    ConstantNumberNode, RandomNaturalNode, RandomRealNode,
+    ConstantNumberNode, ConstantStringNode, ConstantBoolNode,
+    RandomNaturalNode, RandomRealNode,
     # compute
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
     # control
-    ConstantBoolNode, CompareNode, NumberCheckNode, SelectNode,
+    CompareNode, NumberCheckNode, SelectNode,
     LoopIndexNode, RepeatNode,
     # content
     TextBlockNode,
