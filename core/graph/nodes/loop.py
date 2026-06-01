@@ -309,3 +309,98 @@ class MapNode(Node):
                 node_id, port = result_ep
                 collected.append(outputs[node_id][port])
         return {"out": collected}
+
+
+def _branch_blocks(spec, extra: dict) -> list:
+    """
+    Исполнить ветвь-подграф и вернуть её блоки как список.
+
+    Результат ветви — свободный выход типа BLOCK_LIST (используется как есть)
+    либо свободный BLOCK (оборачивается в список из одного элемента). Если
+    свободного блочного выхода нет — пустой список.
+    """
+    from ..executor import GraphExecutor
+    from . import DEFAULT_REGISTRY
+
+    ex = GraphExecutor(spec, registry=DEFAULT_REGISTRY)
+    list_ep = ex.free_output_of_type(PortType.BLOCK_LIST)
+    block_ep = None if list_ep is not None else ex.free_output_of_type(PortType.BLOCK)
+    outputs = ex.run_full(extra=extra)
+    if list_ep is not None:
+        node_id, port = list_ep
+        val = outputs[node_id][port]
+        return list(val) if isinstance(val, (list, tuple)) else [val]
+    if block_ep is not None:
+        node_id, port = block_ep
+        return [outputs[node_id][port]]
+    return []
+
+
+class CaseNode(Node):
+    """
+    Кейс-структура: по числовому селектору исполняет ОДНУ из нескольких ветвей
+    (каждая — отдельный вложенный граф), а не все сразу.
+
+    Параметры:
+      cases   — число ветвей N (ветви хранятся под ключами case_0..case_{N-1});
+      imports — внешние переменные (как у repeat/map), доступны во всех ветвях;
+      default — ветвь для селектора вне диапазона [0; N) (ключ 'default').
+    Вход selector:NUMBER — индекс ветви. Выход out:BLOCK_LIST — блоки выбранной
+    ветви (свободный BLOCK_LIST ветви как есть, либо одиночный BLOCK в списке).
+
+    В отличие от select (жадный мультиплексор, считает обе ветви), здесь
+    исполняется только выбранная ветвь — это настоящий условный поток.
+    """
+    type_id = "case"
+    category = "control"
+    display_name = "Кейс (выбор ветви)"
+    INPUTS = [Port("selector", PortType.NUMBER)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+    PARAMS_SCHEMA = {
+        "cases": {"type": "int", "default": 2},
+        "imports": {"type": "list", "default": [], "optional": True},
+        # Спец-поле: инспектор разворачивает в кнопки по числу ветвей + default.
+        "branches": {"type": "case_bodies", "default": None},
+    }
+
+    def validate_params(self) -> None:
+        parse_imports(self.params)
+        for key in self.branch_keys() + ["default"]:
+            body = self.params.get(key)
+            if body is not None and not isinstance(body, dict):
+                raise GraphValidationError(
+                    f"Узел {self.node_id!r}: ветвь {key!r} должна быть "
+                    f"вложенным графом (объектом)."
+                )
+
+    def _case_count(self) -> int:
+        try:
+            return max(0, int(self.params.get("cases", 2)))
+        except (TypeError, ValueError):
+            return 2
+
+    def branch_keys(self) -> list[str]:
+        return [f"case_{i}" for i in range(self._case_count())]
+
+    def input_ports(self):
+        ports = [Port("selector", PortType.NUMBER)]
+        for name, t in parse_imports(self.params):
+            ports.append(Port(name, t, required=False))
+        return ports
+
+    def compute(self, inputs, ctx: ExecContext):
+        from ..spec import GraphSpec
+
+        n = self._case_count()
+        try:
+            sel = int(round(float(inputs.get("selector", 0))))
+        except (TypeError, ValueError):
+            raise RetryGeneration(
+                f"case {self.node_id!r}: selector не число ({inputs.get('selector')!r})."
+            )
+
+        key = f"case_{sel}" if 0 <= sel < n else "default"
+        body = self.params.get(key) or {"nodes": [], "edges": [], "meta": {}}
+        spec = GraphSpec.parse(body)
+        imports = _import_extra(self, inputs)
+        return {"out": _branch_blocks(spec, imports)}

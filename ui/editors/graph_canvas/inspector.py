@@ -25,6 +25,7 @@ _PORT_AFFECTING = {
     "block_list": {"count"},
     "repeat": {"imports"},      # объявление внешних переменных меняет входы
     "map": {"imports"},
+    "case": {"imports", "cases"},  # imports → входы; cases → число кнопок-ветвей
     "input_var": {"type"},      # тип внешней переменной меняет выходной порт
     "map_item": {"type"},       # (на будущее — у map_item тоже типизованный выход)
 }
@@ -84,6 +85,26 @@ class ParamInspector(QWidget):
                 lambda _checked=False, k=key: self.open_subgraph.emit(self.node_id, k)
             )
             self._form.addRow(key, btn)
+            return
+
+        if kind == "case_bodies":
+            # По кнопке на каждую ветвь (case_0..case_{N-1}) + ветвь default.
+            try:
+                n = max(0, int(node.params.get("cases", 2)))
+            except (TypeError, ValueError):
+                n = 2
+            for i in range(n):
+                bkey = f"case_{i}"
+                b = QPushButton(f"Открыть ветвь {i}…")
+                b.clicked.connect(
+                    lambda _checked=False, k=bkey: self.open_subgraph.emit(self.node_id, k)
+                )
+                self._form.addRow(bkey, b)
+            bd = QPushButton("Открыть ветвь default…")
+            bd.clicked.connect(
+                lambda _checked=False: self.open_subgraph.emit(self.node_id, "default")
+            )
+            self._form.addRow("default", bd)
             return
 
         if kind == "enum":
