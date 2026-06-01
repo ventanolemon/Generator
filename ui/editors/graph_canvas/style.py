@@ -22,6 +22,7 @@ PORT_COLORS: dict[PortType, QColor] = {
     PortType.EXPR:        QColor("#AB47BC"),   # пурпурный — символьное выражение
     PortType.MATRIX:      QColor("#5C6BC0"),   # индиго — матрица/вектор
     PortType.WORDS:       QColor("#26A69A"),   # бирюзовый — словарь слов
+    PortType.SENTENCES:   QColor("#4DB6AC"),   # светло-бирюзовый — предложения
     PortType.TASK:        QColor("#27AE60"),   # зелёный
 }
 
