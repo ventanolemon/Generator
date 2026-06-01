@@ -11,7 +11,7 @@ from typing import Optional
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
-    QGraphicsScene, QGraphicsView, QGraphicsPathItem,
+    QGraphicsScene, QGraphicsView, QGraphicsPathItem, QMenu,
 )
 
 from core.graph import DocEdge, GraphDocument
@@ -201,9 +201,77 @@ class GraphScene(QGraphicsScene):
         sel = [it for it in self.selectedItems() if isinstance(it, NodeItem)]
         self.selection_node.emit(sel[0].node_id if len(sel) == 1 else None)
 
+    # ---------- Порядок наложения узлов (z-order) ----------
+
+    def _normalize_z(self) -> None:
+        """
+        Пере-нумеровать узлы целыми z = 1..N в текущем порядке наложения
+        (по zValue, затем по порядку вставки). Провода остаются на z=0 —
+        узлы всегда выше них. Делает шаги вперёд/назад однозначными.
+        """
+        items = list(self.node_items.values())
+        idx = {it: i for i, it in enumerate(items)}
+        ordered = sorted(items, key=lambda it: (it.zValue(), idx[it]))
+        for i, it in enumerate(ordered, start=1):
+            it.setZValue(float(i))
+
+    def node_to_front(self, item: NodeItem) -> None:
+        item.setZValue(len(self.node_items) + 10.0)
+        self._normalize_z()
+
+    def node_to_back(self, item: NodeItem) -> None:
+        item.setZValue(-10.0)
+        self._normalize_z()
+
+    def raise_node(self, item: NodeItem) -> None:
+        """На один слой вперёд (выше)."""
+        item.setZValue(item.zValue() + 1.5)
+        self._normalize_z()
+
+    def lower_node(self, item: NodeItem) -> None:
+        """На один слой назад (ниже)."""
+        item.setZValue(item.zValue() - 1.5)
+        self._normalize_z()
+
+    @staticmethod
+    def _climb_to_node(item) -> Optional[NodeItem]:
+        while item is not None and not isinstance(item, NodeItem):
+            item = item.parentItem()
+        return item
+
+    def contextMenuEvent(self, event):
+        node = None
+        for it in self.items(event.scenePos()):
+            node = self._climb_to_node(it)
+            if node is not None:
+                break
+        if node is None:
+            return super().contextMenuEvent(event)
+
+        menu = QMenu()
+        a_front = menu.addAction("На передний план")
+        a_back = menu.addAction("На задний план")
+        menu.addSeparator()
+        a_fwd = menu.addAction("Переместить вперёд")
+        a_bwd = menu.addAction("Переместить назад")
+        chosen = menu.exec(event.screenPos())
+        if chosen is a_front:
+            self.node_to_front(node)
+        elif chosen is a_back:
+            self.node_to_back(node)
+        elif chosen is a_fwd:
+            self.raise_node(node)
+        elif chosen is a_bwd:
+            self.lower_node(node)
+        event.accept()
+
 
 class GraphCanvasView(QGraphicsView):
-    """Вид с зумом и панорамой."""
+    """Вид с зумом и панорамой.
+
+    Панорама: зажать пробел — курсор превращается в «руку», ЛКМ тянет холст.
+    Отпустить пробел — возврат к рамочному выделению.
+    """
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -211,6 +279,7 @@ class GraphCanvasView(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self._zoom = 1.0
+        self._space_pan = False        # активен ли режим панорамы по пробелу
 
     def wheelEvent(self, event):
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
@@ -226,4 +295,23 @@ class GraphCanvasView(QGraphicsView):
                 sc.delete_selected()
                 event.accept()
                 return
+        # Пробел — включить «руку» для панорамы (игнорируем автоповтор).
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            if not self._space_pan:
+                self._space_pan = True
+                self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+                self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+            event.accept()
+            return
         super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        # Отпустили пробел — вернуть рамочное выделение и обычный курсор.
+        if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+            if self._space_pan:
+                self._space_pan = False
+                self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+                self.viewport().unsetCursor()
+            event.accept()
+            return
+        super().keyReleaseEvent(event)

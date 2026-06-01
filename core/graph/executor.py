@@ -92,6 +92,10 @@ class GraphExecutor:
                         f"Не заполнен обязательный вход {node.node_id}:{p.name}."
                     )
 
+        # Сохраняем типы выходов: нужны для поиска свободных типизированных
+        # выходов (финал TASK, а также тело цикла — свободный BLOCK).
+        self._out_port_types = out_ports
+
         # 4. Топосортировка и поиск финала
         self.order = self._toposort()
         self.result = self._find_result(out_ports)
@@ -135,6 +139,24 @@ class GraphExecutor:
             )
         return sinks[0] if sinks else None
 
+    def free_output_of_type(self, port_type: PortType) -> Endpoint | None:
+        """
+        Единственный неподключённый выход заданного типа, если он есть.
+
+        Используется телом цикла (repeat): «результат итерации» — это свободный
+        выход тела нужного типа (по умолчанию BLOCK). Бросает, если их несколько.
+        """
+        frees = [
+            ep for ep, t in self._out_port_types.items()
+            if t == port_type and ep not in self.consumed
+        ]
+        if len(frees) > 1:
+            raise GraphValidationError(
+                f"В теле цикла несколько свободных выходов типа {port_type.value}: "
+                f"{frees}. Оставьте один как результат итерации."
+            )
+        return frees[0] if frees else None
+
     # ---------- Исполнение ----------
 
     def run(self) -> Any:
@@ -147,10 +169,13 @@ class GraphExecutor:
         node_id, port = self.result
         return outputs[node_id][port]
 
-    def run_full(self) -> dict[str, dict[str, Any]]:
+    def run_full(self, extra: dict | None = None) -> dict[str, dict[str, Any]]:
         """
         Исполнить граф с whole-graph retry и вернуть выходы ВСЕХ узлов
         успешной попытки. Удобно для тестов и предпросмотра.
+
+        extra — начальное наполнение ExecContext.extra (например, индекс
+        итерации, прокидываемый узлом repeat в тело цикла).
         """
         seed = self.spec.meta.get("seed")
         try:
@@ -162,7 +187,10 @@ class GraphExecutor:
         # generation.generate_value) и заводим отдельный rng для контекста.
         if seed is not None:
             random.seed(seed)
-        ctx = ExecContext(rng=random.Random(seed) if seed is not None else random.Random())
+        ctx = ExecContext(
+            rng=random.Random(seed) if seed is not None else random.Random(),
+            extra=dict(extra or {}),
+        )
 
         last: Exception | None = None
         for attempt in range(max_attempts):

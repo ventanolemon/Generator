@@ -45,6 +45,9 @@ class GraphEditor(PartitionEditor):
     def __init__(self, repository, subject_id, partition_id=None, parent=None):
         super().__init__(repository, subject_id, partition_id, parent)
         self.doc = GraphDocument()
+        # Стек навигации по вложенным телам циклов:
+        # каждый уровень — (родительский GraphDocument, node_id узла repeat, ключ параметра).
+        self._nav_stack: list[tuple] = []
         self._build_ui()
         if self.is_edit_mode:
             self.load_existing()
@@ -118,13 +121,24 @@ class GraphEditor(PartitionEditor):
         self.inspector = ParamInspector(self.doc, splitter)
         self.inspector.ports_changed.connect(self.scene.refresh_node)
         self.inspector.params_changed.connect(self._on_param_changed)
+        self.inspector.open_subgraph.connect(self._enter_subgraph)
 
         splitter.addWidget(self.palette)
         splitter.addWidget(self.view)
         splitter.addWidget(self.inspector)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([220, 640, 240])
-        layout.addWidget(splitter)
+
+        # Хлебные крошки + «назад» для навигации по вложенным телам циклов.
+        crumbs = QHBoxLayout()
+        self.back_btn = QPushButton("← Назад", wrap)
+        self.back_btn.clicked.connect(self._exit_subgraph)
+        self.back_btn.setVisible(False)
+        self.breadcrumb = QLabel("Главный граф", wrap)
+        self.breadcrumb.setStyleSheet("color: #bbb;")
+        crumbs.addWidget(self.back_btn)
+        crumbs.addWidget(self.breadcrumb)
+        crumbs.addStretch()
 
         hint = QLabel(
             "Двойной клик в палитре — добавить узел. Тяните от порта к порту — "
@@ -133,6 +147,7 @@ class GraphEditor(PartitionEditor):
         )
         hint.setStyleSheet("color: #888;")
         outer = QVBoxLayout()
+        outer.addLayout(crumbs)
         outer.addWidget(splitter, stretch=1)
         outer.addWidget(hint)
         container = QWidget(self)
@@ -187,6 +202,50 @@ class GraphEditor(PartitionEditor):
     def _mark_canvas_dirty(self) -> None:
         self._sync_json_from_doc()
 
+    # ---- Навигация по вложенному телу цикла (repeat.body) ----
+
+    def _enter_subgraph(self, node_id: str, param_key: str) -> None:
+        """Открыть тело цикла как отдельный холст. Текущий уровень — в стек."""
+        parent_doc = self.doc
+        node = parent_doc.nodes.get(node_id)
+        if node is None:
+            return
+        body = node.params.get(param_key) or {"nodes": [], "edges": [], "meta": {}}
+        try:
+            child = GraphDocument.from_spec_dict(body)
+        except GraphValidationError as e:
+            QMessageBox.warning(self, "Не удалось открыть тело цикла", str(e))
+            return
+        self._nav_stack.append((parent_doc, node_id, param_key))
+        self._load_doc(child)
+        self._update_breadcrumb()
+
+    def _exit_subgraph(self) -> None:
+        """Вернуться на уровень выше, сохранив отредактированное тело в параметр."""
+        if not self._nav_stack:
+            return
+        child_doc = self.doc
+        parent_doc, node_id, param_key = self._nav_stack.pop()
+        node = parent_doc.nodes.get(node_id)
+        if node is not None:
+            node.params[param_key] = child_doc.to_spec_dict()
+        self._load_doc(parent_doc)
+        self._update_breadcrumb()
+
+    def _flush_subgraphs(self) -> None:
+        """Свернуть весь стек обратно в корневой граф (перед сохранением/проверкой)."""
+        while self._nav_stack:
+            self._exit_subgraph()
+
+    def _update_breadcrumb(self) -> None:
+        depth = len(self._nav_stack)
+        self.back_btn.setVisible(depth > 0)
+        if depth == 0:
+            self.breadcrumb.setText("Главный граф")
+        else:
+            trail = " › ".join(f"тело «{nid}»" for _d, nid, _k in self._nav_stack)
+            self.breadcrumb.setText("Главный граф › " + trail)
+
     # ---- Синхронизация холст ⇄ JSON ----
 
     def _sync_json_from_doc(self) -> None:
@@ -213,8 +272,26 @@ class GraphEditor(PartitionEditor):
 
     # ---- Проверка и предпросмотр (через движок) ----
 
+    def _root_spec_dict(self) -> dict:
+        """
+        Корневой граф как dict, даже если открыто вложенное тело цикла.
+        Текущий уровень сворачивается в стек неразрушающе (UI не трогаем).
+        """
+        if not self._nav_stack:
+            return self.doc.to_spec_dict()
+        # Свернуть текущее тело в копию родительских узлов снизу вверх.
+        current = self.doc.to_spec_dict()
+        for parent_doc, node_id, param_key in reversed(self._nav_stack):
+            parent_dict = parent_doc.to_spec_dict()
+            for n in parent_dict["nodes"]:
+                if n["id"] == node_id:
+                    n["params"] = {**n.get("params", {}), param_key: current}
+                    break
+            current = parent_dict
+        return current
+
     def _current_spec(self) -> GraphSpec:
-        return self.doc.to_spec()
+        return GraphSpec.parse(self._root_spec_dict())
 
     def _on_check(self) -> None:
         try:
@@ -230,7 +307,7 @@ class GraphEditor(PartitionEditor):
             gen = GraphConstructorGenerator(
                 partition_id=self.partition_id or 0,
                 name=self.name_edit.text() or "preview",
-                config=self.doc.to_spec_dict(),
+                config=self._root_spec_dict(),
             )
             task = gen.generate()
         except GraphError as e:
@@ -269,11 +346,12 @@ class GraphEditor(PartitionEditor):
         if not name:
             raise ValueError("Введите название раздела.")
 
-        spec = self._current_spec()
+        # Сохраняем корневой граф (с учётом открытых вложенных тел циклов).
+        root = self._root_spec_dict()
         # Валидируем структуру до записи в БД — лучше упасть здесь.
         try:
-            GraphExecutor(spec)
+            GraphExecutor(GraphSpec.parse(root))
         except GraphError as e:
             raise ValueError(f"Граф некорректен: {e}")
 
-        return name, self.CONSTRACTED, self.doc.to_spec_dict()
+        return name, self.CONSTRACTED, root

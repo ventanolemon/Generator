@@ -16,10 +16,11 @@ from core.graph.registry import NodeRegistry
 _CATEGORY_LABELS = {
     "source":   "Источники",
     "compute":  "Вычисление",
+    "control":  "Управление",
     "content":  "Блоки контента",
     "assembly": "Сборка задания",
 }
-_CATEGORY_ORDER = ["source", "compute", "content", "assembly"]
+_CATEGORY_ORDER = ["source", "compute", "control", "content", "assembly"]
 
 
 class NodePalette(QTreeWidget):

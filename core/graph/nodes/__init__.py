@@ -11,15 +11,77 @@ from ..registry import NodeRegistry
 from .assembly import BlockListNode, StaticTaskNode
 from .compute import ConstraintNode, FormulaNode, TemplateNode, VarDictNode
 from .content import TextBlockNode
+from .control import (
+    CompareNode, NumberCheckNode, SelectNode,
+)
+from .loop import (
+    CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
+    ShiftGetNode, ShiftSetNode,
+)
 from .sources import (
-    ConstantNumberNode, RandomNaturalNode, RandomRealNode,
+    ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
+    NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
+)
+from .linalg import (
+    ChangeBasisOperatorNode, CharPolyNode, CoordinatesInBasisNode,
+    CrossProductNode, DeterminantNode, DotProductNode, EigenvaluesNode,
+    EigenvectorsNode, GramSchmidtNode, IdentityNode, InverseNode,
+    LineCanonicalNode, LinSolveNode, MatrixAddNode, MatrixBlockNode,
+    MatrixConstNode, MatrixMultiplyNode, MatrixPowerNode, MatrixToQuadFormNode,
+    NormNode, NullspaceNode, PlaneFromPointNormalNode, PointPlaneDistanceNode,
+    QuadFormCanonicalNode, QuadFormSignatureNode, QuadFormToMatrixNode,
+    RandomMatrixNode, RankNode, RrefNode, ScalarMultiplyNode, TraceNode,
+    TransposeNode, TripleProductNode, VectorAngleNode,
+)
+from .ode import (
+    OdeCheckNode, OdeClassifyNode, OdeConstNode, OdeSolveNode,
+)
+from .symbolic import (
+    AbsNode, ApartNode, ArgNode, CancelNode, CollectNode, ConjugateNode,
+    DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
+    ExprBlockNode, ExprConstNode, FactorNode, FourierNode, ImNode,
+    IntegrateNode, InverseFourierNode, InverseLaplaceNode, IsConvergentNode,
+    LaplaceNode, LimitNode, ReNode, ResidueNode, SeriesNode, SimplifyNode,
+    SolveNode, SubstituteNode, SumDisplayNode, SummationNode, SymbolNode,
+    TogetherNode, TrigsimpNode,
 )
 
 _ALL_NODES = [
     # source
-    ConstantNumberNode, RandomNaturalNode, RandomRealNode,
+    ConstantNumberNode, ConstantStringNode, ConstantBoolNode,
+    RandomNaturalNode, RandomRealNode,
+    StringListNode, NumberRangeNode,
     # compute
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
+    # control
+    CompareNode, NumberCheckNode, SelectNode,
+    LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode, CaseNode,
+    ShiftGetNode, ShiftSetNode,
+    # symbolic (символьная арифметика)
+    SymbolNode, ExprConstNode,
+    ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
+    CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
+    DiffNode, IntegrateNode, LimitNode, SeriesNode,
+    SummationNode, SumDisplayNode, IsConvergentNode,
+    ReNode, ImNode, ArgNode, AbsNode, ConjugateNode, ExpandComplexNode,
+    ResidueNode, SolveNode,
+    LaplaceNode, InverseLaplaceNode, FourierNode, InverseFourierNode,
+    ExprBlockNode,
+    # linalg (линейная алгебра)
+    MatrixConstNode, RandomMatrixNode, IdentityNode,
+    DeterminantNode, InverseNode, TransposeNode, RankNode, TraceNode,
+    ScalarMultiplyNode, MatrixPowerNode, MatrixMultiplyNode, MatrixAddNode,
+    RrefNode, CharPolyNode, EigenvaluesNode, EigenvectorsNode, NullspaceNode,
+    LinSolveNode,
+    DotProductNode, CrossProductNode, TripleProductNode, NormNode,
+    VectorAngleNode, PlaneFromPointNormalNode, PointPlaneDistanceNode,
+    LineCanonicalNode,
+    QuadFormToMatrixNode, MatrixToQuadFormNode, QuadFormCanonicalNode,
+    QuadFormSignatureNode, ChangeBasisOperatorNode, CoordinatesInBasisNode,
+    GramSchmidtNode,
+    MatrixBlockNode,
+    # ode (дифференциальные уравнения)
+    OdeConstNode, OdeSolveNode, OdeClassifyNode, OdeCheckNode,
     # content
     TextBlockNode,
     # assembly

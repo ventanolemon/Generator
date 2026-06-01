@@ -19,6 +19,9 @@ class PortType(Enum):
     BLOCK = "block"              # объект core.Block любого подтипа
     BLOCK_LIST = "block_list"    # list[Block]
     BOOL = "bool"                # результат проверки
+    LIST = "list"                # list[Any] — универсальная коллекция (для map)
+    EXPR = "expr"                # символьное выражение sympy (алгебра/анализ)
+    MATRIX = "matrix"            # sympy.Matrix (в т.ч. вектор-столбец n×1)
     TASK = "task"                # StaticTask / InteractiveTask — финал графа
 
 

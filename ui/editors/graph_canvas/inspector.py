@@ -12,20 +12,33 @@ from typing import Optional
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QLineEdit, QSpinBox, QComboBox, QLabel, QPlainTextEdit,
+    QPushButton,
 )
 
 from core.graph import GraphDocument
 
 
-# Параметры, изменение которых меняет набор портов узла.
-_PORT_AFFECTING = {"names", "count"}
+# Параметры, изменение которых меняет набор портов узла — по типам узлов.
+# (var_dict.names и block_list.count влияют на порты; repeat.count — нет.)
+_PORT_AFFECTING = {
+    "var_dict": {"names"},
+    "block_list": {"count"},
+    "repeat": {"imports"},      # объявление внешних переменных меняет входы
+    "map": {"imports"},
+    "case": {"imports", "cases"},  # imports → входы; cases → число кнопок-ветвей
+    "input_var": {"type"},      # тип внешней переменной меняет выходной порт
+    "map_item": {"type"},       # (на будущее — у map_item тоже типизованный выход)
+    "shift_get": {"type"},      # тип регистра меняет выход
+    "shift_set": {"type"},      # тип регистра меняет вход и выход
+}
 
 
 class ParamInspector(QWidget):
     """Редактор параметров одного узла."""
 
-    ports_changed = pyqtSignal(str)     # node_id — перестроить порты на сцене
-    params_changed = pyqtSignal(str)    # node_id — параметры изменились (перерисовать)
+    ports_changed = pyqtSignal(str)        # node_id — перестроить порты на сцене
+    params_changed = pyqtSignal(str)       # node_id — параметры изменились (перерисовать)
+    open_subgraph = pyqtSignal(str, str)   # node_id, param_key — открыть тело-подграф
 
     def __init__(self, doc: GraphDocument, parent=None):
         super().__init__(parent)
@@ -66,6 +79,36 @@ class ParamInspector(QWidget):
         kind = meta.get("type", "string")
         cur = node.params.get(key, meta.get("default"))
 
+        if kind == "subgraph":
+            # Тело вложенного графа не редактируется формой — открывается
+            # отдельным холстом. Кнопка делегирует это редактору.
+            btn = QPushButton("Открыть подграф…")
+            btn.clicked.connect(
+                lambda _checked=False, k=key: self.open_subgraph.emit(self.node_id, k)
+            )
+            self._form.addRow(key, btn)
+            return
+
+        if kind == "case_bodies":
+            # По кнопке на каждую ветвь (case_0..case_{N-1}) + ветвь default.
+            try:
+                n = max(0, int(node.params.get("cases", 2)))
+            except (TypeError, ValueError):
+                n = 2
+            for i in range(n):
+                bkey = f"case_{i}"
+                b = QPushButton(f"Открыть ветвь {i}…")
+                b.clicked.connect(
+                    lambda _checked=False, k=bkey: self.open_subgraph.emit(self.node_id, k)
+                )
+                self._form.addRow(bkey, b)
+            bd = QPushButton("Открыть ветвь default…")
+            bd.clicked.connect(
+                lambda _checked=False: self.open_subgraph.emit(self.node_id, "default")
+            )
+            self._form.addRow("default", bd)
+            return
+
         if kind == "enum":
             w = QComboBox()
             w.addItems([str(v) for v in meta.get("values", [])])
@@ -96,13 +139,21 @@ class ParamInspector(QWidget):
             w.textChanged.connect(lambda _v, k=key: self._commit(k))
             self._editors[key] = (lambda _w=w: _w.text())
 
-        # Параметры, меняющие набор портов (var_dict.names, block_list.count),
-        # перестраивают порты не на каждый символ, а по завершении ввода
-        # (Enter / потеря фокуса) — иначе холст моргает и теряется фокус.
-        if key in _PORT_AFFECTING and hasattr(w, "editingFinished"):
-            w.editingFinished.connect(self._commit_ports)
+        # Параметры, меняющие набор портов (var_dict.names, block_list.count,
+        # repeat/map.imports, input_var.type), перестраивают порты.
+        # Текстовые поля — по завершении ввода (Enter / потеря фокуса), иначе
+        # холст моргает; выпадающие списки — сразу при смене значения.
+        if key in self._port_affecting_keys(node):
+            if hasattr(w, "editingFinished"):
+                w.editingFinished.connect(self._commit_ports)
+            elif isinstance(w, QComboBox):
+                w.currentTextChanged.connect(lambda _v: self._commit_ports())
 
         self._form.addRow(key, w)
+
+    @staticmethod
+    def _port_affecting_keys(node) -> set:
+        return _PORT_AFFECTING.get(node.type, set())
 
     def _commit(self, key: str) -> None:
         if self.node_id is None:
