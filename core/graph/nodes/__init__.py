@@ -16,6 +16,7 @@ from .control import (
 )
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
+    ShiftGetNode, ShiftSetNode,
 )
 from .sources import (
     ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
@@ -32,6 +33,7 @@ _ALL_NODES = [
     # control
     CompareNode, NumberCheckNode, SelectNode,
     LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode, CaseNode,
+    ShiftGetNode, ShiftSetNode,
     # content
     TextBlockNode,
     # assembly

@@ -118,6 +118,124 @@ def _import_extra(node, inputs) -> dict:
     return extra
 
 
+# Префикс ключа extra для значений регистров сдвига (состояние между итерациями).
+REGISTER_PREFIX = "__register__"
+
+
+def parse_registers(params: dict) -> list[tuple[str, PortType, object]]:
+    """
+    Разобрать параметр registers ['имя:тип:начальное', ...].
+
+    Тип по умолчанию number, начальное значение опционально. Возвращает список
+    (имя, PortType, начальное_сырое|None). Имена уникальны, тип из _IMPORT_TYPES.
+    """
+    specs = params.get("registers") or []
+    out: list[tuple[str, PortType, object]] = []
+    seen: set[str] = set()
+    for raw in specs:
+        s = str(raw).strip()
+        if not s:
+            continue
+        parts = s.split(":")
+        name = parts[0].strip()
+        tname = (parts[1].strip() if len(parts) > 1 and parts[1].strip() else "number")
+        initial = parts[2] if len(parts) > 2 else None
+        if not name:
+            continue
+        if tname not in _IMPORT_TYPES:
+            raise GraphValidationError(
+                f"Регистр {s!r}: неизвестный тип {tname!r}. "
+                f"Допустимы: {list(_IMPORT_TYPES)}"
+            )
+        if name in seen:
+            raise GraphValidationError(f"Регистр {name!r} объявлен дважды.")
+        seen.add(name)
+        out.append((name, _IMPORT_TYPES[tname], initial))
+    return out
+
+
+def _register_initial(ptype: PortType, raw) -> object:
+    """Начальное значение регистра по типу (для итерации 0)."""
+    if ptype is PortType.NUMBER:
+        if raw is None:
+            return 0.0
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+    if ptype is PortType.STRING:
+        return "" if raw is None else str(raw)
+    return raw  # для прочих типов начальное = как передано (обычно None)
+
+
+class ShiftGetNode(Node):
+    """
+    Регистр сдвига — чтение: значение с предыдущей итерации цикла (на итерации 0
+    — начальное значение, объявленное в registers объемлющего repeat). Источник.
+    """
+    type_id = "shift_get"
+    category = "control"
+    display_name = "Регистр: чтение"
+    PARAMS_SCHEMA = {
+        "name": {"type": "string", "default": "acc"},
+        "type": {"type": "enum", "values": list(_IMPORT_TYPES), "default": "number"},
+    }
+
+    def validate_params(self) -> None:
+        t = self.params.get("type", "number")
+        if t not in _IMPORT_TYPES:
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: неизвестный тип {t!r}."
+            )
+
+    def output_ports(self):
+        return [Port("out", _IMPORT_TYPES.get(self.params.get("type", "number"),
+                                              PortType.NUMBER))]
+
+    def compute(self, inputs, ctx: ExecContext):
+        name = str(self.params.get("name", "acc"))
+        key = REGISTER_PREFIX + name
+        if key not in ctx.extra:
+            raise RetryGeneration(
+                f"shift_get {self.node_id!r}: регистр {name!r} не объявлен в repeat."
+            )
+        return {"out": ctx.extra[key]}
+
+
+class ShiftSetNode(Node):
+    """
+    Регистр сдвига — запись: значение, которое получит следующая итерация.
+    Проходной выход (out = value) — чтобы исполнитель записал его, а repeat забрал
+    после итерации. Тип out совпадает с типом value.
+    """
+    type_id = "shift_set"
+    category = "control"
+    display_name = "Регистр: запись"
+    PARAMS_SCHEMA = {
+        "name": {"type": "string", "default": "acc"},
+        "type": {"type": "enum", "values": list(_IMPORT_TYPES), "default": "number"},
+    }
+
+    def validate_params(self) -> None:
+        t = self.params.get("type", "number")
+        if t not in _IMPORT_TYPES:
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: неизвестный тип {t!r}."
+            )
+
+    def _t(self) -> PortType:
+        return _IMPORT_TYPES.get(self.params.get("type", "number"), PortType.NUMBER)
+
+    def input_ports(self):
+        return [Port("value", self._t())]
+
+    def output_ports(self):
+        return [Port("out", self._t())]
+
+    def compute(self, inputs, ctx: ExecContext):
+        return {"out": inputs.get("value")}
+
+
 class LoopIndexNode(Node):
     """Номер текущей итерации цикла (0-based). Источник внутри тела repeat."""
     type_id = "loop_index"
@@ -148,6 +266,7 @@ class RepeatNode(Node):
         "count": {"type": "int", "default": 3},
         "max_iterations": {"type": "int", "default": 1000, "optional": True},
         "imports": {"type": "list", "default": [], "optional": True},
+        "registers": {"type": "list", "default": [], "optional": True},
         "body": {"type": "subgraph", "default": {"nodes": [], "edges": [], "meta": {}}},
     }
 
@@ -157,7 +276,8 @@ class RepeatNode(Node):
             raise GraphValidationError(
                 f"Узел {self.node_id!r}: 'body' должен быть вложенным графом (объектом)."
             )
-        parse_imports(self.params)  # проверка формата объявлений внешних переменных
+        parse_imports(self.params)    # формат объявлений внешних переменных
+        parse_registers(self.params)  # формат объявлений регистров сдвига
 
     def input_ports(self):
         # count + по одному (необязательному) входу на каждую внешнюю переменную.
@@ -188,14 +308,35 @@ class RepeatNode(Node):
 
         n = self._count(inputs)
         imports = _import_extra(self, inputs)
+
+        # Регистры сдвига: начальные значения для итерации 0. Каждое объявление
+        # registers[name] переносит результат прошлой итерации в следующую.
+        registers = parse_registers(self.params)
+        reg_state: dict[str, object] = {
+            name: _register_initial(t, init) for name, t, init in registers
+        }
+        # Соответствие name -> id узла shift_set в теле (откуда забирать новое
+        # значение регистра после итерации).
+        setters = {
+            node.get("params", {}).get("name", "acc"): node["id"]
+            for node in (body.get("nodes") or [])
+            if node.get("type") == "shift_set"
+        }
+
         collected: list = []
         for i in range(n):
             ex = GraphExecutor(spec, registry=self._registry())
             result_ep = ex.free_output_of_type(PortType.BLOCK)
-            outputs = ex.run_full(extra={**imports, LOOP_INDEX_KEY: i})
+            reg_extra = {REGISTER_PREFIX + name: val for name, val in reg_state.items()}
+            outputs = ex.run_full(extra={**imports, **reg_extra, LOOP_INDEX_KEY: i})
             if result_ep is not None:
                 node_id, port = result_ep
                 collected.append(outputs[node_id][port])
+            # Обновить регистры значениями shift_set для следующей итерации.
+            for name in reg_state:
+                sid = setters.get(name)
+                if sid is not None and sid in outputs and "out" in outputs[sid]:
+                    reg_state[name] = outputs[sid]["out"]
         return {"out": collected}
 
     def _registry(self):
