@@ -41,9 +41,9 @@ from .symbolic import (
     DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
     ExprBlockNode, ExprConstNode, FactorNode, FourierNode, ImNode,
     IntegrateNode, InverseFourierNode, InverseLaplaceNode, IsConvergentNode,
-    LaplaceNode, LimitNode, ReNode, ResidueNode, SeriesNode, SimplifyNode,
-    SolveNode, SubstituteNode, SumDisplayNode, SummationNode, SymbolNode,
-    TogetherNode, TrigsimpNode,
+    LaplaceNode, LimitNode, RandomPolynomialNode, ReNode, ResidueNode,
+    SeriesNode, SimplifyNode, SolveNode, SubstituteNode, SumDisplayNode,
+    SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
 )
 
 _ALL_NODES = [
@@ -58,7 +58,7 @@ _ALL_NODES = [
     LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode, CaseNode,
     ShiftGetNode, ShiftSetNode,
     # symbolic (символьная арифметика)
-    SymbolNode, ExprConstNode,
+    SymbolNode, ExprConstNode, RandomPolynomialNode,
     ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
     CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
     DiffNode, IntegrateNode, LimitNode, SeriesNode,
@@ -93,6 +93,8 @@ def build_default_registry() -> NodeRegistry:
     reg = NodeRegistry()
     for cls in _ALL_NODES:
         reg.register(cls)
+    from .descriptions import apply_descriptions
+    apply_descriptions(reg)
     return reg
 
 

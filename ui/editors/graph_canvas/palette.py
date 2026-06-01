@@ -63,9 +63,11 @@ class NodePalette(QTreeWidget):
     def _tooltip(entry: dict) -> str:
         ins = ", ".join(f"{n}:{t}" for n, t in entry["inputs"]) or "—"
         outs = ", ".join(f"{n}:{t}" for n, t in entry["outputs"]) or "—"
-        return (f"{entry['type_id']}\n"
-                f"входы: {ins}\n"
-                f"выходы: {outs}")
+        lines = [entry["type_id"]]
+        if entry.get("description"):
+            lines.append(entry["description"])
+        lines += [f"входы: {ins}", f"выходы: {outs}"]
+        return "\n".join(lines)
 
     def _on_double_click(self, item: QTreeWidgetItem, _col: int) -> None:
         type_id = item.data(0, Qt.ItemDataRole.UserRole)

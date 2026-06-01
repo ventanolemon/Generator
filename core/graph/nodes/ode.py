@@ -14,17 +14,24 @@ from __future__ import annotations
 from ..errors import GraphValidationError, RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
-from ..symbolic import parse_ode, sympy, to_latex
+from ..symbolic import parse_ode, substitute_values, sympy, to_latex
 
 
 class OdeConstNode(Node):
     """
     ОДУ из текста со штрихами (y' , y'' …). Источник EXPR (несёт sympy.Eq).
     Параметры func/var — имя искомой функции и независимой переменной.
+
+    В уравнении можно использовать буквы-коэффициенты (например, y'' + k*y = 0)
+    и подставить в них случайные числа через вход values (NUMBER_DICT) — так
+    получается ОДУ со случайными параметрами.
     """
     type_id = "ode_const"
     category = "ode"
     display_name = "Уравнение (ОДУ)"
+    description = ("ОДУ из текста со штрихами (y'' + k*y = 0). Вход values "
+                   "(NUMBER_DICT) подставляет случайные коэффициенты. Выход: EXPR.")
+    INPUTS = [Port("values", PortType.NUMBER_DICT, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
     PARAMS_SCHEMA = {
         "equation": {"type": "string", "default": "y'' + y = 0"},
@@ -42,7 +49,7 @@ class OdeConstNode(Node):
     def compute(self, inputs, ctx: ExecContext):
         f, v = self._fv()
         eq, _func, _var = parse_ode(self.params.get("equation", ""), f, v)
-        return {"out": eq}
+        return {"out": substitute_values(eq, inputs.get("values"))}
 
 
 class OdeSolveNode(Node):

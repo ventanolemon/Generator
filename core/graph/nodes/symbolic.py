@@ -20,7 +20,8 @@ from ..errors import GraphValidationError, RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
 from ..symbolic import (
-    as_expr, build_symbols, guard_numeric, parse_expr, sympy, to_latex,
+    as_expr, build_symbols, guard_numeric, parse_expr, substitute_values,
+    sympy, to_latex,
 )
 
 
@@ -56,11 +57,17 @@ class ExprConstNode(Node):
     Символьное выражение из текста (например, '(x+1)^2/(x-1)'). Источник EXPR.
 
     Имена переменных и их предположения берутся из параметров: vars — список
-    имён, assumptions — общий режим (complex/real/positive).
+    имён, assumptions — общий режим (complex/real/positive). Часть имён можно
+    использовать как плейсхолдеры коэффициентов ('a*x^2+b*x+c') и подставить в
+    них случайные числа через вход values (NUMBER_DICT) — переменные, не попавшие
+    в values, останутся символами.
     """
     type_id = "expr_const"
     category = "symbolic"
     display_name = "Выражение"
+    description = ("Выражение из текста; буквы — переменные/коэффициенты. Вход "
+                   "values (NUMBER_DICT) подставляет случайные числа. Выход: EXPR.")
+    INPUTS = [Port("values", PortType.NUMBER_DICT, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
     PARAMS_SCHEMA = {
         "expr": {"type": "string", "default": "x"},
@@ -79,7 +86,55 @@ class ExprConstNode(Node):
         names = self.params.get("vars") or []
         syms = build_symbols([str(n) for n in names],
                              self.params.get("assumptions", "complex"))
-        return {"out": parse_expr(self.params.get("expr", ""), syms)}
+        expr = parse_expr(self.params.get("expr", ""), syms)
+        return {"out": substitute_values(expr, inputs.get("values"))}
+
+
+class RandomPolynomialNode(Node):
+    """
+    Случайный многочлен заданной степени с целыми коэффициентами. Источник EXPR.
+
+    Параметры: var (имя переменной), degree (степень), min/max (диапазон
+    коэффициентов). Старший коэффициент гарантированно ненулевой (степень точная).
+    Воспроизводимость — через ctx.rng (как у random_natural).
+    """
+    type_id = "random_polynomial"
+    category = "symbolic"
+    display_name = "Случайный многочлен"
+    description = ("Случайный многочлен степени degree с целыми коэффициентами "
+                   "из [min;max]. Выход: EXPR.")
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "var": {"type": "string", "default": "x"},
+        "degree": {"type": "int", "default": 2},
+        "min": {"type": "int", "default": -5, "optional": True},
+        "max": {"type": "int", "default": 5, "optional": True},
+    }
+
+    def validate_params(self) -> None:
+        try:
+            if int(self.params.get("degree", 2)) < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: degree должно быть целым ≥ 0."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        x = sp.Symbol(str(self.params.get("var", "x")))
+        deg = int(self.params.get("degree", 2))
+        lo = int(self.params.get("min", -5))
+        hi = int(self.params.get("max", 5))
+        rng = ctx.rng
+        terms = []
+        for k in range(deg + 1):
+            c = rng.randint(lo, hi)
+            if k == deg and c == 0:
+                # Старший коэффициент не должен быть нулём (иначе степень падает).
+                c = hi if hi != 0 else 1
+            terms.append(c * x ** k)
+        return {"out": sp.Add(*terms)}
 
 
 # ---------- Алгебраические преобразования (EXPR → EXPR) ----------

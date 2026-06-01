@@ -65,6 +65,12 @@ class ParamInspector(QWidget):
         node = self.doc.nodes[node_id]
         entry = self._entries.get(node.type, {})
         self._form.addRow(QLabel(f"<b>{entry.get('display_name', node.type)}</b>"))
+        desc = entry.get("description")
+        if desc:
+            lbl = QLabel(desc)
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet("color: #9AA0A6;")
+            self._form.addRow(lbl)
         self._form.addRow("id", QLabel(node.id))
 
         schema = entry.get("params_schema") or {}
