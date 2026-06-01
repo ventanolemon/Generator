@@ -14,6 +14,7 @@ from .content import TextBlockNode
 from .control import (
     CompareNode, NumberCheckNode, SelectNode,
 )
+from .english import WordsFileNode, WordsTrainerNode
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
     ShiftGetNode, ShiftSetNode,
@@ -82,6 +83,8 @@ _ALL_NODES = [
     MatrixBlockNode,
     # ode (дифференциальные уравнения)
     OdeConstNode, OdeSolveNode, OdeClassifyNode, OdeCheckNode,
+    # english (английский язык)
+    WordsFileNode, WordsTrainerNode,
     # content
     TextBlockNode,
     # assembly

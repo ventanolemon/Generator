@@ -17,10 +17,15 @@ _CATEGORY_LABELS = {
     "source":   "Источники",
     "compute":  "Вычисление",
     "control":  "Управление",
+    "symbolic": "Символьная математика",
+    "linalg":   "Линейная алгебра",
+    "ode":      "Дифф. уравнения",
+    "english":  "Английский язык",
     "content":  "Блоки контента",
     "assembly": "Сборка задания",
 }
-_CATEGORY_ORDER = ["source", "compute", "control", "content", "assembly"]
+_CATEGORY_ORDER = ["source", "compute", "control", "symbolic", "linalg",
+                   "ode", "english", "content", "assembly"]
 
 
 class NodePalette(QTreeWidget):

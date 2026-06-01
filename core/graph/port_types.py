@@ -22,6 +22,7 @@ class PortType(Enum):
     LIST = "list"                # list[Any] — универсальная коллекция (для map)
     EXPR = "expr"                # символьное выражение sympy (алгебра/анализ)
     MATRIX = "matrix"            # sympy.Matrix (в т.ч. вектор-столбец n×1)
+    WORDS = "words"              # dict[str, str] — словарь term→translation (англ.)
     TASK = "task"                # StaticTask / InteractiveTask — финал графа
 
 
