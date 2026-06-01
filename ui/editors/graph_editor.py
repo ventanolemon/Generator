@@ -29,6 +29,7 @@ from core.graph import (
 
 from .base import PartitionEditor
 from .graph_canvas import GraphScene, GraphCanvasView, NodePalette
+from .graph_canvas.history import GraphHistory
 from .graph_canvas.inspector import ParamInspector
 
 
@@ -48,6 +49,10 @@ class GraphEditor(PartitionEditor):
         # Стек навигации по вложенным телам циклов:
         # каждый уровень — (родительский GraphDocument, node_id узла repeat, ключ параметра).
         self._nav_stack: list[tuple] = []
+        # История undo/redo и буфер обмена (на уровне текущего холста).
+        self._history = GraphHistory()
+        self._clipboard: dict | None = None
+        self._restoring = False        # подавляем запись в историю при undo/redo
         self._build_ui()
         if self.is_edit_mode:
             self.load_existing()
@@ -117,6 +122,11 @@ class GraphEditor(PartitionEditor):
         self.scene.selection_node.connect(self._on_node_selected)
         self.scene.changed_doc.connect(self._mark_canvas_dirty)
         self.view = GraphCanvasView(self.scene, splitter)
+        self.view.copy_requested.connect(self.copy_selection)
+        self.view.paste_requested.connect(self.paste_clipboard)
+        self.view.undo_requested.connect(self.undo)
+        self.view.redo_requested.connect(self.redo)
+        self.view.moved_nodes.connect(self.snapshot_after_move)
 
         self.inspector = ParamInspector(self.doc, splitter)
         self.inspector.ports_changed.connect(self.scene.refresh_node)
@@ -142,7 +152,9 @@ class GraphEditor(PartitionEditor):
 
         hint = QLabel(
             "Двойной клик в палитре — добавить узел. Тяните от порта к порту — "
-            "провод (только совместимые типы). Del — удалить выделенное.",
+            "провод (только совместимые типы). Del — удалить. "
+            "Ctrl+C/V — копировать/вставить, Ctrl+Z — отменить, "
+            "Ctrl+Shift+Z — повторить.",
             wrap,
         )
         hint.setStyleSheet("color: #888;")
@@ -179,6 +191,9 @@ class GraphEditor(PartitionEditor):
         self.inspector.doc = doc
         self.scene.rebuild()
         self._sync_json_from_doc()
+        # Новый граф (или смена уровня подграфа) — история начинается заново.
+        if not self._restoring:
+            self._history.reset(self.doc.to_spec_dict())
 
     # ---- Палитра / выбор / параметры ----
 
@@ -201,6 +216,45 @@ class GraphEditor(PartitionEditor):
 
     def _mark_canvas_dirty(self) -> None:
         self._sync_json_from_doc()
+        if not self._restoring:
+            self._history.push(self.doc.to_spec_dict())
+
+    # ---- Undo / redo / буфер обмена ----
+
+    def _restore_snapshot(self, snap: dict) -> None:
+        """Загрузить снимок в холст, не трогая историю (флаг _restoring)."""
+        self._restoring = True
+        try:
+            doc = GraphDocument.from_spec_dict(snap, registry=self.doc.registry)
+            self._load_doc(doc)
+            self.inspector.show_node(None)
+        finally:
+            self._restoring = False
+
+    def undo(self) -> None:
+        snap = self._history.undo()
+        if snap is not None:
+            self._restore_snapshot(snap)
+
+    def redo(self) -> None:
+        snap = self._history.redo()
+        if snap is not None:
+            self._restore_snapshot(snap)
+
+    def copy_selection(self) -> None:
+        clip = self.scene.copy_selection()
+        if clip is not None:
+            self._clipboard = clip
+
+    def paste_clipboard(self) -> None:
+        if self._clipboard is not None:
+            self.scene.paste(self._clipboard)
+
+    def snapshot_after_move(self) -> None:
+        """Зафиксировать перемещение узлов в истории (вызывается по отпусканию ЛКМ)."""
+        if not self._restoring:
+            self._history.push(self.doc.to_spec_dict())
+            self._sync_json_from_doc()
 
     # ---- Навигация по вложенному телу цикла (repeat.body) ----
 

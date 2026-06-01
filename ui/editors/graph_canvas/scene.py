@@ -6,6 +6,7 @@ GraphCanvasView — QGraphicsView с зумом колесом и панорам
 """
 
 from __future__ import annotations
+import json
 from typing import Optional
 
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal
@@ -115,6 +116,61 @@ class GraphScene(QGraphicsScene):
         self.node_items.pop(item.node_id, None)
         if item.scene():
             self.removeItem(item)
+
+    # ---------- Копирование / вставка ----------
+
+    def copy_selection(self) -> dict | None:
+        """
+        Снимок выделенных узлов и проводов МЕЖДУ ними (для буфера обмена).
+        Провода к невыделенным узлам не копируются. None — если ничего не выбрано.
+        """
+        sel_ids = [it.node_id for it in self.selectedItems()
+                   if isinstance(it, NodeItem)]
+        if not sel_ids:
+            return None
+        sel = set(sel_ids)
+        nodes = []
+        for nid in sel_ids:
+            n = self.doc.nodes[nid]
+            nodes.append({"id": n.id, "type": n.type,
+                          "params": json.loads(json.dumps(n.params)),
+                          "x": n.x, "y": n.y})
+        edges = [
+            {"from_node": e.from_node, "from_port": e.from_port,
+             "to_node": e.to_node, "to_port": e.to_port}
+            for e in self.doc.edges
+            if e.from_node in sel and e.to_node in sel
+        ]
+        return {"nodes": nodes, "edges": edges}
+
+    def paste(self, clip: dict, dx: float = 30.0, dy: float = 30.0) -> list[str]:
+        """
+        Вставить узлы из буфера со свежими id и сдвигом. Возвращает новые id
+        (их выделяем). Внутренние провода переносятся на новые id.
+        """
+        if not clip or not clip.get("nodes"):
+            return []
+        id_map: dict[str, str] = {}
+        new_items: list[NodeItem] = []
+        for n in clip["nodes"]:
+            new_id = self.doc.unique_id(n["type"])
+            id_map[n["id"]] = new_id
+            self.doc.add_node(n["type"], params=dict(n.get("params") or {}),
+                              x=float(n.get("x", 0)) + dx,
+                              y=float(n.get("y", 0)) + dy, node_id=new_id)
+            new_items.append(self._spawn_node_item(new_id))
+        for e in clip.get("edges", []):
+            fn = id_map.get(e["from_node"]); tn = id_map.get(e["to_node"])
+            if fn and tn:
+                self.doc.add_edge(fn, e["from_port"], tn, e["to_port"])
+                self._spawn_edge_item(fn, e["from_port"], tn, e["to_port"])
+        # Выделяем вставленное (удобно тащить дальше).
+        self.clearSelection()
+        for it in new_items:
+            it.setSelected(True)
+        if new_items:
+            self.changed_doc.emit()
+        return list(id_map.values())
 
     def _remove_edge_item(self, edge: EdgeItem) -> None:
         fn, fp, tn, tp = edge.as_doc_tuple()
@@ -271,7 +327,16 @@ class GraphCanvasView(QGraphicsView):
 
     Панорама: зажать пробел — курсор превращается в «руку», ЛКМ тянет холст.
     Отпустить пробел — возврат к рамочному выделению.
+
+    Сочетания клавиш редактирования транслируются сигналами наружу (редактор их
+    связывает с undo/redo/copy/paste): сам вид о документе и истории не знает.
     """
+
+    copy_requested = pyqtSignal()
+    paste_requested = pyqtSignal()
+    undo_requested = pyqtSignal()
+    redo_requested = pyqtSignal()
+    moved_nodes = pyqtSignal()     # узлы перетащили (по отпусканию ЛКМ)
 
     def __init__(self, scene: GraphScene, parent=None):
         super().__init__(scene, parent)
@@ -280,6 +345,7 @@ class GraphCanvasView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self._zoom = 1.0
         self._space_pan = False        # активен ли режим панорамы по пробелу
+        self._press_positions: dict = {}   # для определения реального перемещения
 
     def wheelEvent(self, event):
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
@@ -288,6 +354,33 @@ class GraphCanvasView(QGraphicsView):
             self._zoom = new_zoom
             self.scale(factor, factor)
 
+    def mousePressEvent(self, event):
+        # Запомнить позиции узлов до возможного перетаскивания.
+        sc = self.scene()
+        if (event.button() == Qt.MouseButton.LeftButton
+                and not self._space_pan and isinstance(sc, GraphScene)):
+            self._press_positions = {
+                nid: (it.x(), it.y()) for nid, it in sc.node_items.items()
+            }
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        # Если какой-то узел реально сместился — зафиксировать в истории.
+        if self._press_positions:
+            sc = self.scene()
+            moved = False
+            if isinstance(sc, GraphScene):
+                for nid, (px, py) in self._press_positions.items():
+                    it = sc.node_items.get(nid)
+                    if it is not None and (abs(it.x() - px) > 0.5
+                                           or abs(it.y() - py) > 0.5):
+                        moved = True
+                        break
+            self._press_positions = {}
+            if moved:
+                self.moved_nodes.emit()
+
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             sc = self.scene()
@@ -295,6 +388,20 @@ class GraphCanvasView(QGraphicsView):
                 sc.delete_selected()
                 event.accept()
                 return
+        # Сочетания клавиш редактирования (Ctrl+C/V/Z, Ctrl+Shift+Z).
+        mods = event.modifiers()
+        ctrl = mods & Qt.KeyboardModifier.ControlModifier
+        shift = mods & Qt.KeyboardModifier.ShiftModifier
+        if ctrl:
+            k = event.key()
+            if k == Qt.Key.Key_C:
+                self.copy_requested.emit(); event.accept(); return
+            if k == Qt.Key.Key_V:
+                self.paste_requested.emit(); event.accept(); return
+            if k == Qt.Key.Key_Z and not shift:
+                self.undo_requested.emit(); event.accept(); return
+            if (k == Qt.Key.Key_Z and shift) or k == Qt.Key.Key_Y:
+                self.redo_requested.emit(); event.accept(); return
         # Пробел — включить «руку» для панорамы (игнорируем автоповтор).
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
             if not self._space_pan:
