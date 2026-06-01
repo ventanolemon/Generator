@@ -172,6 +172,13 @@ class GraphScene(QGraphicsScene):
             self.changed_doc.emit()
         return list(id_map.values())
 
+    def select_all(self) -> None:
+        """Выделить все узлы и провода на холсте."""
+        for it in self.node_items.values():
+            it.setSelected(True)
+        for e in self.edge_items:
+            e.setSelected(True)
+
     def _remove_edge_item(self, edge: EdgeItem) -> None:
         fn, fp, tn, tp = edge.as_doc_tuple()
         self.doc.remove_edge(DocEdge(fn, fp, tn, tp))
@@ -394,6 +401,11 @@ class GraphCanvasView(QGraphicsView):
         shift = mods & Qt.KeyboardModifier.ShiftModifier
         if ctrl:
             k = event.key()
+            if k == Qt.Key.Key_A:
+                sc = self.scene()
+                if isinstance(sc, GraphScene):
+                    sc.select_all()
+                event.accept(); return
             if k == Qt.Key.Key_C:
                 self.copy_requested.emit(); event.accept(); return
             if k == Qt.Key.Key_V:

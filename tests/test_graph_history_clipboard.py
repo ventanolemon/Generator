@@ -181,6 +181,39 @@ class EditorIntegrationTests(unittest.TestCase):
         ed.undo()
         self.assertEqual((ed.doc.nodes[nid].x, ed.doc.nodes[nid].y), (0.0, 0.0))
 
+    def test_select_all(self):
+        ed = self._editor()
+        c = ed.scene.add_node("constant_number", QPointF(0, 0))
+        vd = ed.scene.add_node("var_dict", QPointF(200, 0))
+        ed.doc.set_params(vd.node_id, {"names": ["a"]})
+        ed.scene.refresh_node(vd.node_id)
+        ed.scene._commit_connection(
+            ed.scene._find_port(c.node_id, "out", True),
+            ed.scene._find_port(vd.node_id, "a", False))
+        ed.scene.select_all()
+        nsel = sum(1 for it in ed.scene.node_items.values() if it.isSelected())
+        esel = sum(1 for e in ed.scene.edge_items if e.isSelected())
+        self.assertEqual((nsel, esel), (2, 1))
+
+    def test_edge_paint_when_selected(self):
+        # Выделённый провод рисуется без ошибок (жёлтая обводка в paint).
+        from PyQt6.QtGui import QImage, QPainter
+        from PyQt6.QtCore import QRectF
+        ed = self._editor()
+        c = ed.scene.add_node("constant_number", QPointF(0, 0))
+        vd = ed.scene.add_node("var_dict", QPointF(200, 0))
+        ed.doc.set_params(vd.node_id, {"names": ["a"]})
+        ed.scene.refresh_node(vd.node_id)
+        ed.scene._commit_connection(
+            ed.scene._find_port(c.node_id, "out", True),
+            ed.scene._find_port(vd.node_id, "a", False))
+        ed.scene.edge_items[0].setSelected(True)
+        img = QImage(200, 100, QImage.Format.Format_ARGB32)
+        p = QPainter(img)
+        ed.scene.render(p, target=QRectF(0, 0, 200, 100))
+        p.end()
+        self.assertTrue(ed.scene.edge_items[0].isSelected())
+
 
 if __name__ == "__main__":
     unittest.main()
