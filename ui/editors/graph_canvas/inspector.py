@@ -23,6 +23,10 @@ from core.graph import GraphDocument
 _PORT_AFFECTING = {
     "var_dict": {"names"},
     "block_list": {"count"},
+    "repeat": {"imports"},      # объявление внешних переменных меняет входы
+    "map": {"imports"},
+    "input_var": {"type"},      # тип внешней переменной меняет выходной порт
+    "map_item": {"type"},       # (на будущее — у map_item тоже типизованный выход)
 }
 
 
@@ -112,11 +116,15 @@ class ParamInspector(QWidget):
             w.textChanged.connect(lambda _v, k=key: self._commit(k))
             self._editors[key] = (lambda _w=w: _w.text())
 
-        # Параметры, меняющие набор портов (var_dict.names, block_list.count),
-        # перестраивают порты не на каждый символ, а по завершении ввода
-        # (Enter / потеря фокуса) — иначе холст моргает и теряется фокус.
-        if key in self._port_affecting_keys(node) and hasattr(w, "editingFinished"):
-            w.editingFinished.connect(self._commit_ports)
+        # Параметры, меняющие набор портов (var_dict.names, block_list.count,
+        # repeat/map.imports, input_var.type), перестраивают порты.
+        # Текстовые поля — по завершении ввода (Enter / потеря фокуса), иначе
+        # холст моргает; выпадающие списки — сразу при смене значения.
+        if key in self._port_affecting_keys(node):
+            if hasattr(w, "editingFinished"):
+                w.editingFinished.connect(self._commit_ports)
+            elif isinstance(w, QComboBox):
+                w.currentTextChanged.connect(lambda _v: self._commit_ports())
 
         self._form.addRow(key, w)
 

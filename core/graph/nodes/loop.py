@@ -23,6 +23,100 @@ from ..port_types import PortType
 # Ключ в ExecContext.extra, под которым repeat кладёт индекс итерации.
 LOOP_INDEX_KEY = "__loop_index__"
 
+# Префикс ключа в ExecContext.extra для значений внешних переменных (import-
+# туннелей), прокинутых из объемлющего графа в тело цикла/map.
+IMPORT_PREFIX = "__import__"
+
+# Типы, которые умеет переносить import-туннель (имя в UI → PortType).
+_IMPORT_TYPES = {
+    "number": PortType.NUMBER,
+    "string": PortType.STRING,
+    "number_dict": PortType.NUMBER_DICT,
+    "bool": PortType.BOOL,
+    "block": PortType.BLOCK,
+    "list": PortType.LIST,
+}
+
+
+def parse_imports(params: dict) -> list[tuple[str, PortType]]:
+    """
+    Разобрать параметр imports ['имя:тип', ...] в список (имя, PortType).
+
+    Тип по умолчанию — number. Неизвестный тип → GraphValidationError.
+    Пустые элементы пропускаются; имена обязаны быть уникальны.
+    """
+    specs = params.get("imports") or []
+    out: list[tuple[str, PortType]] = []
+    seen: set[str] = set()
+    for raw in specs:
+        s = str(raw).strip()
+        if not s:
+            continue
+        name, _, tname = s.partition(":")
+        name = name.strip()
+        tname = (tname.strip() or "number")
+        if not name:
+            continue
+        if tname not in _IMPORT_TYPES:
+            raise GraphValidationError(
+                f"Внешняя переменная {s!r}: неизвестный тип {tname!r}. "
+                f"Допустимы: {list(_IMPORT_TYPES)}"
+            )
+        if name in seen:
+            raise GraphValidationError(
+                f"Внешняя переменная {name!r} объявлена дважды."
+            )
+        seen.add(name)
+        out.append((name, _IMPORT_TYPES[tname]))
+    return out
+
+
+class InputVarNode(Node):
+    """
+    Внешняя переменная внутри тела цикла/map: читает значение import-туннеля
+    по имени (объявленному в параметре imports объемлющего repeat/map).
+
+    Тип выхода задаётся параметром type и должен совпадать с типом туннеля.
+    """
+    type_id = "input_var"
+    category = "control"
+    display_name = "Внешняя переменная"
+    PARAMS_SCHEMA = {
+        "name": {"type": "string", "default": "x"},
+        "type": {"type": "enum", "values": list(_IMPORT_TYPES), "default": "number"},
+    }
+
+    def validate_params(self) -> None:
+        t = self.params.get("type", "number")
+        if t not in _IMPORT_TYPES:
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: неизвестный тип {t!r}. "
+                f"Допустимы: {list(_IMPORT_TYPES)}"
+            )
+
+    def output_ports(self):
+        return [Port("out", _IMPORT_TYPES.get(self.params.get("type", "number"),
+                                              PortType.NUMBER))]
+
+    def compute(self, inputs, ctx: ExecContext):
+        name = str(self.params.get("name", "x"))
+        key = IMPORT_PREFIX + name
+        if key not in ctx.extra:
+            raise RetryGeneration(
+                f"input_var {self.node_id!r}: внешняя переменная {name!r} "
+                f"не передана (нет туннеля с таким именем)."
+            )
+        return {"out": ctx.extra[key]}
+
+
+def _import_extra(node, inputs) -> dict:
+    """Собрать значения import-туннелей из входов внешнего узла в extra-словарь."""
+    extra: dict = {}
+    for name, _t in parse_imports(node.params):
+        if name in inputs:
+            extra[IMPORT_PREFIX + name] = inputs[name]
+    return extra
+
 
 class LoopIndexNode(Node):
     """Номер текущей итерации цикла (0-based). Источник внутри тела repeat."""
@@ -53,6 +147,7 @@ class RepeatNode(Node):
     PARAMS_SCHEMA = {
         "count": {"type": "int", "default": 3},
         "max_iterations": {"type": "int", "default": 1000, "optional": True},
+        "imports": {"type": "list", "default": [], "optional": True},
         "body": {"type": "subgraph", "default": {"nodes": [], "edges": [], "meta": {}}},
     }
 
@@ -62,6 +157,14 @@ class RepeatNode(Node):
             raise GraphValidationError(
                 f"Узел {self.node_id!r}: 'body' должен быть вложенным графом (объектом)."
             )
+        parse_imports(self.params)  # проверка формата объявлений внешних переменных
+
+    def input_ports(self):
+        # count + по одному (необязательному) входу на каждую внешнюю переменную.
+        ports = [Port("count", PortType.NUMBER, required=False)]
+        for name, t in parse_imports(self.params):
+            ports.append(Port(name, t, required=False))
+        return ports
 
     def _count(self, inputs) -> int:
         raw = inputs.get("count", self.params.get("count", 3))
@@ -84,11 +187,12 @@ class RepeatNode(Node):
         spec = GraphSpec.parse(body)
 
         n = self._count(inputs)
+        imports = _import_extra(self, inputs)
         collected: list = []
         for i in range(n):
             ex = GraphExecutor(spec, registry=self._registry())
             result_ep = ex.free_output_of_type(PortType.BLOCK)
-            outputs = ex.run_full(extra={LOOP_INDEX_KEY: i})
+            outputs = ex.run_full(extra={**imports, LOOP_INDEX_KEY: i})
             if result_ep is not None:
                 node_id, port = result_ep
                 collected.append(outputs[node_id][port])
@@ -163,6 +267,7 @@ class MapNode(Node):
     INPUTS = [Port("items", PortType.LIST)]
     OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
     PARAMS_SCHEMA = {
+        "imports": {"type": "list", "default": [], "optional": True},
         "body": {"type": "subgraph", "default": {"nodes": [], "edges": [], "meta": {}}},
     }
 
@@ -172,6 +277,13 @@ class MapNode(Node):
             raise GraphValidationError(
                 f"Узел {self.node_id!r}: 'body' должен быть вложенным графом (объектом)."
             )
+        parse_imports(self.params)
+
+    def input_ports(self):
+        ports = [Port("items", PortType.LIST)]
+        for name, t in parse_imports(self.params):
+            ports.append(Port(name, t, required=False))
+        return ports
 
     def compute(self, inputs, ctx: ExecContext):
         from ..executor import GraphExecutor
@@ -187,11 +299,12 @@ class MapNode(Node):
             )
 
         from . import DEFAULT_REGISTRY
+        imports = _import_extra(self, inputs)
         collected: list = []
         for i, el in enumerate(items):
             ex = GraphExecutor(spec, registry=DEFAULT_REGISTRY)
             result_ep = ex.free_output_of_type(PortType.BLOCK)
-            outputs = ex.run_full(extra={MAP_ITEM_KEY: el, LOOP_INDEX_KEY: i})
+            outputs = ex.run_full(extra={**imports, MAP_ITEM_KEY: el, LOOP_INDEX_KEY: i})
             if result_ep is not None:
                 node_id, port = result_ep
                 collected.append(outputs[node_id][port])

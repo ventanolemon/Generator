@@ -14,7 +14,9 @@ from .content import TextBlockNode
 from .control import (
     CompareNode, NumberCheckNode, SelectNode,
 )
-from .loop import LoopIndexNode, MapItemNode, MapNode, RepeatNode
+from .loop import (
+    InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
+)
 from .sources import (
     ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
     NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
@@ -29,7 +31,7 @@ _ALL_NODES = [
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
     # control
     CompareNode, NumberCheckNode, SelectNode,
-    LoopIndexNode, RepeatNode, MapItemNode, MapNode,
+    LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode,
     # content
     TextBlockNode,
     # assembly
