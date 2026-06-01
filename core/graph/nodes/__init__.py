@@ -22,6 +22,11 @@ from .sources import (
     ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
     NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
 )
+from .linalg import (
+    DeterminantNode, IdentityNode, InverseNode, MatrixAddNode,
+    MatrixBlockNode, MatrixConstNode, MatrixMultiplyNode, MatrixPowerNode,
+    RandomMatrixNode, RankNode, ScalarMultiplyNode, TraceNode, TransposeNode,
+)
 from .symbolic import (
     AbsNode, ApartNode, ArgNode, CancelNode, CollectNode, ConjugateNode,
     DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
@@ -51,6 +56,11 @@ _ALL_NODES = [
     ReNode, ImNode, ArgNode, AbsNode, ConjugateNode, ExpandComplexNode,
     ResidueNode, SolveNode,
     ExprBlockNode,
+    # linalg (линейная алгебра)
+    MatrixConstNode, RandomMatrixNode, IdentityNode,
+    DeterminantNode, InverseNode, TransposeNode, RankNode, TraceNode,
+    ScalarMultiplyNode, MatrixPowerNode, MatrixMultiplyNode, MatrixAddNode,
+    MatrixBlockNode,
     # content
     TextBlockNode,
     # assembly

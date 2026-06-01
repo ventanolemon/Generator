@@ -120,3 +120,42 @@ def guard_numeric(expr):
     if expr in (sp.zoo, sp.oo, -sp.oo, sp.nan):
         raise RetryGeneration(f"Символьный результат не определён: {expr}.")
     return expr
+
+
+# ---------- Матрицы ----------
+
+def parse_matrix(text: str, symbols: dict | None = None):
+    """
+    Разобрать строку в sympy.Matrix. Строки матрицы разделяются ';', элементы
+    в строке — ','. Например '1,2;3,4' → [[1,2],[3,4]]; вектор-столбец '1;2;3'.
+    Элементы разбираются parse_expr (допускают символы и дроби).
+    """
+    sp = sympy()
+    if text is None or str(text).strip() == "":
+        raise GraphValidationError("Пустая матрица.")
+    rows = []
+    for rline in str(text).split(";"):
+        rline = rline.strip()
+        if rline == "":
+            continue
+        cells = [parse_expr(c, symbols) for c in rline.split(",")]
+        rows.append(cells)
+    width = len(rows[0])
+    if any(len(r) != width for r in rows):
+        raise GraphValidationError(
+            f"Матрица {text!r}: строки разной длины."
+        )
+    return sp.Matrix(rows)
+
+
+def is_matrix(value) -> bool:
+    sp = sympy()
+    return isinstance(value, sp.matrices.MatrixBase)
+
+
+def as_matrix(value, symbols: dict | None = None):
+    """Привести вход к sympy.Matrix (объект MATRIX-порта как есть; строку парсим)."""
+    if is_matrix(value):
+        return value
+    return parse_matrix(str(value), symbols)
+

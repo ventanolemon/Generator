@@ -418,6 +418,25 @@ RetryGeneration). Тесты: `tests/test_graph_series.py` (11), включая 
 мат. анализ, ряды, ТФКП. Всего 29 символьных узлов; зависимость sympy в
 requirements.txt, импорт ленивый (движок графа грузится и без пакета).
 
+**Фаза 3e — линейная алгебра (sympy.Matrix). PR-1 (матрицы) ✅ СДЕЛАНО.**
+Новый `PortType.MATRIX` несёт sympy.Matrix между узлами; вектор — это
+матрица-столбец n×1 того же типа (так A·v работает без конверсий). Свой цвет
+(индиго) и категория `linalg`. sympy.Matrix не является sp.Basic, поэтому
+понадобился отдельный тип (EXPR его не принимает). Узлы PR-1:
+- источники: `matrix_const` (текст '1,2;3,4', строки `;`, элементы `,`),
+  `random_matrix` (случайная целочисленная; invertible→квадратная невырожденная
+  с малым det, воспроизводимо через ctx.rng), `identity` (единичная n×n);
+- операции: `matrix_det`/`matrix_trace` (→EXPR), `matrix_inv`/`matrix_transpose`/
+  `matrix_power` (→MATRIX), `matrix_rank` (→NUMBER), `matrix_scalar` (×число),
+  `matrix_mul` (A·B, включая A·v), `matrix_add` (±);
+- рендер: `matrix_block` (MATRIX→BLOCK через FormulaBlock; окружения
+  pmatrix/bmatrix/vmatrix/Vmatrix, опц. префикс `A = …`).
+Вырожденные/несогласованные случаи → RetryGeneration. Тесты:
+`tests/test_graph_linalg.py` (24). Дальше PR-2: системы и операторы
+(`rref`/`linsolve`/`eigenvals`/`eigenvects`/`nullspace`/`charpoly`); PR-3:
+вектор-геометрия (скалярное/векторное/смешанное произв., нормы, углы, прямые и
+плоскости).
+
 Дальше — шаг 3c (узлы-обёртки: изображения/ОПВС, `random_choice`, английский),
 правок ядра не требует.
 
