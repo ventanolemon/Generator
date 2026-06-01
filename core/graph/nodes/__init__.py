@@ -23,11 +23,13 @@ from .sources import (
     NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
 )
 from .linalg import (
-    CharPolyNode, DeterminantNode, EigenvaluesNode, EigenvectorsNode,
-    IdentityNode, InverseNode, LinSolveNode, MatrixAddNode, MatrixBlockNode,
-    MatrixConstNode, MatrixMultiplyNode, MatrixPowerNode, NullspaceNode,
+    CharPolyNode, CrossProductNode, DeterminantNode, DotProductNode,
+    EigenvaluesNode, EigenvectorsNode, IdentityNode, InverseNode,
+    LineCanonicalNode, LinSolveNode, MatrixAddNode, MatrixBlockNode,
+    MatrixConstNode, MatrixMultiplyNode, MatrixPowerNode, NormNode,
+    NullspaceNode, PlaneFromPointNormalNode, PointPlaneDistanceNode,
     RandomMatrixNode, RankNode, RrefNode, ScalarMultiplyNode, TraceNode,
-    TransposeNode,
+    TransposeNode, TripleProductNode, VectorAngleNode,
 )
 from .symbolic import (
     AbsNode, ApartNode, ArgNode, CancelNode, CollectNode, ConjugateNode,
@@ -64,6 +66,9 @@ _ALL_NODES = [
     ScalarMultiplyNode, MatrixPowerNode, MatrixMultiplyNode, MatrixAddNode,
     RrefNode, CharPolyNode, EigenvaluesNode, EigenvectorsNode, NullspaceNode,
     LinSolveNode,
+    DotProductNode, CrossProductNode, TripleProductNode, NormNode,
+    VectorAngleNode, PlaneFromPointNormalNode, PointPlaneDistanceNode,
+    LineCanonicalNode,
     MatrixBlockNode,
     # content
     TextBlockNode,

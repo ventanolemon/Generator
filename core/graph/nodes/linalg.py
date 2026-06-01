@@ -444,6 +444,180 @@ class LinSolveNode(Node):
         return {"out": blocks}
 
 
+# ---------- Вектор-геометрия (PR-3) ----------
+
+def _as_vector(M, sp):
+    """Привести MATRIX к плоскому списку компонент (вектор-строка/столбец)."""
+    if M.rows != 1 and M.cols != 1:
+        raise RetryGeneration("ожидался вектор (строка или столбец).")
+    return list(M)
+
+
+class DotProductNode(Node):
+    """Скалярное произведение векторов (MATRIX × MATRIX → EXPR)."""
+    type_id = "vec_dot"
+    category = "linalg"
+    display_name = "Скалярное произведение"
+    INPUTS = [Port("a", PortType.MATRIX), Port("b", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        a = _as_vector(as_matrix(inputs["a"]), sp)
+        b = _as_vector(as_matrix(inputs["b"]), sp)
+        if len(a) != len(b):
+            raise RetryGeneration(f"vec_dot {self.node_id!r}: разная размерность.")
+        return {"out": sum((ai * bi for ai, bi in zip(a, b)), sp.Integer(0))}
+
+
+class CrossProductNode(Node):
+    """Векторное произведение (трёхмерные векторы) → MATRIX (вектор-столбец)."""
+    type_id = "vec_cross"
+    category = "linalg"
+    display_name = "Векторное произведение"
+    INPUTS = [Port("a", PortType.MATRIX), Port("b", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.MATRIX)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        a = _as_vector(as_matrix(inputs["a"]), sp)
+        b = _as_vector(as_matrix(inputs["b"]), sp)
+        if len(a) != 3 or len(b) != 3:
+            raise RetryGeneration(f"vec_cross {self.node_id!r}: нужны трёхмерные векторы.")
+        return {"out": sp.Matrix(a).cross(sp.Matrix(b))}
+
+
+class TripleProductNode(Node):
+    """Смешанное произведение (a, b, c) = a·(b×c) → EXPR (объём параллелепипеда)."""
+    type_id = "vec_triple"
+    category = "linalg"
+    display_name = "Смешанное произведение"
+    INPUTS = [Port("a", PortType.MATRIX), Port("b", PortType.MATRIX),
+              Port("c", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        a = _as_vector(as_matrix(inputs["a"]), sp)
+        b = _as_vector(as_matrix(inputs["b"]), sp)
+        c = _as_vector(as_matrix(inputs["c"]), sp)
+        if not (len(a) == len(b) == len(c) == 3):
+            raise RetryGeneration(f"vec_triple {self.node_id!r}: нужны трёхмерные векторы.")
+        return {"out": sp.Matrix([a, b, c]).det()}
+
+
+class NormNode(Node):
+    """Длина (евклидова норма) вектора (MATRIX → EXPR)."""
+    type_id = "vec_norm"
+    category = "linalg"
+    display_name = "Длина вектора"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        v = sp.Matrix(_as_vector(as_matrix(inputs["in"]), sp))
+        return {"out": v.norm()}
+
+
+class VectorAngleNode(Node):
+    """Угол между векторами в радианах: acos(a·b/(|a||b|)) (MATRIX × MATRIX → EXPR)."""
+    type_id = "vec_angle"
+    category = "linalg"
+    display_name = "Угол между векторами"
+    INPUTS = [Port("a", PortType.MATRIX), Port("b", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        a = sp.Matrix(_as_vector(as_matrix(inputs["a"]), sp))
+        b = sp.Matrix(_as_vector(as_matrix(inputs["b"]), sp))
+        if a.shape[0] != b.shape[0]:
+            raise RetryGeneration(f"vec_angle {self.node_id!r}: разная размерность.")
+        na, nb = a.norm(), b.norm()
+        if na == 0 or nb == 0:
+            raise RetryGeneration(f"vec_angle {self.node_id!r}: нулевой вектор.")
+        return {"out": sp.acos(sp.simplify(a.dot(b) / (na * nb)))}
+
+
+_COORD_NAMES = ["x", "y", "z", "w"]
+
+
+def _coord_symbols(sp, n):
+    return [sp.Symbol(_COORD_NAMES[i] if i < len(_COORD_NAMES) else f"x_{i}")
+            for i in range(n)]
+
+
+class PlaneFromPointNormalNode(Node):
+    """
+    Уравнение плоскости по точке и нормали: n·(r − p) = 0 → EXPR (левая часть
+    общего уравнения Ax+By+Cz+D). point и normal — векторы (MATRIX).
+    """
+    type_id = "plane_point_normal"
+    category = "linalg"
+    display_name = "Плоскость (точка+нормаль)"
+    INPUTS = [Port("point", PortType.MATRIX), Port("normal", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        p = sp.Matrix(_as_vector(as_matrix(inputs["point"]), sp))
+        n = sp.Matrix(_as_vector(as_matrix(inputs["normal"]), sp))
+        if p.shape[0] != n.shape[0]:
+            raise RetryGeneration(f"plane_point_normal {self.node_id!r}: разная размерность.")
+        r = sp.Matrix(_coord_symbols(sp, p.shape[0]))
+        return {"out": sp.expand(n.dot(r - p))}
+
+
+class PointPlaneDistanceNode(Node):
+    """
+    Расстояние от точки до плоскости n·(r−p0)=0: |n·(q−p0)|/|n| (MATRIX×3 → EXPR).
+    Входы: q (точка), p0 (точка плоскости), normal (нормаль).
+    """
+    type_id = "point_plane_distance"
+    category = "linalg"
+    display_name = "Расстояние точка–плоскость"
+    INPUTS = [Port("q", PortType.MATRIX), Port("p0", PortType.MATRIX),
+              Port("normal", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        q = sp.Matrix(_as_vector(as_matrix(inputs["q"]), sp))
+        p0 = sp.Matrix(_as_vector(as_matrix(inputs["p0"]), sp))
+        n = sp.Matrix(_as_vector(as_matrix(inputs["normal"]), sp))
+        if n.norm() == 0:
+            raise RetryGeneration(f"point_plane_distance {self.node_id!r}: нулевая нормаль.")
+        return {"out": sp.simplify(sp.Abs(n.dot(q - p0)) / n.norm())}
+
+
+class LineCanonicalNode(Node):
+    """
+    Каноническое уравнение прямой по точке и направляющему вектору:
+    (x−px)/vx = (y−py)/vy = (z−pz)/vz → BLOCK (FormulaBlock).
+    Входы point и direction — векторы (MATRIX).
+    """
+    type_id = "line_canonical"
+    category = "linalg"
+    display_name = "Прямая (каноническая)"
+    INPUTS = [Port("point", PortType.MATRIX), Port("direction", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.BLOCK)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock
+        sp = sympy()
+        p = _as_vector(as_matrix(inputs["point"]), sp)
+        v = _as_vector(as_matrix(inputs["direction"]), sp)
+        if len(p) != len(v):
+            raise RetryGeneration(f"line_canonical {self.node_id!r}: разная размерность.")
+        coords = _coord_symbols(sp, len(p))
+        parts = []
+        for i in range(len(p)):
+            num = sp.latex(coords[i] - p[i])
+            parts.append(r"\frac{" + num + "}{" + sp.latex(v[i]) + "}")
+        return {"out": FormulaBlock(" = ".join(parts))}
+
+
 # ---------- Рендер ----------
 
 _MATRIX_ENVS = {"pmatrix": "p", "bmatrix": "b", "vmatrix": "v", "Vmatrix": "V"}
