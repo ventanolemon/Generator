@@ -22,6 +22,11 @@ from .sources import (
     ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
     NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
 )
+from .symbolic import (
+    ApartNode, CancelNode, CollectNode, EvaluateNode, ExpandNode,
+    ExprBinaryNode, ExprBlockNode, ExprConstNode, FactorNode, SimplifyNode,
+    SubstituteNode, SymbolNode, TogetherNode, TrigsimpNode,
+)
 
 _ALL_NODES = [
     # source
@@ -34,6 +39,11 @@ _ALL_NODES = [
     CompareNode, NumberCheckNode, SelectNode,
     LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode, CaseNode,
     ShiftGetNode, ShiftSetNode,
+    # symbolic (символьная арифметика)
+    SymbolNode, ExprConstNode,
+    ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
+    CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
+    ExprBlockNode,
     # content
     TextBlockNode,
     # assembly

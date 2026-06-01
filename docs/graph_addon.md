@@ -373,8 +373,28 @@ BOOL), `number_check` (чётность/знак/делимость/целочи
 `registers` поведение прежнее. Тесты: `tests/test_graph_shift.py` (15).
 
 На этом фаза 3b (управляющие структуры: ветвление, цикл, map, внешние
-переменные, case, shift register) закрыта. Дальше — шаг 3c (узлы-обёртки:
-изображения/ОПВС, `random_choice`, английский), правок ядра не требует.
+переменные, case, shift register) закрыта.
+
+**Фаза 3d — символьная арифметика (sympy). PR-1 (ядро + алгебра) ✅ СДЕЛАНО.**
+Новый `PortType.EXPR` несёт sympy-объекты между узлами (round-trip без потерь, в
+отличие от сериализации в LaTeX и обратно); свой цвет провода (пурпурный) и
+категория `symbolic`. sympy импортируется лениво (`core/graph/symbolic.py`):
+движок графа headless и не падает на загрузке без пакета — символьные узлы
+сообщают понятную ошибку только при исполнении. Узлы PR-1:
+- источники: `symbol` (переменная с предположениями complex/real/positive),
+  `expr_const` (выражение из текста с неявным умножением и `^`→`**`);
+- алгебра (EXPR→EXPR): `expand`, `factor`, `simplify`, `together`, `cancel`,
+  `trigsimp`, `collect`/`apart` (с входом-переменной);
+- арифметика: `expr_binop` (+ − × ÷ ^), `expr_subs` (подстановка NUMBER_DICT),
+  `expr_eval` (EXPR→NUMBER, при не-числе → RetryGeneration);
+- рендер: `expr_block` (EXPR→BLOCK через FormulaBlock, опц. префикс `f(x) = …`).
+Тесты: `tests/test_graph_symbolic.py` (22), включая полный граф со static_task.
+Зависимость sympy добавлена в requirements.txt. Дальше PR-2/3/4: мат. анализ
+(`diff`/`integrate`/`limit`/`series`), ряды (`sum`/`Sum`), ТФКП
+(`re`/`im`/`arg`/`conjugate`/`residue`) — строятся по тому же образцу.
+
+Дальше — шаг 3c (узлы-обёртки: изображения/ОПВС, `random_choice`, английский),
+правок ядра не требует.
 
 *Шаг 3c — узлы-обёртки.* image (ОПВС/`render_circuit`), `random_choice`,
 английский (`json_dict`, `fill_in_blank`). Правок ядра не требуют.

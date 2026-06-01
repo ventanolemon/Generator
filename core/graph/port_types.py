@@ -20,6 +20,7 @@ class PortType(Enum):
     BLOCK_LIST = "block_list"    # list[Block]
     BOOL = "bool"                # результат проверки
     LIST = "list"                # list[Any] — универсальная коллекция (для map)
+    EXPR = "expr"                # символьное выражение sympy (алгебра/анализ)
     TASK = "task"                # StaticTask / InteractiveTask — финал графа
 
 

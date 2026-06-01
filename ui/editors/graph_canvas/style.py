@@ -19,6 +19,7 @@ PORT_COLORS: dict[PortType, QColor] = {
     PortType.BLOCK_LIST:  QColor("#C0392B"),   # тёмно-коралловый
     PortType.BOOL:        QColor("#7F8C8D"),   # серый
     PortType.LIST:        QColor("#9CCC65"),   # салатовый — коллекция
+    PortType.EXPR:        QColor("#AB47BC"),   # пурпурный — символьное выражение
     PortType.TASK:        QColor("#27AE60"),   # зелёный
 }
 
@@ -27,6 +28,7 @@ CATEGORY_COLORS: dict[str, QColor] = {
     "source":   QColor("#6C3483"),   # источники — фиолетовые
     "compute":  QColor("#117864"),   # вычисление — бирюзовые
     "control":  QColor("#B9770E"),   # управление — янтарные
+    "symbolic": QColor("#7D3C98"),   # символьная арифметика — пурпурные
     "content":  QColor("#A93226"),   # контент — коралловые
     "assembly": QColor("#1F618D"),   # сборка — синие
 }
