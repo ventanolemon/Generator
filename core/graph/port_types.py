@@ -23,6 +23,7 @@ class PortType(Enum):
     EXPR = "expr"                # символьное выражение sympy (алгебра/анализ)
     MATRIX = "matrix"            # sympy.Matrix (в т.ч. вектор-столбец n×1)
     WORDS = "words"              # dict[str, str] — словарь term→translation (англ.)
+    SENTENCES = "sentences"      # list[dict] — предложения с пропусками (англ.)
     TASK = "task"                # StaticTask / InteractiveTask — финал графа
 
 

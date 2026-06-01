@@ -14,7 +14,9 @@ from .content import TextBlockNode, TextNode
 from .control import (
     CompareNode, NumberCheckNode, SelectNode,
 )
-from .english import WordsFileNode, WordsTrainerNode
+from .english import (
+    SentenceFillNode, SentencesFileNode, WordsFileNode, WordsTrainerNode,
+)
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
     ShiftGetNode, ShiftSetNode,
@@ -87,7 +89,7 @@ _ALL_NODES = [
     # ode (дифференциальные уравнения)
     OdeConstNode, OdeSolveNode, OdeClassifyNode, OdeCheckNode,
     # english (английский язык)
-    WordsFileNode, WordsTrainerNode,
+    WordsFileNode, WordsTrainerNode, SentencesFileNode, SentenceFillNode,
     # content
     TextNode, TextBlockNode,
     # assembly

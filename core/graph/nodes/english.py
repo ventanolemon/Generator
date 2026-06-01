@@ -35,6 +35,22 @@ def _load_words_file(path: str) -> dict[str, str]:
     return WordsTrainerGenerator._flatten_words(data)
 
 
+def _load_sentences_file(path: str) -> list[dict]:
+    """Прочитать JSON с предложениями-пропусками (список объектов template/answers)."""
+    from pathlib import Path
+    from exercises.english.generators import _read_json_lenient
+    p = Path(path)
+    if not p.exists():
+        raise GraphValidationError(f"Файл предложений не найден: {path!r}")
+    data = _read_json_lenient(p)
+    if not isinstance(data, list):
+        raise GraphValidationError(
+            f"Файл предложений {path!r}: ожидался список объектов "
+            f"{{template, answers, translation}}."
+        )
+    return data
+
+
 class WordsFileNode(Node):
     """
     Словарь слов из JSON-файла. Источник WORDS.
@@ -107,3 +123,87 @@ class WordsTrainerNode(Node):
             )
         tolerant = str(self.params.get("tolerant", "no")) == "yes"
         return {"out": WordsSession(dict(words), tolerant=tolerant)}
+
+
+class SentencesFileNode(Node):
+    """
+    Предложения с пропусками из JSON-файла. Источник SENTENCES.
+
+    Формат файла — список объектов {template, answers, translation?}, где в
+    template пропуски обозначены '___'. Параметр file выбирается в инспекторе.
+    """
+    type_id = "sentences_file"
+    category = "english"
+    display_name = "Предложения из файла"
+    description = ("Предложения с пропусками (___) из JSON. "
+                   "Источник. Выход: SENTENCES.")
+    OUTPUTS = [Port("out", PortType.SENTENCES)]
+    PARAMS_SCHEMA = {
+        "file": {"type": "file", "default": "", "filter": "JSON (*.json)"},
+    }
+
+    def validate_params(self) -> None:
+        if not str(self.params.get("file", "")).strip():
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: укажите файл с предложениями."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        items = _load_sentences_file(str(self.params.get("file", "")).strip())
+        if not items:
+            raise RetryGeneration(f"sentences_file {self.node_id!r}: файл пуст.")
+        return {"out": items}
+
+
+class SentenceFillNode(Node):
+    """
+    Задание «вставьте пропущенные слова»: выбирает случайное предложение из
+    набора SENTENCES и строит интерактивный блок с пропусками.
+
+    Выходы — два BLOCK_LIST (как у static_task): statement (условие с полями
+    ввода + перевод) и answer (правильное предложение + список слов). Выбор
+    предложения воспроизводим через ctx.rng.
+    """
+    type_id = "sentence_fill"
+    category = "english"
+    display_name = "Предложение с пропусками"
+    description = ("Случайное предложение с пропусками → блоки условия и ответа. "
+                   "Вход: SENTENCES. Выходы: statement, answer (BLOCK_LIST).")
+    INPUTS = [Port("in", PortType.SENTENCES)]
+    OUTPUTS = [Port("statement", PortType.BLOCK_LIST),
+               Port("answer", PortType.BLOCK_LIST)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import TextBlock
+        from core.dynamic_blocks import FillInTheBlankBlock
+        items = inputs.get("in") or []
+        if not isinstance(items, (list, tuple)) or not items:
+            raise RetryGeneration(
+                f"sentence_fill {self.node_id!r}: на вход не пришёл непустой список."
+            )
+        item = ctx.rng.choice(list(items))
+        try:
+            template = str(item["template"])
+            answers = [str(a) for a in item["answers"]]
+        except (KeyError, TypeError):
+            raise RetryGeneration(
+                f"sentence_fill {self.node_id!r}: у предложения нет template/answers."
+            )
+        translation = str(item.get("translation", "")) if isinstance(item, dict) else ""
+
+        statement = [
+            TextBlock("Вставьте пропущенные слова в предложение:"),
+            FillInTheBlankBlock(template=template, answers=answers),
+        ]
+        if translation:
+            statement.append(TextBlock(f"Перевод: {translation}"))
+
+        full = template
+        for ans in answers:
+            full = full.replace(FillInTheBlankBlock.PLACEHOLDER, ans, 1)
+        answer = [
+            TextBlock("Правильное предложение:"),
+            TextBlock(full),
+            TextBlock(f"Пропущенные слова: {', '.join(answers)}"),
+        ]
+        return {"statement": statement, "answer": answer}
