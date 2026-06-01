@@ -33,6 +33,9 @@ from .linalg import (
     RandomMatrixNode, RankNode, RrefNode, ScalarMultiplyNode, TraceNode,
     TransposeNode, TripleProductNode, VectorAngleNode,
 )
+from .ode import (
+    OdeCheckNode, OdeClassifyNode, OdeConstNode, OdeSolveNode,
+)
 from .symbolic import (
     AbsNode, ApartNode, ArgNode, CancelNode, CollectNode, ConjugateNode,
     DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
@@ -75,6 +78,8 @@ _ALL_NODES = [
     QuadFormSignatureNode, ChangeBasisOperatorNode, CoordinatesInBasisNode,
     GramSchmidtNode,
     MatrixBlockNode,
+    # ode (дифференциальные уравнения)
+    OdeConstNode, OdeSolveNode, OdeClassifyNode, OdeCheckNode,
     # content
     TextBlockNode,
     # assembly

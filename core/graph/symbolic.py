@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import re
+
 from .errors import GraphValidationError, RetryGeneration
 
 
@@ -158,4 +160,50 @@ def as_matrix(value, symbols: dict | None = None):
     if is_matrix(value):
         return value
     return parse_matrix(str(value), symbols)
+
+
+# ---------- ОДУ ----------
+
+def parse_ode(text: str, func: str = "y", var: str = "x"):
+    """
+    Разобрать ОДУ в sympy.Eq, поддерживая «человеческую» нотацию штрихов:
+    y' → y'(x), y'' → вторая производная и т.д.; одиночное y → y(x).
+    '=' разделяет левую и правую части (без '=' выражение трактуется как «… = 0»).
+    Возвращает кортеж (eq, f, v): уравнение, sympy.Function f, переменная v.
+    """
+    sp = sympy()
+    if text is None or str(text).strip() == "":
+        raise GraphValidationError("Пустое уравнение ОДУ.")
+    f = sp.Function(func)
+    v = sp.Symbol(var)
+    s = str(text)
+    # Штрихи (от старших к младшим, чтобы '' не съелось до ').
+    s = s.replace(func + "'''", f"Derivative({func}({var}),{var},3)")
+    s = s.replace(func + "''", f"Derivative({func}({var}),{var},2)")
+    s = s.replace(func + "'", f"Derivative({func}({var}),{var},1)")
+    # Одиночное имя функции без скобки/буквы рядом → f(var).
+    s = re.sub(rf"\b{func}\b(?!\s*[\(\w])", f"{func}({var})", s)
+    s = s.replace("^", "**")
+    local = {func: f, var: v, "Derivative": sp.Derivative, "e": sp.E}
+    from sympy.parsing.sympy_parser import (
+        parse_expr as _pe, standard_transformations,
+        implicit_multiplication_application,
+    )
+    transforms = standard_transformations + (
+        implicit_multiplication_application,
+    )
+
+    def one(part):
+        return _pe(part, local_dict=local, transformations=transforms,
+                   evaluate=True)
+
+    try:
+        if "=" in s:
+            lhs, rhs = s.split("=", 1)
+            eq = sp.Eq(one(lhs), one(rhs))
+        else:
+            eq = sp.Eq(one(s), 0)
+    except Exception as e:
+        raise GraphValidationError(f"Не удалось разобрать ОДУ {text!r}: {e}")
+    return eq, f, v
 

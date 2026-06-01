@@ -31,6 +31,7 @@ CATEGORY_COLORS: dict[str, QColor] = {
     "control":  QColor("#B9770E"),   # управление — янтарные
     "symbolic": QColor("#7D3C98"),   # символьная арифметика — пурпурные
     "linalg":   QColor("#3949AB"),   # линейная алгебра — индиго
+    "ode":      QColor("#00838F"),   # дифференциальные уравнения — тёмная бирюза
     "content":  QColor("#A93226"),   # контент — коралловые
     "assembly": QColor("#1F618D"),   # сборка — синие
 }
