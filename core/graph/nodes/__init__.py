@@ -23,9 +23,10 @@ from .sources import (
     NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
 )
 from .symbolic import (
-    ApartNode, CancelNode, CollectNode, EvaluateNode, ExpandNode,
-    ExprBinaryNode, ExprBlockNode, ExprConstNode, FactorNode, SimplifyNode,
-    SubstituteNode, SymbolNode, TogetherNode, TrigsimpNode,
+    ApartNode, CancelNode, CollectNode, DiffNode, EvaluateNode, ExpandNode,
+    ExprBinaryNode, ExprBlockNode, ExprConstNode, FactorNode, IntegrateNode,
+    LimitNode, SeriesNode, SimplifyNode, SubstituteNode, SymbolNode,
+    TogetherNode, TrigsimpNode,
 )
 
 _ALL_NODES = [
@@ -43,6 +44,7 @@ _ALL_NODES = [
     SymbolNode, ExprConstNode,
     ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
     CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
+    DiffNode, IntegrateNode, LimitNode, SeriesNode,
     ExprBlockNode,
     # content
     TextBlockNode,

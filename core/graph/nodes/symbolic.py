@@ -249,6 +249,151 @@ class EvaluateNode(Node):
         return {"out": f}
 
 
+# ---------- Математический анализ (diff / integrate / limit / series) ----------
+
+def _parse_point(sp, raw):
+    """Разобрать точку (число, 'oo', '-oo', 'pi', выражение) в sympy-объект."""
+    s = str(raw).strip()
+    if s in ("oo", "+oo", "inf", "+inf"):
+        return sp.oo
+    if s in ("-oo", "-inf"):
+        return -sp.oo
+    return parse_expr(s)
+
+
+class DiffNode(Node):
+    """
+    Производная выражения по переменной. Порядок задаётся параметром order
+    (по умолчанию 1). Вход var — символ (EXPR), по которому дифференцируем.
+    """
+    type_id = "diff"
+    category = "symbolic"
+    display_name = "Производная"
+    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"order": {"type": "int", "default": 1}}
+
+    def validate_params(self) -> None:
+        try:
+            if int(self.params.get("order", 1)) < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: order должен быть целым ≥ 0."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        var = as_expr(inputs["var"])
+        order = int(self.params.get("order", 1))
+        try:
+            result = sp.diff(expr, var, order)
+        except Exception as e:
+            raise RetryGeneration(f"diff {self.node_id!r}: {e}")
+        return {"out": guard_numeric(result)}
+
+
+class IntegrateNode(Node):
+    """
+    Интеграл выражения по переменной. Если заданы пределы lower/upper —
+    определённый интеграл, иначе — неопределённый (первообразная).
+    Пределы допускают 'oo'/'-oo' и выражения.
+    """
+    type_id = "integrate"
+    category = "symbolic"
+    display_name = "Интеграл"
+    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "lower": {"type": "string", "default": "", "optional": True},
+        "upper": {"type": "string", "default": "", "optional": True},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        var = as_expr(inputs["var"])
+        lo = str(self.params.get("lower", "")).strip()
+        hi = str(self.params.get("upper", "")).strip()
+        try:
+            if lo and hi:
+                result = sp.integrate(expr, (var, _parse_point(sp, lo),
+                                             _parse_point(sp, hi)))
+            else:
+                result = sp.integrate(expr, var)
+        except Exception as e:
+            raise RetryGeneration(f"integrate {self.node_id!r}: {e}")
+        # Неберущийся интеграл sympy возвращает как Integral(...) — это валидно
+        # для показа, но численно бесполезно; оставляем как есть.
+        return {"out": guard_numeric(result)}
+
+
+class LimitNode(Node):
+    """
+    Предел выражения при var → point. Направление: '+', '-' или '+-' (двусторонний).
+    point допускает 'oo'/'-oo' и выражения.
+    """
+    type_id = "limit"
+    category = "symbolic"
+    display_name = "Предел"
+    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "point": {"type": "string", "default": "0"},
+        "dir": {"type": "enum", "values": ["+-", "+", "-"], "default": "+-"},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        var = as_expr(inputs["var"])
+        point = _parse_point(sp, self.params.get("point", "0"))
+        direction = self.params.get("dir", "+-")
+        try:
+            result = sp.limit(expr, var, point, direction)
+        except Exception as e:
+            raise RetryGeneration(f"limit {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class SeriesNode(Node):
+    """
+    Разложение в ряд Тейлора около точки point до порядка order (член O(...)
+    отбрасывается, остаётся многочлен). По умолчанию около 0 (ряд Маклорена).
+    """
+    type_id = "series"
+    category = "symbolic"
+    display_name = "Ряд Тейлора"
+    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "point": {"type": "string", "default": "0"},
+        "order": {"type": "int", "default": 6},
+    }
+
+    def validate_params(self) -> None:
+        try:
+            if int(self.params.get("order", 6)) < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: order должен быть целым ≥ 1."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        var = as_expr(inputs["var"])
+        point = _parse_point(sp, self.params.get("point", "0"))
+        order = int(self.params.get("order", 6))
+        try:
+            result = sp.series(expr, var, point, order).removeO()
+        except Exception as e:
+            raise RetryGeneration(f"series {self.node_id!r}: {e}")
+        return {"out": guard_numeric(result)}
+
+
 # ---------- Рендер ----------
 
 class ExprBlockNode(Node):

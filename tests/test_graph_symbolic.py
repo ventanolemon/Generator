@@ -52,10 +52,12 @@ class PortTypeTests(unittest.TestCase):
     def test_all_symbolic_registered(self):
         ids = {e["type_id"] for e in DEFAULT_REGISTRY.palette()
                if e["category"] == "symbolic"}
+        # Базовый набор PR-1 (алгебра/арифметика/рендер) должен присутствовать;
+        # мат. анализ и прочее добавляются следующими PR — проверяем включение.
         expected = {"symbol", "expr_const", "expand", "factor", "simplify",
                     "together", "cancel", "trigsimp", "collect", "apart",
                     "expr_binop", "expr_subs", "expr_eval", "expr_block"}
-        self.assertEqual(ids, expected)
+        self.assertTrue(expected <= ids, f"не хватает: {expected - ids}")
 
 
 @unittest.skipUnless(HAS_SYMPY, "sympy не установлен")

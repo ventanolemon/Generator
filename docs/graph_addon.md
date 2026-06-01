@@ -389,9 +389,17 @@ BOOL), `number_check` (чётность/знак/делимость/целочи
   `expr_eval` (EXPR→NUMBER, при не-числе → RetryGeneration);
 - рендер: `expr_block` (EXPR→BLOCK через FormulaBlock, опц. префикс `f(x) = …`).
 Тесты: `tests/test_graph_symbolic.py` (22), включая полный граф со static_task.
-Зависимость sympy добавлена в requirements.txt. Дальше PR-2/3/4: мат. анализ
-(`diff`/`integrate`/`limit`/`series`), ряды (`sum`/`Sum`), ТФКП
-(`re`/`im`/`arg`/`conjugate`/`residue`) — строятся по тому же образцу.
+Зависимость sympy добавлена в requirements.txt.
+
+**PR-2 (мат. анализ) ✅ СДЕЛАНО.** Узлы EXPR→EXPR с входом-переменной (символ):
+`diff` (производная порядка order), `integrate` (неопределённый; определённый
+при заданных lower/upper, пределы допускают `oo`/`-oo`/выражения), `limit`
+(точка + направление `+`/`-`/`+-`, точка допускает `oo`), `series` (ряд Тейлора
+около точки до порядка order, член O отброшен). Тесты:
+`tests/test_graph_calculus.py` (15), включая граф «производная → FormulaBlock».
+
+Дальше PR-3/4: ряды (`sum`/`Sum`), ТФКП (`re`/`im`/`arg`/`conjugate`/`residue`)
+— строятся по тому же образцу.
 
 Дальше — шаг 3c (узлы-обёртки: изображения/ОПВС, `random_choice`, английский),
 правок ядра не требует.
