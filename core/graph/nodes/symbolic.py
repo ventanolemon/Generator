@@ -394,6 +394,92 @@ class SeriesNode(Node):
         return {"out": guard_numeric(result)}
 
 
+# ---------- Ряды (суммирование) ----------
+
+class _SumBaseNode(Node):
+    """
+    База для узлов суммирования. Вход term:EXPR — общий член, index:EXPR —
+    переменная суммирования (символ). Границы lower/upper из параметров
+    (допускают 'oo'/'-oo'/выражения).
+    """
+    category = "symbolic"
+    INPUTS = [Port("term", PortType.EXPR), Port("index", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "lower": {"type": "string", "default": "1"},
+        "upper": {"type": "string", "default": "oo"},
+    }
+
+    def _bounds(self, sp, inputs):
+        term = as_expr(inputs["term"])
+        index = as_expr(inputs["index"])
+        lo = _parse_point(sp, self.params.get("lower", "1"))
+        hi = _parse_point(sp, self.params.get("upper", "oo"))
+        return term, index, lo, hi
+
+
+class SummationNode(_SumBaseNode):
+    """Сумма ряда (вычисленная) → EXPR. Например, Σ 1/n² = π²/6."""
+    type_id = "summation"
+    display_name = "Сумма ряда"
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        term, index, lo, hi = self._bounds(sp, inputs)
+        try:
+            result = sp.summation(term, (index, lo, hi))
+        except Exception as e:
+            raise RetryGeneration(f"summation {self.node_id!r}: {e}")
+        return {"out": guard_numeric(result)}
+
+
+class SumDisplayNode(_SumBaseNode):
+    """
+    Невычисленная сумма ∑ (для условия задачи) → EXPR. Рендерится как знак
+    суммы с пределами; .doit() намеренно не вызывается.
+    """
+    type_id = "sum_display"
+    display_name = "Знак суммы (∑)"
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        term, index, lo, hi = self._bounds(sp, inputs)
+        try:
+            result = sp.Sum(term, (index, lo, hi))
+        except Exception as e:
+            raise RetryGeneration(f"sum_display {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class IsConvergentNode(Node):
+    """
+    Проверка сходимости ряда Σ term (index от lower до бесконечности) → BOOL.
+    Использует sympy.Sum.is_convergent(). Если sympy не смог определить —
+    RetryGeneration (неинформативный результат лучше пере-сгенерировать).
+    """
+    type_id = "is_convergent"
+    category = "symbolic"
+    display_name = "Ряд сходится?"
+    INPUTS = [Port("term", PortType.EXPR), Port("index", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.BOOL)]
+    PARAMS_SCHEMA = {"lower": {"type": "string", "default": "1"}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        term = as_expr(inputs["term"])
+        index = as_expr(inputs["index"])
+        lo = _parse_point(sp, self.params.get("lower", "1"))
+        try:
+            verdict = sp.Sum(term, (index, lo, sp.oo)).is_convergent()
+        except Exception as e:
+            raise RetryGeneration(f"is_convergent {self.node_id!r}: {e}")
+        if verdict not in (sp.true, sp.false, True, False):
+            raise RetryGeneration(
+                f"is_convergent {self.node_id!r}: не удалось определить сходимость."
+            )
+        return {"out": bool(verdict)}
+
+
 # ---------- Рендер ----------
 
 class ExprBlockNode(Node):

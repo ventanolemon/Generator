@@ -25,8 +25,8 @@ from .sources import (
 from .symbolic import (
     ApartNode, CancelNode, CollectNode, DiffNode, EvaluateNode, ExpandNode,
     ExprBinaryNode, ExprBlockNode, ExprConstNode, FactorNode, IntegrateNode,
-    LimitNode, SeriesNode, SimplifyNode, SubstituteNode, SymbolNode,
-    TogetherNode, TrigsimpNode,
+    IsConvergentNode, LimitNode, SeriesNode, SimplifyNode, SubstituteNode,
+    SumDisplayNode, SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
 )
 
 _ALL_NODES = [
@@ -45,6 +45,7 @@ _ALL_NODES = [
     ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
     CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
     DiffNode, IntegrateNode, LimitNode, SeriesNode,
+    SummationNode, SumDisplayNode, IsConvergentNode,
     ExprBlockNode,
     # content
     TextBlockNode,
