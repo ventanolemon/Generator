@@ -20,7 +20,9 @@ from __future__ import annotations
 from ..errors import GraphValidationError, RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
-from ..symbolic import as_matrix, is_matrix, parse_matrix, sympy, to_latex
+from ..symbolic import (
+    as_expr, as_matrix, build_symbols, is_matrix, parse_matrix, sympy, to_latex,
+)
 
 
 # ---------- Источники ----------
@@ -616,6 +618,221 @@ class LineCanonicalNode(Node):
             num = sp.latex(coords[i] - p[i])
             parts.append(r"\frac{" + num + "}{" + sp.latex(v[i]) + "}")
         return {"out": FormulaBlock(" = ".join(parts))}
+
+
+# ---------- Квадратичные формы и замена базиса (PR-4) ----------
+
+def _signature(sp, A):
+    """Сигнатура симметричной матрицы (n+, n−, n0) по знакам собственных значений."""
+    evs = A.eigenvals()
+    npos = sum(m for e, m in evs.items() if e.is_positive)
+    nneg = sum(m for e, m in evs.items() if e.is_negative)
+    nzero = sum(m for e, m in evs.items() if e.is_zero)
+    if npos + nneg + nzero != A.rows:
+        # Знак части собственных значений не определился символически.
+        raise RetryGeneration("не удалось определить сигнатуру (знаки λ неясны).")
+    return npos, nneg, nzero
+
+
+class QuadFormToMatrixNode(Node):
+    """
+    Матрица квадратичной формы: A = ½·гессиан(Q) (симметричная). Вход in:EXPR —
+    квадратичная форма; переменные задаются параметром vars (список имён).
+    EXPR → MATRIX.
+    """
+    type_id = "quadform_to_matrix"
+    category = "linalg"
+    display_name = "Матрица квадр. формы"
+    INPUTS = [Port("in", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.MATRIX)]
+    PARAMS_SCHEMA = {"vars": {"type": "list", "default": ["x", "y"]}}
+
+    def _vars(self, sp):
+        names = self.params.get("vars") or ["x", "y"]
+        return [build_symbols([str(n)])[str(n)] for n in names]
+
+    def validate_params(self) -> None:
+        names = self.params.get("vars") or []
+        if not names:
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: укажите переменные формы (vars)."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        Q = as_expr(inputs["in"])
+        vs = self._vars(sp)
+        try:
+            A = sp.hessian(Q, vs) / 2
+        except Exception as e:
+            raise RetryGeneration(f"quadform_to_matrix {self.node_id!r}: {e}")
+        return {"out": sp.Matrix(A)}
+
+
+class MatrixToQuadFormNode(Node):
+    """
+    Квадратичная форма по матрице: Q = vᵀ·A·v. Вход in:MATRIX (симметричная),
+    переменные — параметр vars. MATRIX → EXPR.
+    """
+    type_id = "matrix_to_quadform"
+    category = "linalg"
+    display_name = "Квадр. форма по матрице"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"vars": {"type": "list", "default": ["x", "y"]}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        A = as_matrix(inputs["in"])
+        names = self.params.get("vars") or ["x", "y"]
+        if len(names) != A.rows:
+            raise RetryGeneration(
+                f"matrix_to_quadform {self.node_id!r}: число переменных ≠ размеру матрицы."
+            )
+        v = sp.Matrix([build_symbols([str(n)])[str(n)] for n in names])
+        return {"out": sp.expand((v.T * A * v)[0])}
+
+
+class QuadFormCanonicalNode(Node):
+    """
+    Канонический вид квадратичной формы (метод собственных значений):
+    λ₁ξ₁² + λ₂ξ₂² + … Вход in:MATRIX (симметричная) → EXPR (в переменных xi_i).
+    """
+    type_id = "quadform_canonical"
+    category = "linalg"
+    display_name = "Канонический вид формы"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        A = as_matrix(inputs["in"])
+        if A.rows != A.cols:
+            raise RetryGeneration(f"quadform_canonical {self.node_id!r}: матрица не квадратная.")
+        try:
+            evs = A.eigenvals()
+        except Exception as e:
+            raise RetryGeneration(f"quadform_canonical {self.node_id!r}: {e}")
+        lambdas = [e for e, m in sorted(evs.items(), key=lambda kv: str(kv[0]))
+                   for _ in range(m)]
+        terms = []
+        for i, lam in enumerate(lambdas, start=1):
+            xi = sp.Symbol(f"xi_{i}")
+            terms.append(lam * xi**2)
+        return {"out": sp.Add(*terms) if terms else sp.Integer(0)}
+
+
+class QuadFormSignatureNode(Node):
+    """
+    Сигнатура и тип квадратичной формы (закон инерции) → BLOCK.
+    Показывает (n₊, n₋, n₀) и вывод о знакоопределённости.
+    """
+    type_id = "quadform_signature"
+    category = "linalg"
+    display_name = "Сигнатура формы"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.BLOCK)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock
+        sp = sympy()
+        A = as_matrix(inputs["in"])
+        if A.rows != A.cols:
+            raise RetryGeneration(f"quadform_signature {self.node_id!r}: матрица не квадратная.")
+        npos, nneg, nzero = _signature(sp, A)
+        if nzero == 0 and nneg == 0:
+            kind = r"\text{положительно определена}"
+        elif nzero == 0 and npos == 0:
+            kind = r"\text{отрицательно определена}"
+        elif nneg == 0:
+            kind = r"\text{положительно полуопределена}"
+        elif npos == 0:
+            kind = r"\text{отрицательно полуопределена}"
+        else:
+            kind = r"\text{знакопеременна}"
+        latex = (f"\\sigma = ({npos},\\, {nneg},\\, {nzero}),\\quad {kind}")
+        return {"out": FormulaBlock(latex)}
+
+
+class ChangeBasisOperatorNode(Node):
+    """
+    Матрица оператора в новом базисе: A' = P⁻¹·A·P (преобразование подобия).
+    Входы a:MATRIX (оператор), p:MATRIX (матрица перехода, столбцы — новый базис).
+    """
+    type_id = "change_basis_operator"
+    category = "linalg"
+    display_name = "Оператор в новом базисе"
+    INPUTS = [Port("a", PortType.MATRIX), Port("p", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.MATRIX)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        A = as_matrix(inputs["a"])
+        P = as_matrix(inputs["p"])
+        if P.rows != P.cols:
+            raise RetryGeneration(f"change_basis_operator {self.node_id!r}: P не квадратная.")
+        try:
+            if P.det() == 0:
+                raise RetryGeneration(f"change_basis_operator {self.node_id!r}: P вырождена.")
+            return {"out": P.inv() * A * P}
+        except RetryGeneration:
+            raise
+        except Exception as e:
+            raise RetryGeneration(f"change_basis_operator {self.node_id!r}: {e}")
+
+
+class CoordinatesInBasisNode(Node):
+    """
+    Координаты вектора в базисе: решение P·c = v (столбцы P — базисные векторы).
+    Входы vector:MATRIX, basis:MATRIX (матрица из базисных столбцов). → MATRIX.
+    """
+    type_id = "coordinates_in_basis"
+    category = "linalg"
+    display_name = "Координаты в базисе"
+    INPUTS = [Port("vector", PortType.MATRIX), Port("basis", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.MATRIX)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        v = as_matrix(inputs["vector"])
+        P = as_matrix(inputs["basis"])
+        if P.rows != P.cols:
+            raise RetryGeneration(f"coordinates_in_basis {self.node_id!r}: базис не квадратный.")
+        try:
+            if P.det() == 0:
+                raise RetryGeneration(f"coordinates_in_basis {self.node_id!r}: базис вырожден.")
+            return {"out": P.inv() * v}
+        except RetryGeneration:
+            raise
+        except Exception as e:
+            raise RetryGeneration(f"coordinates_in_basis {self.node_id!r}: {e}")
+
+
+class GramSchmidtNode(Node):
+    """
+    Ортогонализация Грама–Шмидта набора векторов → BLOCK_LIST.
+    Векторы задаются столбцами входной матрицы in:MATRIX. normalize=yes даёт
+    ортонормированный базис.
+    """
+    type_id = "gram_schmidt"
+    category = "linalg"
+    display_name = "Грам–Шмидт"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+    PARAMS_SCHEMA = {
+        "normalize": {"type": "enum", "values": ["no", "yes"], "default": "no"},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock
+        sp = sympy()
+        M = as_matrix(inputs["in"])
+        cols = [M.col(j) for j in range(M.cols)]
+        normalize = str(self.params.get("normalize", "no")) == "yes"
+        try:
+            ortho = sp.GramSchmidt(cols, normalize)
+        except Exception as e:
+            raise RetryGeneration(f"gram_schmidt {self.node_id!r}: {e}")
+        return {"out": [FormulaBlock(sp.latex(v, mat_delim="", mat_str="pmatrix"))
+                        for v in ortho]}
 
 
 # ---------- Рендер ----------
