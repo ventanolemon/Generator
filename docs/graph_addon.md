@@ -506,6 +506,20 @@ exercises.english.generators. Тесты: `tests/test_graph_english.py` (13).
 FillInTheBlankBlock; два выхода statement/answer типа BLOCK_LIST → подключаются
 прямо в static_task). Тесты: `tests/test_graph_english_sentences.py` (11).
 
+**Компилятор графа в Python (`core/graph/compiler.py`). ✅ СДЕЛАНО (ядро + кнопка).**
+`compile_graph(spec)` разворачивает граф в самостоятельный Python-модуль с
+функцией `generate(seed)` и явным retry-циклом. Стратегия «dataflow + инлайн
+простых»: частые простые узлы (константы, var_dict, formula, template,
+случайные, text_block, block_list, static_task) эмитятся как читаемый нативный
+код (`_vd_out = {'a': float(_ra_out), ...}`), а все прочие ~85 узлов — через
+универсальный путь (`_node(type_id, id, params).compute(inputs, ctx)`), что
+гарантирует точную семантику без эмиттера под каждый узел. Провода становятся
+присваиваниями переменных `_<node>_<port>`. Каждый выход узла — отдельная
+переменная; финал — значение TASK-узла. Кнопка «Экспорт в .py» в редакторе
+сохраняет модуль файлом. Паритет с GraphExecutor проверен на нескольких seed и
+на универсальном пути (linalg/symbolic/repeat с вложенным телом). Тесты:
+`tests/test_graph_compiler.py` (9).
+
 *Шаг 3c — узлы-обёртки.* image (ОПВС/`render_circuit`), `random_choice`,
 английский (`json_dict`, `fill_in_blank`). Правок ядра не требуют.
 
