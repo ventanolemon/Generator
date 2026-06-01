@@ -23,10 +23,12 @@ from .sources import (
     NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
 )
 from .symbolic import (
-    ApartNode, CancelNode, CollectNode, DiffNode, EvaluateNode, ExpandNode,
-    ExprBinaryNode, ExprBlockNode, ExprConstNode, FactorNode, IntegrateNode,
-    IsConvergentNode, LimitNode, SeriesNode, SimplifyNode, SubstituteNode,
-    SumDisplayNode, SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
+    AbsNode, ApartNode, ArgNode, CancelNode, CollectNode, ConjugateNode,
+    DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
+    ExprBlockNode, ExprConstNode, FactorNode, ImNode, IntegrateNode,
+    IsConvergentNode, LimitNode, ReNode, ResidueNode, SeriesNode, SimplifyNode,
+    SolveNode, SubstituteNode, SumDisplayNode, SummationNode, SymbolNode,
+    TogetherNode, TrigsimpNode,
 )
 
 _ALL_NODES = [
@@ -46,6 +48,8 @@ _ALL_NODES = [
     CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
     DiffNode, IntegrateNode, LimitNode, SeriesNode,
     SummationNode, SumDisplayNode, IsConvergentNode,
+    ReNode, ImNode, ArgNode, AbsNode, ConjugateNode, ExpandComplexNode,
+    ResidueNode, SolveNode,
     ExprBlockNode,
     # content
     TextBlockNode,

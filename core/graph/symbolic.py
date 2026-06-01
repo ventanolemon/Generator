@@ -64,6 +64,11 @@ def parse_expr(text: str, symbols: dict | None = None):
         raise GraphValidationError("Пустое символьное выражение.")
     src = str(text).replace("^", "**")
     local = dict(symbols or {})
+    # Мнимая единица: разрешаем и 'I' (sympy), и 'i' — если пользователь не
+    # объявил 'i' как обычный символ.
+    local.setdefault("I", sp.I)
+    if "i" not in local:
+        local["i"] = sp.I
     try:
         from sympy.parsing.sympy_parser import (
             parse_expr as _pe, standard_transformations,

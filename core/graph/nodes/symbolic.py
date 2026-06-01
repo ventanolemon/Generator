@@ -480,6 +480,107 @@ class IsConvergentNode(Node):
         return {"out": bool(verdict)}
 
 
+# ---------- ТФКП (комплексный анализ) ----------
+
+class _ComplexUnaryNode(Node):
+    """База для покомпонентных операций над комплексным выражением (EXPR→EXPR)."""
+    category = "symbolic"
+    INPUTS = [Port("in", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    SYMPY_OP = "re"
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        try:
+            result = getattr(sp, self.SYMPY_OP)(expr)
+        except Exception as e:
+            raise RetryGeneration(f"{self.type_id} {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class ReNode(_ComplexUnaryNode):
+    type_id = "re"; display_name = "Действительная часть"; SYMPY_OP = "re"
+
+
+class ImNode(_ComplexUnaryNode):
+    type_id = "im"; display_name = "Мнимая часть"; SYMPY_OP = "im"
+
+
+class ArgNode(_ComplexUnaryNode):
+    type_id = "arg"; display_name = "Аргумент"; SYMPY_OP = "arg"
+
+
+class AbsNode(_ComplexUnaryNode):
+    type_id = "abs"; display_name = "Модуль"; SYMPY_OP = "Abs"
+
+
+class ConjugateNode(_ComplexUnaryNode):
+    type_id = "conjugate"; display_name = "Сопряжённое"; SYMPY_OP = "conjugate"
+
+
+class ExpandComplexNode(_ComplexUnaryNode):
+    type_id = "expand_complex"; display_name = "Разложить (a+bi)"
+    SYMPY_OP = "expand_complex"
+
+
+class ResidueNode(Node):
+    """
+    Вычет функции в точке (ядро ТФКП). Вход in:EXPR — функция, var:EXPR —
+    комплексная переменная, point — точка (полюс; допускает выражения, oo).
+    """
+    type_id = "residue"
+    category = "symbolic"
+    display_name = "Вычет"
+    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"point": {"type": "string", "default": "0"}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        var = as_expr(inputs["var"])
+        point = _parse_point(sp, self.params.get("point", "0"))
+        try:
+            result = sp.residue(expr, var, point)
+        except Exception as e:
+            raise RetryGeneration(f"residue {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class SolveNode(Node):
+    """
+    Решить уравнение expr = 0 относительно var; собрать корни в BLOCK_LIST
+    (по одному FormulaBlock на корень). Удобно как готовый ответ задачи.
+
+    Опционально prefix оборачивает каждый корень (например, 'z = …').
+    """
+    type_id = "solve"
+    category = "symbolic"
+    display_name = "Решить уравнение"
+    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+    PARAMS_SCHEMA = {"prefix": {"type": "string", "default": "", "optional": True}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock          # ленивый: тянет Qt
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        var = as_expr(inputs["var"])
+        try:
+            roots = sp.solve(expr, var)
+        except Exception as e:
+            raise RetryGeneration(f"solve {self.node_id!r}: {e}")
+        prefix = str(self.params.get("prefix", "")).strip()
+        blocks = []
+        for r in roots:
+            latex = to_latex(r)
+            if prefix:
+                latex = f"{prefix} = {latex}"
+            blocks.append(FormulaBlock(latex))
+        return {"out": blocks}
+
+
 # ---------- Рендер ----------
 
 class ExprBlockNode(Node):
