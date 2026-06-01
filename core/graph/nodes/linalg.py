@@ -285,6 +285,165 @@ class MatrixAddNode(Node):
         return {"out": A - B if self.params.get("op") == "sub" else A + B}
 
 
+# ---------- Системы и операторы (PR-2) ----------
+
+class RrefNode(Node):
+    """Приведённый ступенчатый вид (Gauss-Jordan), MATRIX → MATRIX."""
+    type_id = "matrix_rref"
+    category = "linalg"
+    display_name = "Ступенчатый вид (rref)"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.MATRIX)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        M = as_matrix(inputs["in"])
+        rref, _pivots = M.rref()
+        return {"out": rref}
+
+
+class CharPolyNode(Node):
+    """
+    Характеристический многочлен det(A − λE), MATRIX + var:EXPR → EXPR.
+    Переменная (символ λ) приходит на вход var.
+    """
+    type_id = "matrix_charpoly"
+    category = "linalg"
+    display_name = "Характеристический многочлен"
+    INPUTS = [Port("in", PortType.MATRIX), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        from ..symbolic import as_expr
+        M = as_matrix(inputs["in"])
+        if M.rows != M.cols:
+            raise RetryGeneration(f"matrix_charpoly {self.node_id!r}: матрица не квадратная.")
+        var = as_expr(inputs["var"])
+        try:
+            return {"out": M.charpoly(var).as_expr()}
+        except Exception as e:
+            raise RetryGeneration(f"matrix_charpoly {self.node_id!r}: {e}")
+
+
+class EigenvaluesNode(Node):
+    """
+    Собственные значения матрицы → BLOCK_LIST (по одному FormulaBlock на
+    значение; кратность показывается как '(кратность k)'). Опц. префикс.
+    """
+    type_id = "matrix_eigenvalues"
+    category = "linalg"
+    display_name = "Собственные значения"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+    PARAMS_SCHEMA = {"prefix": {"type": "string", "default": "\\lambda", "optional": True}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock
+        M = as_matrix(inputs["in"])
+        if M.rows != M.cols:
+            raise RetryGeneration(f"matrix_eigenvalues {self.node_id!r}: матрица не квадратная.")
+        try:
+            vals = M.eigenvals()
+        except Exception as e:
+            raise RetryGeneration(f"matrix_eigenvalues {self.node_id!r}: {e}")
+        prefix = str(self.params.get("prefix", "")).strip()
+        blocks = []
+        # Детерминированный порядок: по строковому представлению.
+        for val, mult in sorted(vals.items(), key=lambda kv: str(kv[0])):
+            latex = to_latex(val)
+            if prefix:
+                latex = f"{prefix} = {latex}"
+            if mult > 1:
+                latex += f"\\quad (\\text{{кратность }} {mult})"
+            blocks.append(FormulaBlock(latex))
+        return {"out": blocks}
+
+
+class EigenvectorsNode(Node):
+    """
+    Собственные векторы матрицы → BLOCK_LIST (для каждого собственного значения —
+    базисные векторы его собственного подпространства, в виде λ: вектор).
+    """
+    type_id = "matrix_eigenvectors"
+    category = "linalg"
+    display_name = "Собственные векторы"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock
+        sp = sympy()
+        M = as_matrix(inputs["in"])
+        if M.rows != M.cols:
+            raise RetryGeneration(f"matrix_eigenvectors {self.node_id!r}: матрица не квадратная.")
+        try:
+            data = M.eigenvects()
+        except Exception as e:
+            raise RetryGeneration(f"matrix_eigenvectors {self.node_id!r}: {e}")
+        blocks = []
+        for val, _mult, vecs in sorted(data, key=lambda t: str(t[0])):
+            for v in vecs:
+                latex = (f"\\lambda = {to_latex(val)}:\\quad "
+                         f"{sp.latex(v, mat_delim='', mat_str='pmatrix')}")
+                blocks.append(FormulaBlock(latex))
+        return {"out": blocks}
+
+
+class NullspaceNode(Node):
+    """
+    Базис ядра (фундаментальная система решений Ax=0) → BLOCK_LIST векторов.
+    Пустое ядро (только нулевой вектор) → один блок с пометкой.
+    """
+    type_id = "matrix_nullspace"
+    category = "linalg"
+    display_name = "Ядро (нуль-пространство)"
+    INPUTS = [Port("in", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock
+        sp = sympy()
+        M = as_matrix(inputs["in"])
+        basis = M.nullspace()
+        if not basis:
+            return {"out": [FormulaBlock("\\{\\vec{0}\\}")]}
+        return {"out": [FormulaBlock(sp.latex(v, mat_delim="", mat_str="pmatrix"))
+                        for v in basis]}
+
+
+class LinSolveNode(Node):
+    """
+    Решение СЛАУ A·x = b → BLOCK_LIST. Вход a — матрица коэффициентов,
+    b — вектор-столбец правых частей. Совместная определённая система даёт один
+    блок-вектор решения; недоопределённая — параметрическое решение; несовместная
+    → пустой список (нет решений).
+    """
+    type_id = "matrix_linsolve"
+    category = "linalg"
+    display_name = "Решить систему (Ax=b)"
+    INPUTS = [Port("a", PortType.MATRIX), Port("b", PortType.MATRIX)]
+    OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
+    PARAMS_SCHEMA = {"prefix": {"type": "string", "default": "x", "optional": True}}
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import FormulaBlock
+        sp = sympy()
+        A = as_matrix(inputs["a"])
+        b = as_matrix(inputs["b"])
+        try:
+            sol = sp.linsolve((A, b))
+        except Exception as e:
+            raise RetryGeneration(f"matrix_linsolve {self.node_id!r}: {e}")
+        prefix = str(self.params.get("prefix", "")).strip()
+        blocks = []
+        for tup in sol:  # FiniteSet кортежей
+            vec = sp.Matrix(list(tup))
+            latex = sp.latex(vec, mat_delim="", mat_str="pmatrix")
+            if prefix:
+                latex = f"\\vec{{{prefix}}} = {latex}"
+            blocks.append(FormulaBlock(latex))
+        return {"out": blocks}
+
+
 # ---------- Рендер ----------
 
 _MATRIX_ENVS = {"pmatrix": "p", "bmatrix": "b", "vmatrix": "v", "Vmatrix": "V"}

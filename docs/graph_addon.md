@@ -432,10 +432,18 @@ requirements.txt, импорт ленивый (движок графа груз�
 - рендер: `matrix_block` (MATRIX→BLOCK через FormulaBlock; окружения
   pmatrix/bmatrix/vmatrix/Vmatrix, опц. префикс `A = …`).
 Вырожденные/несогласованные случаи → RetryGeneration. Тесты:
-`tests/test_graph_linalg.py` (24). Дальше PR-2: системы и операторы
-(`rref`/`linsolve`/`eigenvals`/`eigenvects`/`nullspace`/`charpoly`); PR-3:
-вектор-геометрия (скалярное/векторное/смешанное произв., нормы, углы, прямые и
-плоскости).
+`tests/test_graph_linalg.py` (24).
+
+**PR-2 (системы и операторы) ✅ СДЕЛАНО.** `matrix_rref` (Gauss-Jordan,
+MATRIX→MATRIX), `matrix_charpoly` (характеристический многочлен det(A−λE),
+MATRIX+var→EXPR), `matrix_eigenvalues` (→BLOCK_LIST с кратностями),
+`matrix_eigenvectors` (→BLOCK_LIST, λ: вектор), `matrix_nullspace` (базис ядра →
+BLOCK_LIST; тривиальное ядро → {0}), `matrix_linsolve` (A·x=b → BLOCK_LIST;
+определённая/параметрическая/несовместная). Узлы-списки рендерят векторы в
+pmatrix. Тесты: `tests/test_graph_linalg_systems.py` (10).
+
+Дальше PR-3: вектор-геометрия (скалярное/векторное/смешанное произв., нормы,
+углы, прямые и плоскости).
 
 Дальше — шаг 3c (узлы-обёртки: изображения/ОПВС, `random_choice`, английский),
 правок ядра не требует.
