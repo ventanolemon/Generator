@@ -581,6 +581,87 @@ class SolveNode(Node):
         return {"out": blocks}
 
 
+# ---------- Интегральные преобразования (Лаплас / Фурье) ----------
+
+class _TransformNode(Node):
+    """
+    База для интегральных преобразований. Переменные оригинала и образа задаются
+    параметрами from_var / to_var (по умолчанию t→s). Подкласс реализует _apply.
+    """
+    category = "symbolic"
+    INPUTS = [Port("in", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "from_var": {"type": "string", "default": "t", "optional": True},
+        "to_var": {"type": "string", "default": "s", "optional": True},
+    }
+    DEFAULT_FROM = "t"
+    DEFAULT_TO = "s"
+
+    def _vars(self, sp, expr):
+        # Переменную оригинала берём ИЗ выражения по имени (у неё могут быть
+        # предположения, заданные источником) — иначе свежий Symbol не совпадёт
+        # со свободной переменной и преобразование «не увидит» её.
+        fv = str(self.params.get("from_var", self.DEFAULT_FROM)) or self.DEFAULT_FROM
+        tv = str(self.params.get("to_var", self.DEFAULT_TO)) or self.DEFAULT_TO
+        match = [sym for sym in getattr(expr, "free_symbols", set()) if sym.name == fv]
+        a = match[0] if match else sp.Symbol(fv)
+        return a, sp.Symbol(tv)
+
+    def _apply(self, sp, expr, a, b):
+        raise NotImplementedError
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        a, b = self._vars(sp, expr)
+        try:
+            result = self._apply(sp, expr, a, b)
+        except Exception as e:
+            raise RetryGeneration(f"{self.type_id} {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class LaplaceNode(_TransformNode):
+    """Преобразование Лапласа: f(t) → F(s) = L{f}. По умолчанию t→s."""
+    type_id = "laplace"
+    display_name = "Преобразование Лапласа"
+    DEFAULT_FROM = "t"; DEFAULT_TO = "s"
+
+    def _apply(self, sp, expr, t, s):
+        return sp.laplace_transform(expr, t, s, noconds=True)
+
+
+class InverseLaplaceNode(_TransformNode):
+    """Обратное преобразование Лапласа: F(s) → f(t). По умолчанию s→t."""
+    type_id = "inverse_laplace"
+    display_name = "Обратное преобр. Лапласа"
+    DEFAULT_FROM = "s"; DEFAULT_TO = "t"
+
+    def _apply(self, sp, expr, s, t):
+        return sp.inverse_laplace_transform(expr, s, t)
+
+
+class FourierNode(_TransformNode):
+    """Преобразование Фурье: f(x) → F(ω). По умолчанию x→omega."""
+    type_id = "fourier"
+    display_name = "Преобразование Фурье"
+    DEFAULT_FROM = "x"; DEFAULT_TO = "omega"
+
+    def _apply(self, sp, expr, x, w):
+        return sp.fourier_transform(expr, x, w)
+
+
+class InverseFourierNode(_TransformNode):
+    """Обратное преобразование Фурье: F(ω) → f(x). По умолчанию omega→x."""
+    type_id = "inverse_fourier"
+    display_name = "Обратное преобр. Фурье"
+    DEFAULT_FROM = "omega"; DEFAULT_TO = "x"
+
+    def _apply(self, sp, expr, w, x):
+        return sp.inverse_fourier_transform(expr, w, x)
+
+
 # ---------- Рендер ----------
 
 class ExprBlockNode(Node):

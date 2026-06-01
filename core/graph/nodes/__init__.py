@@ -39,8 +39,9 @@ from .ode import (
 from .symbolic import (
     AbsNode, ApartNode, ArgNode, CancelNode, CollectNode, ConjugateNode,
     DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
-    ExprBlockNode, ExprConstNode, FactorNode, ImNode, IntegrateNode,
-    IsConvergentNode, LimitNode, ReNode, ResidueNode, SeriesNode, SimplifyNode,
+    ExprBlockNode, ExprConstNode, FactorNode, FourierNode, ImNode,
+    IntegrateNode, InverseFourierNode, InverseLaplaceNode, IsConvergentNode,
+    LaplaceNode, LimitNode, ReNode, ResidueNode, SeriesNode, SimplifyNode,
     SolveNode, SubstituteNode, SumDisplayNode, SummationNode, SymbolNode,
     TogetherNode, TrigsimpNode,
 )
@@ -64,6 +65,7 @@ _ALL_NODES = [
     SummationNode, SumDisplayNode, IsConvergentNode,
     ReNode, ImNode, ArgNode, AbsNode, ConjugateNode, ExpandComplexNode,
     ResidueNode, SolveNode,
+    LaplaceNode, InverseLaplaceNode, FourierNode, InverseFourierNode,
     ExprBlockNode,
     # linalg (линейная алгебра)
     MatrixConstNode, RandomMatrixNode, IdentityNode,
