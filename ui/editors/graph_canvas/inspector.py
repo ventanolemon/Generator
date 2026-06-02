@@ -65,6 +65,12 @@ class ParamInspector(QWidget):
         node = self.doc.nodes[node_id]
         entry = self._entries.get(node.type, {})
         self._form.addRow(QLabel(f"<b>{entry.get('display_name', node.type)}</b>"))
+        desc = entry.get("description")
+        if desc:
+            lbl = QLabel(desc)
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet("color: #9AA0A6;")
+            self._form.addRow(lbl)
         self._form.addRow("id", QLabel(node.id))
 
         schema = entry.get("params_schema") or {}
@@ -107,6 +113,14 @@ class ParamInspector(QWidget):
                 lambda _checked=False: self.open_subgraph.emit(self.node_id, "default")
             )
             self._form.addRow("default", bd)
+            return
+
+        if kind == "hidden":
+            # Служебный параметр (напр. inline-словарь) — в форме не показываем.
+            return
+
+        if kind == "file":
+            self._add_file_field(node, key, meta)
             return
 
         if kind == "enum":
@@ -154,6 +168,68 @@ class ParamInspector(QWidget):
     @staticmethod
     def _port_affecting_keys(node) -> set:
         return _PORT_AFFECTING.get(node.type, set())
+
+    def _add_file_field(self, node, key: str, meta: dict) -> None:
+        """Поле выбора файла: путь + «Выбрать…» (+ «Просмотр» для слов)."""
+        from PyQt6.QtWidgets import QFileDialog, QWidget, QVBoxLayout, QHBoxLayout
+
+        wrap = QWidget()
+        col = QVBoxLayout(wrap)
+        col.setContentsMargins(0, 0, 0, 0)
+
+        cur = str(node.params.get(key, meta.get("default", "")) or "")
+        path_lbl = QLabel(cur or "— файл не выбран —")
+        path_lbl.setWordWrap(True)
+        path_lbl.setStyleSheet("color: #9AA0A6;")
+        col.addWidget(path_lbl)
+
+        row = QHBoxLayout()
+        pick = QPushButton("Выбрать…")
+        row.addWidget(pick)
+        preview_kind = meta.get("preview")
+        edit_btn = QPushButton("Просмотр/правка") if preview_kind == "words" else None
+        if edit_btn is not None:
+            row.addWidget(edit_btn)
+        col.addLayout(row)
+
+        flt = meta.get("filter", "Все файлы (*.*)")
+
+        def choose():
+            start = node.params.get(key) or ""
+            fn, _ = QFileDialog.getOpenFileName(self, "Выберите файл", start, flt)
+            if fn:
+                node.params[key] = fn
+                # Новый файл отменяет ранее сохранённые правки (inline).
+                if "inline" in (self._entries.get(node.type, {})
+                                .get("params_schema") or {}):
+                    node.params["inline"] = None
+                path_lbl.setText(fn)
+                self.params_changed.emit(self.node_id)
+
+        pick.clicked.connect(lambda: choose())
+        if edit_btn is not None:
+            edit_btn.clicked.connect(lambda: self._edit_words(node, key))
+
+        self._form.addRow(key, wrap)
+
+    def _edit_words(self, node, file_key: str) -> None:
+        """Открыть диалог предпросмотра/правки словаря слов узла."""
+        from .word_editor import WordEditorDialog
+        # Источник слов: сохранённые правки (inline) или файл.
+        words = node.params.get("inline")
+        if not isinstance(words, dict) or not words:
+            path = str(node.params.get(file_key, "") or "")
+            try:
+                from core.graph.nodes.english import _load_words_file
+                words = _load_words_file(path) if path else {}
+            except Exception as e:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Не удалось открыть слова", str(e))
+                return
+        dlg = WordEditorDialog(words, parent=self)
+        if dlg.exec():
+            node.params["inline"] = dlg.result_words()
+            self.params_changed.emit(self.node_id)
 
     def _commit(self, key: str) -> None:
         if self.node_id is None:

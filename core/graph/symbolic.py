@@ -162,6 +162,35 @@ def as_matrix(value, symbols: dict | None = None):
     return parse_matrix(str(value), symbols)
 
 
+def substitute_values(obj, values: dict | None):
+    """
+    Подставить именованные числа в sympy-объект (выражение/матрицу/уравнение).
+
+    values — dict[str, число] (как из NUMBER_DICT-порта). Символы-плейсхолдеры
+    с этими именами заменяются значениями; прочие свободные символы остаются
+    (так задаётся «форма со случайными коэффициентами»). None/пусто — без изменений.
+    """
+    if not values:
+        return obj
+    sp = sympy()
+    mapping = {sp.Symbol(str(k)): _num(sp, v) for k, v in values.items()}
+    try:
+        return obj.subs(mapping)
+    except AttributeError:
+        return obj
+
+
+def _num(sp, v):
+    """Число (int/float) → точный sympy-объект (целые остаются целыми)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return sp.sympify(v)
+    if abs(f - round(f)) < 1e-9:
+        return sp.Integer(int(round(f)))
+    return sp.Float(f)
+
+
 # ---------- ОДУ ----------
 
 def parse_ode(text: str, func: str = "y", var: str = "x"):

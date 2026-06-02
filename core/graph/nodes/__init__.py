@@ -14,6 +14,7 @@ from .content import TextBlockNode
 from .control import (
     CompareNode, NumberCheckNode, SelectNode,
 )
+from .english import WordsFileNode, WordsTrainerNode
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
     ShiftGetNode, ShiftSetNode,
@@ -41,9 +42,9 @@ from .symbolic import (
     DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
     ExprBlockNode, ExprConstNode, FactorNode, FourierNode, ImNode,
     IntegrateNode, InverseFourierNode, InverseLaplaceNode, IsConvergentNode,
-    LaplaceNode, LimitNode, ReNode, ResidueNode, SeriesNode, SimplifyNode,
-    SolveNode, SubstituteNode, SumDisplayNode, SummationNode, SymbolNode,
-    TogetherNode, TrigsimpNode,
+    LaplaceNode, LimitNode, RandomPolynomialNode, ReNode, ResidueNode,
+    SeriesNode, SimplifyNode, SolveNode, SubstituteNode, SumDisplayNode,
+    SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
 )
 
 _ALL_NODES = [
@@ -58,7 +59,7 @@ _ALL_NODES = [
     LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode, CaseNode,
     ShiftGetNode, ShiftSetNode,
     # symbolic (символьная арифметика)
-    SymbolNode, ExprConstNode,
+    SymbolNode, ExprConstNode, RandomPolynomialNode,
     ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
     CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
     DiffNode, IntegrateNode, LimitNode, SeriesNode,
@@ -82,6 +83,8 @@ _ALL_NODES = [
     MatrixBlockNode,
     # ode (дифференциальные уравнения)
     OdeConstNode, OdeSolveNode, OdeClassifyNode, OdeCheckNode,
+    # english (английский язык)
+    WordsFileNode, WordsTrainerNode,
     # content
     TextBlockNode,
     # assembly
@@ -93,6 +96,8 @@ def build_default_registry() -> NodeRegistry:
     reg = NodeRegistry()
     for cls in _ALL_NODES:
         reg.register(cls)
+    from .descriptions import apply_descriptions
+    apply_descriptions(reg)
     return reg
 
 

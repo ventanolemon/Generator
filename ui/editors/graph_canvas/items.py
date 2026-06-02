@@ -65,6 +65,16 @@ class EdgeItem(QGraphicsPathItem):
         path.cubicTo(p1.x() + dx, p1.y(), p2.x() - dx, p2.y(), p2.x(), p2.y())
         self.setPath(path)
 
+    def paint(self, painter, option, widget=None) -> None:
+        # У выделенного провода — тонкая жёлтая обводка поверх цветной линии
+        # (вместо стандартной пунктирной рамки выделения).
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if self.isSelected():
+            painter.setPen(QPen(style.NODE_BORDER_SEL, 4.5))
+            painter.drawPath(self.path())
+        painter.setPen(QPen(style.port_color(self.src.port.type), 2.4))
+        painter.drawPath(self.path())
+
     def as_doc_tuple(self) -> tuple[str, str, str, str]:
         return (self.src.node_id, self.src.port.name,
                 self.dst.node_id, self.dst.port.name)

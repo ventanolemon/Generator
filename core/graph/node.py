@@ -55,6 +55,7 @@ class Node(ABC):
     type_id: str = ""
     category: str = ""
     display_name: str = ""
+    description: str = ""        # краткое назначение узла (для палитры/инспектора)
     INPUTS: list[Port] = []
     OUTPUTS: list[Port] = []
     PARAMS_SCHEMA: dict = {}

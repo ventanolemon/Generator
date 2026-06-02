@@ -21,7 +21,8 @@ from ..errors import GraphValidationError, RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
 from ..symbolic import (
-    as_expr, as_matrix, build_symbols, is_matrix, parse_matrix, sympy, to_latex,
+    as_expr, as_matrix, build_symbols, is_matrix, parse_matrix,
+    substitute_values, sympy, to_latex,
 )
 
 
@@ -29,12 +30,18 @@ from ..symbolic import (
 
 class MatrixConstNode(Node):
     """
-    Матрица-литерал из текста. Строки разделяются ';', элементы — ','.
-    Например '1,2;3,4'. Вектор-столбец: '1;2;3'. Источник MATRIX.
+    Матрица из текста. Строки разделяются ';', элементы — ','. Например
+    '1,2;3,4'; вектор-столбец '1;2;3'. Элементы могут быть буквами-плейсхолдерами
+    ('a,1;0,b') — тогда подключите вход values (NUMBER_DICT, напр. от var_dict со
+    случайными числами), и они подставятся: так получается случайная матрица
+    нужной структуры. Без values — литерал как есть. Источник MATRIX.
     """
     type_id = "matrix_const"
     category = "linalg"
     display_name = "Матрица"
+    description = ("Матрица из текста '1,2;3,4'. Буквы-плейсхолдеры + вход values "
+                   "(NUMBER_DICT) → случайные значения. Выход: MATRIX.")
+    INPUTS = [Port("values", PortType.NUMBER_DICT, required=False)]
     OUTPUTS = [Port("out", PortType.MATRIX)]
     PARAMS_SCHEMA = {"data": {"type": "string", "default": "1,0;0,1"}}
 
@@ -42,7 +49,8 @@ class MatrixConstNode(Node):
         parse_matrix(self.params.get("data", ""))
 
     def compute(self, inputs, ctx: ExecContext):
-        return {"out": parse_matrix(self.params.get("data", ""))}
+        M = parse_matrix(self.params.get("data", ""))
+        return {"out": substitute_values(M, inputs.get("values"))}
 
 
 class RandomMatrixNode(Node):

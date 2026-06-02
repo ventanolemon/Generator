@@ -62,6 +62,7 @@ class NodeRegistry:
                 "type_id": cls.type_id,
                 "category": cls.category,
                 "display_name": cls.display_name or cls.type_id,
+                "description": cls.description,
                 "inputs": [(p.name, p.type.value) for p in cls.INPUTS],
                 "outputs": [(p.name, p.type.value) for p in cls.OUTPUTS],
                 "params_schema": cls.PARAMS_SCHEMA,
