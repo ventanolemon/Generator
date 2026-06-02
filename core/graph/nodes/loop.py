@@ -286,6 +286,15 @@ class RepeatNode(Node):
             ports.append(Port(name, t, required=False))
         return ports
 
+    def output_ports(self):
+        # out (собранные блоки) + по одному выходу на каждый регистр — его
+        # ФИНАЛЬНОЕ значение после всех итераций. Так из цикла «выводятся»
+        # накопленные/последние значения (например, list-регистр со списком).
+        ports = [Port("out", PortType.BLOCK_LIST)]
+        for name, t, _init in parse_registers(self.params):
+            ports.append(Port(f"reg_{name}", t))
+        return ports
+
     def _count(self, inputs) -> int:
         raw = inputs.get("count", self.params.get("count", 3))
         try:
@@ -337,7 +346,12 @@ class RepeatNode(Node):
                 sid = setters.get(name)
                 if sid is not None and sid in outputs and "out" in outputs[sid]:
                     reg_state[name] = outputs[sid]["out"]
-        return {"out": collected}
+        # Помимо собранных блоков, отдаём финальное значение каждого регистра —
+        # это и есть «вывод значений из цикла» (последнее/накопленное).
+        result = {"out": collected}
+        for name in reg_state:
+            result[f"reg_{name}"] = reg_state[name]
+        return result
 
     def _registry(self):
         # Тело использует тот же реестр узлов, что и внешний граф.
