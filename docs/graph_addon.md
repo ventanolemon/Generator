@@ -499,7 +499,12 @@ QFileDialog; параметр `inline` хранит правки прямо в �
 — диалог `WordEditorDialog` (таблица term|translation, добавить/удалить/сохранить
 в JSON). Логика чтения форматов и сессия переиспользованы из
 exercises.english.generators. Тесты: `tests/test_graph_english.py` (13).
-Дальше — статические предложения с пропусками (SentenceFill) отдельным PR.
+
+Предложения с пропусками (статические): `PortType.SENTENCES` (список объектов
+{template, answers, translation?}); узлы `sentences_file` (источник, читает JSON)
+и `sentence_fill` (выбирает случайное предложение через ctx.rng, строит
+FillInTheBlankBlock; два выхода statement/answer типа BLOCK_LIST → подключаются
+прямо в static_task). Тесты: `tests/test_graph_english_sentences.py` (11).
 
 *Шаг 3c — узлы-обёртки.* image (ОПВС/`render_circuit`), `random_choice`,
 английский (`json_dict`, `fill_in_blank`). Правок ядра не требуют.
