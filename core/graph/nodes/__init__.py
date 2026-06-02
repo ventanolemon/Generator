@@ -17,6 +17,7 @@ from .control import (
 from .english import (
     SentenceFillNode, SentencesFileNode, WordsFileNode, WordsTrainerNode,
 )
+from .image import ImageBlockNode, ImageFileNode, LogicCircuitNode
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
     ShiftGetNode, ShiftSetNode,
@@ -87,6 +88,8 @@ _ALL_NODES = [
     OdeConstNode, OdeSolveNode, OdeClassifyNode, OdeCheckNode,
     # english (английский язык)
     WordsFileNode, WordsTrainerNode, SentencesFileNode, SentenceFillNode,
+    # image (изображения / ОПВС)
+    LogicCircuitNode, ImageFileNode, ImageBlockNode,
     # content
     TextBlockNode,
     # assembly
