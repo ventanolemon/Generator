@@ -506,6 +506,17 @@ exercises.english.generators. Тесты: `tests/test_graph_english.py` (13).
 FillInTheBlankBlock; два выхода statement/answer типа BLOCK_LIST → подключаются
 прямо в static_task). Тесты: `tests/test_graph_english_sentences.py` (11).
 
+**Изображения / ОПВС (`core/graph/nodes/image.py`). ✅ СДЕЛАНО.** Категория
+`image`, тип `PortType.IMAGE` (PIL.Image в памяти). Узлы: `logic_circuit`
+(процедурная логическая схема ОПВС по ГОСТ 2.743-91 — выходы image:IMAGE и
+formula:STRING; переиспользует make_function/render_circuit из
+exercises.opvs.png_generator, воспроизводимо через глобальный random),
+`image_file` (картинка из файла PNG/JPG через QFileDialog → IMAGE) и
+`image_block` (IMAGE → BLOCK через ImageBlock, с подписью). Полный граф
+`logic_circuit → image_block → static_task` даёт задание ОПВС (схема в условии,
+булева формула в ответе). Совместимо с компилятором (универсальный путь, паритет
+на seed). Тесты: `tests/test_graph_image.py` (11).
+
 **Компилятор графа в Python (`core/graph/compiler.py`). ✅ СДЕЛАНО (ядро + кнопка).**
 `compile_graph(spec)` разворачивает граф в самостоятельный Python-модуль с
 функцией `generate(seed)` и явным retry-циклом. Стратегия «dataflow + инлайн
