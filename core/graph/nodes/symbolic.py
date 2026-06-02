@@ -307,13 +307,20 @@ class EvaluateNode(Node):
 # ---------- Математический анализ (diff / integrate / limit / series) ----------
 
 def _parse_point(sp, raw):
-    """Разобрать точку (число, 'oo', '-oo', 'pi', выражение) в sympy-объект."""
+    """
+    Разобрать точку (число, 'oo', '-oo', 'pi', выражение) в sympy-объект.
+    Некорректный ввод → RetryGeneration (а не утечка GraphValidationError из
+    parse_expr) — узлы пределов/рядов/сумм зовут это вне своих try-блоков.
+    """
     s = str(raw).strip()
     if s in ("oo", "+oo", "inf", "+inf"):
         return sp.oo
     if s in ("-oo", "-inf"):
         return -sp.oo
-    return parse_expr(s)
+    try:
+        return parse_expr(s)
+    except GraphValidationError as e:
+        raise RetryGeneration(f"Не удалось разобрать точку {raw!r}: {e}")
 
 
 class DiffNode(Node):
@@ -409,6 +416,35 @@ class LimitNode(Node):
             result = sp.limit(expr, var, point, direction)
         except Exception as e:
             raise RetryGeneration(f"limit {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class LimitDisplayNode(Node):
+    """
+    Невычисленный предел lim_{var→point} f (для условия задачи) → EXPR.
+    Рендерится знаком предела; .doit() намеренно не вызывается — это аналог
+    sum_display для сумм. Направление: '+', '-' или '+-'.
+    """
+    type_id = "limit_display"
+    category = "symbolic"
+    display_name = "Знак предела (lim)"
+    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "point": {"type": "string", "default": "0"},
+        "dir": {"type": "enum", "values": ["+-", "+", "-"], "default": "+-"},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        var = as_expr(inputs["var"])
+        point = _parse_point(sp, self.params.get("point", "0"))
+        direction = self.params.get("dir", "+-")
+        try:
+            result = sp.Limit(expr, var, point, direction)
+        except Exception as e:
+            raise RetryGeneration(f"limit_display {self.node_id!r}: {e}")
         return {"out": result}
 
 

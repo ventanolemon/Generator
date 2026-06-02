@@ -80,10 +80,17 @@ class OdeSolveNode(Node):
                 continue
             lhs, rhs = s.split("=", 1)
             lhs = lhs.strip()
-            rhs_val = sp.sympify(rhs.strip())
+            lp, rp = lhs.find("("), lhs.find(")")
+            if lp == -1 or rp == -1 or rp < lp:
+                # Нет скобок с точкой — некорректное условие, пропускаем
+                # (лучше игнорировать кривое НУ, чем уронить генерацию).
+                continue
+            try:
+                rhs_val = sp.sympify(rhs.strip())
+                point = sp.sympify(lhs[lp + 1: rp])
+            except (sp.SympifyError, SyntaxError, TypeError):
+                continue
             nprime = lhs.count("'")
-            inside = lhs[lhs.find("(") + 1: lhs.find(")")]
-            point = sp.sympify(inside)
             if nprime == 0:
                 out[f(point)] = rhs_val
             else:

@@ -439,6 +439,12 @@ class LinSolveNode(Node):
         sp = sympy()
         A = as_matrix(inputs["a"])
         b = as_matrix(inputs["b"])
+        # b должен быть вектором-столбцом высотой как число строк A.
+        if b.cols != 1 or b.rows != A.rows:
+            raise RetryGeneration(
+                f"matrix_linsolve {self.node_id!r}: правая часть b должна быть "
+                f"столбцом {A.rows}×1 (получено {b.shape})."
+            )
         try:
             sol = sp.linsolve((A, b))
         except Exception as e:
