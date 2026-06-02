@@ -23,7 +23,10 @@ from core.graph import GraphDocument
 _PORT_AFFECTING = {
     "var_dict": {"names"},
     "block_list": {"count"},
-    "repeat": {"imports"},      # объявление внешних переменных меняет входы
+    "repeat": {"imports", "registers"},  # imports → входы, registers → выходы
+    "list_new": {"count", "elem_type"},  # число/тип входов-элементов
+    "list_append": {"elem_type"},        # тип входа item
+    "list_get": {"elem_type"},           # тип выхода
     "map": {"imports"},
     "case": {"imports", "cases"},  # imports → входы; cases → число кнопок-ветвей
     "input_var": {"type"},      # тип внешней переменной меняет выходной порт
