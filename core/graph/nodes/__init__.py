@@ -18,6 +18,9 @@ from .english import (
     SentenceFillNode, SentencesFileNode, WordsFileNode, WordsTrainerNode,
 )
 from .image import ImageBlockNode, ImageFileNode, LogicCircuitNode
+from .lists import (
+    ListAppendNode, ListGetNode, ListJoinNode, ListLengthNode, ListNewNode,
+)
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
     ShiftGetNode, ShiftSetNode,
@@ -93,6 +96,8 @@ _ALL_NODES = [
     WordsFileNode, WordsTrainerNode, SentencesFileNode, SentenceFillNode,
     # image (изображения / ОПВС)
     LogicCircuitNode, ImageFileNode, ImageBlockNode,
+    # list (операции со списками)
+    ListNewNode, ListAppendNode, ListLengthNode, ListGetNode, ListJoinNode,
     # content
     TextNode, TextBlockNode,
     # assembly

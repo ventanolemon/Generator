@@ -32,11 +32,12 @@ _CATEGORY_LABELS = {
     "ode":      "Дифф. уравнения",
     "english":  "Английский язык",
     "image":    "Изображения / ОПВС",
+    "list":     "Списки",
     "content":  "Блоки контента",
     "assembly": "Сборка задания",
 }
-_CATEGORY_ORDER = ["task", "source", "compute", "control", "symbolic", "linalg",
-                   "ode", "english", "image", "content", "assembly"]
+_CATEGORY_ORDER = ["task", "source", "compute", "control", "list", "symbolic",
+                   "linalg", "ode", "english", "image", "content", "assembly"]
 
 
 def _words_dir() -> Path | None:
