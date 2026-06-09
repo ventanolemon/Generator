@@ -10,7 +10,7 @@ from __future__ import annotations
 from ..registry import NodeRegistry
 from .assembly import BlockListNode, StaticTaskNode
 from .compute import ConstraintNode, FormulaNode, TemplateNode, VarDictNode
-from .content import TextBlockNode
+from .content import TextBlockNode, TextNode
 from .control import (
     CompareNode, NumberCheckNode, SelectNode,
 )
@@ -23,6 +23,7 @@ from .sources import (
     ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
     NumberRangeNode, RandomNaturalNode, RandomRealNode, StringListNode,
 )
+from .task_macros import SimpleTaskNode
 from .linalg import (
     ChangeBasisOperatorNode, CharPolyNode, CoordinatesInBasisNode,
     CrossProductNode, DeterminantNode, DotProductNode, EigenvaluesNode,
@@ -48,6 +49,8 @@ from .symbolic import (
 )
 
 _ALL_NODES = [
+    # task (макро-узлы — готовые задания)
+    SimpleTaskNode,
     # source
     ConstantNumberNode, ConstantStringNode, ConstantBoolNode,
     RandomNaturalNode, RandomRealNode,
@@ -86,7 +89,7 @@ _ALL_NODES = [
     # english (английский язык)
     WordsFileNode, WordsTrainerNode,
     # content
-    TextBlockNode,
+    TextNode, TextBlockNode,
     # assembly
     BlockListNode, StaticTaskNode,
 ]

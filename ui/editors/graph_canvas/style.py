@@ -27,6 +27,7 @@ PORT_COLORS: dict[PortType, QColor] = {
 
 # Цвет заголовка узла по категории.
 CATEGORY_COLORS: dict[str, QColor] = {
+    "task":     QColor("#1B5E20"),   # готовые задания — тёмно-зелёные
     "source":   QColor("#6C3483"),   # источники — фиолетовые
     "compute":  QColor("#117864"),   # вычисление — бирюзовые
     "control":  QColor("#B9770E"),   # управление — янтарные

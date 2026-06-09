@@ -9,6 +9,7 @@ template   — подстановка #имя# (как fisic_generater._build_ta
 
 from __future__ import annotations
 import math
+import re
 
 from exercises.fisic.constraints import ResultConstraint
 from exercises.fisic.expression import (
@@ -48,11 +49,15 @@ class VarDictNode(Node):
 
 
 class FormulaNode(Node):
-    """Вычислить формулу в контексте словаря переменных."""
+    """
+    Вычислить формулу. Входы-числа создаются автоматически по именам переменных
+    в самой формуле — отдельный var_dict больше не нужен. Например, формула
+    'a+b' даёт два входа a и b. Запасной вход vars (NUMBER_DICT) тоже принимается
+    (для совместимости и динамических наборов).
+    """
     type_id = "formula"
     category = "compute"
     display_name = "Формула"
-    INPUTS = [Port("vars", PortType.NUMBER_DICT)]
     OUTPUTS = [Port("out", PortType.NUMBER)]
     PARAMS_SCHEMA = {"expr": {"type": "string", "default": ""}}
 
@@ -66,11 +71,25 @@ class FormulaNode(Node):
             raise GraphValidationError(f"Узел {self.node_id!r}: ошибка формулы — {e}")
 
     def required_names(self) -> set[str]:
-        """Имена переменных, нужные формуле (для подсказок редактора)."""
-        return extract_variable_names(self.params["expr"])
+        """Имена переменных, нужные формуле (для подсказок редактора/портов)."""
+        try:
+            return extract_variable_names(self.params.get("expr", ""))
+        except Exception:
+            return set()
+
+    def input_ports(self):
+        # По одному числовому входу на каждую переменную формулы + запасной vars.
+        ports = [Port(n, PortType.NUMBER, required=False)
+                 for n in sorted(self.required_names())]
+        ports.append(Port("vars", PortType.NUMBER_DICT, required=False))
+        return ports
 
     def compute(self, inputs, ctx: ExecContext):
-        variables = inputs.get("vars", {}) or {}
+        # Словарь переменных: из vars + из именованных входов (последние важнее).
+        variables = dict(inputs.get("vars") or {})
+        for n in self.required_names():
+            if n in inputs and inputs[n] is not None:
+                variables[n] = inputs[n]
         try:
             value = evaluate_formula(self.params["expr"], variables)
         except (OverflowError, ValueError, ZeroDivisionError) as e:
@@ -114,30 +133,61 @@ class ConstraintNode(Node):
         return {"out": rc.normalize(value)}
 
 
+_MARKER_RE = re.compile(r"#([^#\s]+)#")
+
+
+def _format_value(value) -> str:
+    """Аккуратное строковое представление: целые — без научной нотации."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if abs(v - round(v)) < 1e-9:
+        return format_number(v, scientific_threshold_high=float("inf"))
+    return format_number(v)
+
+
+def _fill_template(text: str, inputs: dict) -> str:
+    """Подставить #имя# из именованных входов и из словаря vars."""
+    variables = dict(inputs.get("vars") or {})
+    for name in _marker_names(text):
+        if name in inputs and inputs[name] is not None:
+            variables[name] = inputs[name]
+    out = str(text)
+    for name, value in variables.items():
+        out = out.replace(f"#{name}#", _format_value(value))
+    return out
+
+
+def _marker_names(text: str) -> list[str]:
+    seen, out = set(), []
+    for m in _MARKER_RE.findall(str(text or "")):
+        if m not in seen:
+            seen.add(m); out.append(m)
+    return out
+
+
 class TemplateNode(Node):
-    """Подставить значения словаря в текстовый шаблон с маркерами #имя#."""
+    """
+    Текст с подстановкой #имя#. Входы-числа создаются автоматически по маркерам
+    в тексте (отдельный var_dict не нужен). Например, текст '#a# + #b#' даёт
+    входы a и b. Запасной вход vars (NUMBER_DICT) тоже принимается.
+    """
     type_id = "template"
     category = "compute"
     display_name = "Текстовый шаблон"
-    INPUTS = [Port("vars", PortType.NUMBER_DICT)]
     OUTPUTS = [Port("out", PortType.STRING)]
     PARAMS_SCHEMA = {"text": {"type": "text", "default": ""}}
 
+    def input_ports(self):
+        ports = [Port(n, PortType.NUMBER, required=False)
+                 for n in _marker_names(self.params.get("text", ""))]
+        ports.append(Port("vars", PortType.NUMBER_DICT, required=False))
+        return ports
+
     def compute(self, inputs, ctx: ExecContext):
-        text = str(self.params.get("text", ""))
-        variables = inputs.get("vars", {}) or {}
-        for name, value in variables.items():
-            text = text.replace(f"#{name}#", self._format(value))
-        return {"out": text}
+        return {"out": _fill_template(self.params.get("text", ""), inputs)}
 
     @staticmethod
     def _format(value) -> str:
-        # Целые значения — без научной нотации (87000, а не 8.7×10^4),
-        # как делает fisic для натуральных/целых.
-        try:
-            v = float(value)
-        except (TypeError, ValueError):
-            return str(value)
-        if abs(v - round(v)) < 1e-9:
-            return format_number(v, scientific_threshold_high=float("inf"))
-        return format_number(v)
+        return _format_value(value)

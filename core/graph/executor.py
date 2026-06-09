@@ -20,7 +20,7 @@ from typing import Any
 
 from .errors import GraphError, GraphValidationError, RetryGeneration
 from .node import ExecContext, Node
-from .port_types import PortType, is_compatible
+from .port_types import PortType, coerce_value, is_compatible
 from .registry import NodeRegistry
 from .spec import GraphSpec
 
@@ -216,6 +216,12 @@ class GraphExecutor:
                 if src is None:
                     continue
                 from_node, from_port = src
-                inputs[p.name] = outputs[from_node][from_port]
+                value = outputs[from_node][from_port]
+                # Авто-повышение типов (BLOCK→BLOCK_LIST и т.п.) — оборачиваем
+                # значение при несовпадении типов источника и приёмника.
+                src_type = self._out_port_types.get((from_node, from_port))
+                if src_type is not None and src_type != p.type:
+                    value = coerce_value(value, src_type, p.type)
+                inputs[p.name] = value
             outputs[node_id] = node.compute(inputs, ctx)
         return outputs
