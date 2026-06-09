@@ -90,6 +90,8 @@ DESCRIPTIONS: dict[str, str] = {
                  "Выход: EXPR.",
     "limit": "Предел при var→точка (с направлением). Вход: EXPR, EXPR (var). "
              "Выход: EXPR.",
+    "limit_display": "Невычисленный знак предела lim (для условия). "
+                     "Вход: EXPR, EXPR (var). Выход: EXPR.",
     "series": "Ряд Тейлора около точки до порядка n. Вход: EXPR, EXPR (var). "
               "Выход: EXPR.",
     "summation": "Сумма ряда (конечная/бесконечная). Вход: term, index (EXPR). "

@@ -43,7 +43,7 @@ from .symbolic import (
     DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
     ExprBlockNode, ExprConstNode, FactorNode, FourierNode, ImNode,
     IntegrateNode, InverseFourierNode, InverseLaplaceNode, IsConvergentNode,
-    LaplaceNode, LimitNode, RandomPolynomialNode, ReNode, ResidueNode,
+    LaplaceNode, LimitNode, LimitDisplayNode, RandomPolynomialNode, ReNode, ResidueNode,
     SeriesNode, SimplifyNode, SolveNode, SubstituteNode, SumDisplayNode,
     SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
 )
@@ -65,7 +65,7 @@ _ALL_NODES = [
     SymbolNode, ExprConstNode, RandomPolynomialNode,
     ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
     CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
-    DiffNode, IntegrateNode, LimitNode, SeriesNode,
+    DiffNode, IntegrateNode, LimitNode, LimitDisplayNode, SeriesNode,
     SummationNode, SumDisplayNode, IsConvergentNode,
     ReNode, ImNode, ArgNode, AbsNode, ConjugateNode, ExpandComplexNode,
     ResidueNode, SolveNode,
