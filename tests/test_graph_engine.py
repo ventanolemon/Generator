@@ -100,8 +100,10 @@ class ValidationTests(unittest.TestCase):
             self._exec(data)
 
     def test_missing_required_input(self):
-        # formula требует вход vars, он не подключён.
-        data = {"nodes": [{"id": "f", "type": "formula", "params": {"expr": "x"}}],
+        # text_block требует обязательный вход text, он не подключён.
+        # (formula/template теперь имеют необязательные именованные входы, поэтому
+        #  для проверки берём узел с действительно обязательным портом.)
+        data = {"nodes": [{"id": "tb", "type": "text_block"}],
                 "edges": []}
         with self.assertRaises(GraphValidationError):
             self._exec(data)

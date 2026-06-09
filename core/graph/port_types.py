@@ -30,8 +30,30 @@ def is_compatible(src: PortType, dst: PortType) -> bool:
     """
     Можно ли соединить выход типа `src` со входом типа `dst`.
 
-    На Фазе 0 — строгое равенство типов. Подтипизация (например, авто-сборка
-    одиночного BLOCK в BLOCK_LIST) намеренно не вводится: она усложняет
-    валидацию и не нужна для существующих пайплайнов.
+    Базово — строгое равенство типов. Допускаются удобные авто-повышения,
+    убирающие лишние «служебные» узлы:
+      * BLOCK → BLOCK_LIST: одиночный блок можно подать туда, где ждут список
+        (исполнитель обернёт его в [block]). Это избавляет от обязательного
+        block_list для задания из одного блока.
+      * NUMBER → EXPR: число — частный случай символьного выражения.
+    Само оборачивание делает исполнитель (см. executor: _coerce_input).
     """
-    return src == dst
+    if src == dst:
+        return True
+    if src is PortType.BLOCK and dst is PortType.BLOCK_LIST:
+        return True
+    if src is PortType.NUMBER and dst is PortType.EXPR:
+        return True
+    return False
+
+
+def coerce_value(value, src: PortType, dst: PortType):
+    """
+    Привести значение от выхода типа src ко входу типа dst при авто-повышении.
+    Для равных типов — без изменений.
+    """
+    if src == dst:
+        return value
+    if src is PortType.BLOCK and dst is PortType.BLOCK_LIST:
+        return [value]
+    return value

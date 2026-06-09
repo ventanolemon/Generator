@@ -14,6 +14,7 @@ from core.graph.registry import NodeRegistry
 
 
 _CATEGORY_LABELS = {
+    "task":     "Готовые задания",
     "source":   "Источники",
     "compute":  "Вычисление",
     "control":  "Управление",
@@ -24,7 +25,7 @@ _CATEGORY_LABELS = {
     "content":  "Блоки контента",
     "assembly": "Сборка задания",
 }
-_CATEGORY_ORDER = ["source", "compute", "control", "symbolic", "linalg",
+_CATEGORY_ORDER = ["task", "source", "compute", "control", "symbolic", "linalg",
                    "ode", "english", "content", "assembly"]
 
 

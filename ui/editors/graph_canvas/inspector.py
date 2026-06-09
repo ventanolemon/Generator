@@ -23,6 +23,9 @@ from core.graph import GraphDocument
 _PORT_AFFECTING = {
     "var_dict": {"names"},
     "block_list": {"count"},
+    "formula": {"expr"},        # переменные формулы → именованные входы
+    "template": {"text"},       # маркеры #имя# → именованные входы
+    "text": {"text"},           # то же для узла «Текст»
     "repeat": {"imports"},      # объявление внешних переменных меняет входы
     "map": {"imports"},
     "case": {"imports", "cases"},  # imports → входы; cases → число кнопок-ветвей

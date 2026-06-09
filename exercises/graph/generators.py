@@ -55,38 +55,46 @@ class GraphConstructorGenerator(TaskGenerator):
 
 # ---------- Пример графа (физика v*t, для ручного запуска) ----------
 
+# Пример по умолчанию — нарочно простой, на новых «умных» узлах: формула сама
+# заводит входы v,t по своей записи; узлы «Текст» подставляют #имя# и сразу дают
+# блок; одиночный блок идёт прямо в static_task (без block_list). Шесть узлов
+# вместо тринадцати — показываем новичку короткий путь.
 EXAMPLE_GRAPH = {
     "version": 1,
     "nodes": [
-        {"id": "v",     "type": "random_natural", "params": {"min": 1, "max": 50}},
-        {"id": "t",     "type": "random_natural", "params": {"min": 1, "max": 50}},
-        {"id": "vars",  "type": "var_dict",       "params": {"names": ["v", "t"]}},
-        {"id": "f",     "type": "formula",        "params": {"expr": "v * t"}},
-        {"id": "chk",   "type": "constraint",     "params": {"kind": "natural", "min": 1, "max": 500}},
-        {"id": "res",   "type": "var_dict",       "params": {"names": ["N"]}},
-        {"id": "cond",  "type": "template",       "params": {"text": "Пройдено #v# м за #t# с. Найдите путь N."}},
-        {"id": "ans",   "type": "template",       "params": {"text": "N = #N# м"}},
-        {"id": "tb_c",  "type": "text_block"},
-        {"id": "tb_a",  "type": "text_block"},
-        {"id": "lc",    "type": "block_list",     "params": {"count": 1}},
-        {"id": "la",    "type": "block_list",     "params": {"count": 1}},
-        {"id": "task",  "type": "static_task"},
+        {"id": "v",    "type": "random_natural", "params": {"min": 1, "max": 50}},
+        {"id": "t",    "type": "random_natural", "params": {"min": 1, "max": 50}},
+        {"id": "f",    "type": "formula",        "params": {"expr": "v * t"}},
+        {"id": "cond", "type": "text",
+         "params": {"text": "Пройдено #v# м за #t# с. Найдите путь."}},
+        {"id": "ans",  "type": "text", "params": {"text": "S = #s# м"}},
+        {"id": "task", "type": "static_task"},
     ],
     "edges": [
-        {"from": "v:out",   "to": "vars:v"},
-        {"from": "t:out",   "to": "vars:t"},
-        {"from": "vars:out", "to": "f:vars"},
-        {"from": "f:out",   "to": "chk:in"},
-        {"from": "chk:out", "to": "res:N"},
-        {"from": "vars:out", "to": "cond:vars"},
-        {"from": "res:out", "to": "ans:vars"},
-        {"from": "cond:out", "to": "tb_c:text"},
-        {"from": "ans:out", "to": "tb_a:text"},
-        {"from": "tb_c:out", "to": "lc:in0"},
-        {"from": "tb_a:out", "to": "la:in0"},
-        {"from": "lc:out",  "to": "task:statement"},
-        {"from": "la:out",  "to": "task:answer"},
+        {"from": "v:out", "to": "f:v"},
+        {"from": "t:out", "to": "f:t"},
+        {"from": "v:out", "to": "cond:v"},
+        {"from": "t:out", "to": "cond:t"},
+        {"from": "f:out", "to": "ans:s"},
+        {"from": "cond:out", "to": "task:statement"},
+        {"from": "ans:out", "to": "task:answer"},
     ],
+    "meta": {"max_attempts": 100, "seed": None},
+}
+
+
+# Ещё проще — всё задание в одном узле (для палитры «Готовые задания»).
+EXAMPLE_SIMPLE_TASK = {
+    "version": 1,
+    "nodes": [
+        {"id": "task", "type": "simple_task", "params": {
+            "variables": ["v:1:50", "t:1:50"],
+            "statement": "Пройдено #v# м за #t# с. Найдите путь.",
+            "answer_formula": "v * t",
+            "answer": "S = #result# м",
+        }},
+    ],
+    "edges": [],
     "meta": {"max_attempts": 100, "seed": None},
 }
 
