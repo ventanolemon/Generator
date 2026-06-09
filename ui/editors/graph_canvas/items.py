@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QGraphicsItem, QGraphicsObject, QGraphicsPathItem, QGraphicsEllipseItem,
 )
@@ -91,6 +91,9 @@ class NodeItem(QGraphicsObject):
         self.in_ports: list[PortItem] = []
         self.out_ports: list[PortItem] = []
         self.edges: list[EdgeItem] = []
+        # Роль относительно финала графа: "result" | "conflict" | "forbidden"
+        # | None. Выставляется сценой (см. GraphScene._update_result_marks).
+        self.result_role: Optional[str] = None
 
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -135,18 +138,31 @@ class NodeItem(QGraphicsObject):
         for e in self.edges:
             e.update_path()
 
+    def set_result_role(self, role: Optional[str]) -> None:
+        """Пометить узел как финал / конфликт финалов / запрещённый TASK."""
+        if role == self.result_role:
+            return
+        self.result_role = role
+        self.setToolTip(style.ROLE_TOOLTIPS.get(role, ""))
+        self.update()
+
     # --- отрисовка ---
 
     def paint(self, painter, option, widget=None) -> None:
         rect = self.boundingRect()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        # тело
+        # тело: рамка по роли (финал/конфликт/запрет), у выделенного — жёлтая
         body = QPainterPath()
         body.addRoundedRect(rect, 6, 6)
         painter.setBrush(QBrush(style.NODE_BG))
-        pen = QPen(style.NODE_BORDER_SEL if self.isSelected() else style.NODE_BORDER,
-                   2 if self.isSelected() else 1)
+        role_border = style.ROLE_BORDERS.get(self.result_role or "")
+        if self.isSelected():
+            pen = QPen(style.NODE_BORDER_SEL, 2)
+        elif role_border is not None:
+            pen = QPen(role_border, 2)
+        else:
+            pen = QPen(style.NODE_BORDER, 1)
         painter.setPen(pen)
         painter.drawPath(body)
 
@@ -155,9 +171,10 @@ class NodeItem(QGraphicsObject):
         hp = QPainterPath()
         hp.addRoundedRect(header, 6, 6)
         painter.fillPath(hp, QBrush(style.category_color(self.entry["category"])))
+        badge_w = self._paint_role_badge(painter, header)
         painter.setPen(QPen(style.NODE_TEXT))
         title = self.entry.get("display_name") or self.entry["type_id"]
-        painter.drawText(header.adjusted(8, 0, -8, 0),
+        painter.drawText(header.adjusted(8, 0, -8 - badge_w, 0),
                          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                          title)
 
@@ -182,6 +199,29 @@ class NodeItem(QGraphicsObject):
             painter.drawText(QRectF(10, style.HEADER_H + 2, style.NODE_WIDTH - 20, 16),
                              Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                              summary)
+
+    def _paint_role_badge(self, painter, header: QRectF) -> float:
+        """Бейдж роли («ВЫХОД» и т.п.) в правой части заголовка. Возвращает
+        занятую ширину, чтобы заголовок не налезал на бейдж."""
+        badge = style.ROLE_BADGES.get(self.result_role or "")
+        if badge is None:
+            return 0.0
+        text, color = badge
+        saved = painter.font()
+        f = QFont(saved)
+        f.setPointSize(7)
+        f.setBold(True)
+        painter.setFont(f)
+        w = painter.fontMetrics().horizontalAdvance(text) + 10.0
+        h = 14.0
+        r = QRectF(header.right() - w - 6, header.center().y() - h / 2, w, h)
+        path = QPainterPath()
+        path.addRoundedRect(r, 7, 7)
+        painter.fillPath(path, QBrush(color))
+        painter.setPen(QPen(QColor("#FFFFFF")))
+        painter.drawText(r, Qt.AlignmentFlag.AlignCenter, text)
+        painter.setFont(saved)
+        return w + 6.0
 
     def _param_summary(self) -> str:
         params = self.doc.nodes[self.node_id].params

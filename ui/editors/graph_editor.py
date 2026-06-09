@@ -185,6 +185,9 @@ class GraphEditor(PartitionEditor):
     # ---- Загрузка графа в холст ----
 
     def _load_doc(self, doc: GraphDocument) -> None:
+        # Внутри тела цикла/ветви узлы-задания (TASK) запрещены — сцена
+        # помечает их, палитра не даёт добавлять новые.
+        doc.is_subgraph = bool(self._nav_stack)
         self.doc = doc
         self.scene.doc = doc
         self.scene.registry = doc.registry
@@ -198,6 +201,15 @@ class GraphEditor(PartitionEditor):
     # ---- Палитра / выбор / параметры ----
 
     def _on_palette_add(self, type_id: str) -> None:
+        if self.doc.is_subgraph and self.doc.type_has_task_output(type_id):
+            QMessageBox.warning(
+                self, "Узел недоступен в теле цикла",
+                "Узлы-задания (с выходом TASK) нельзя размещать внутри тела "
+                "цикла или ветви: результат итерации передаётся свободным "
+                "выходом типа BLOCK, а финальное задание собирается во "
+                "внешнем графе.",
+            )
+            return
         # ставим в видимый центр сцены
         center = self.view.mapToScene(self.view.viewport().rect().center())
         try:
@@ -349,11 +361,21 @@ class GraphEditor(PartitionEditor):
 
     def _on_check(self) -> None:
         try:
-            GraphExecutor(self._current_spec())
+            ex = GraphExecutor(self._current_spec())
         except GraphError as e:
             self.preview.setPlainText(f"✗ Ошибка: {e}")
             return
-        self.preview.setPlainText("✓ Граф корректен.")
+        if ex.result is None:
+            self.preview.setPlainText(
+                "⚠ Структура корректна, но финального узла нет: ни у одного "
+                "узла нет свободного выхода TASK, генерация не вернёт задание. "
+                "Добавьте узел-задание (например, «Статическое задание»)."
+            )
+            return
+        self.preview.setPlainText(
+            f"✓ Граф корректен. Финальный узел: {ex.result[0]} "
+            f"(помечен бейджем «ВЫХОД» на холсте)."
+        )
 
     def _on_preview(self) -> None:
         from exercises.graph.generators import GraphConstructorGenerator

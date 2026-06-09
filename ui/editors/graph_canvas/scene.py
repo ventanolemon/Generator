@@ -43,6 +43,8 @@ class GraphScene(QGraphicsScene):
         self._temp_edge: Optional[QGraphicsPathItem] = None
 
         self.selectionChanged.connect(self._on_selection)
+        # Любое изменение графа может сменить финальный узел — обновляем метки.
+        self.changed_doc.connect(self._update_result_marks)
         self.rebuild()
 
     # ---------- Полная перерисовка из модели ----------
@@ -57,6 +59,24 @@ class GraphScene(QGraphicsScene):
         for e in list(self.doc.edges):
             self._spawn_edge_item(e.from_node, e.from_port, e.to_node, e.to_port)
         self.blockSignals(False)
+        self._update_result_marks()
+
+    def _update_result_marks(self) -> None:
+        """
+        Пометить узлы относительно финала графа: единственный свободный выход
+        TASK — финал («ВЫХОД»), несколько — конфликт, а во вложенном теле
+        цикла/ветви любой узел-задание запрещён.
+        """
+        if getattr(self.doc, "is_subgraph", False):
+            roles = {nid: "forbidden" for nid in self.doc.task_node_ids()}
+        else:
+            sinks = self.doc.task_sink_ids()
+            if len(sinks) == 1:
+                roles = {sinks[0]: "result"}
+            else:
+                roles = {nid: "conflict" for nid in sinks}
+        for nid, item in self.node_items.items():
+            item.set_result_role(roles.get(nid))
 
     def _spawn_node_item(self, node_id: str) -> NodeItem:
         entry = self._entries[self.doc.nodes[node_id].type]

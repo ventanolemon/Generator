@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from .errors import GraphError, GraphValidationError
 from .node import Port
 from .nodes import DEFAULT_REGISTRY
+from .port_types import PortType
 from .registry import NodeRegistry
 from .spec import GraphSpec
 
@@ -50,6 +51,9 @@ class GraphDocument:
         self.nodes: dict[str, DocNode] = {}
         self.edges: list[DocEdge] = []
         self.meta: dict = {"max_attempts": 100, "seed": None}
+        # Документ — вложенное тело (цикл/map/ветвь case)? Узлы-задания (TASK)
+        # там запрещены; редактор помечает их и не даёт добавлять новые.
+        self.is_subgraph: bool = False
 
     # ---------- Идентификаторы ----------
 
@@ -213,3 +217,37 @@ class GraphDocument:
             return GraphExecutor(self.to_spec()).result is not None
         except GraphError:
             return False
+
+    # ---------- Финальный узел (для подсветки в редакторе) ----------
+
+    def _task_output_ports(self, node_id: str) -> list[str]:
+        node = self.nodes[node_id]
+        _ins, outs = self.safe_ports(node.type, node.params)
+        return [p.name for p in outs if p.type is PortType.TASK]
+
+    def task_node_ids(self) -> list[str]:
+        """Все узлы, имеющие выход типа TASK (независимо от подключения)."""
+        return [nid for nid in self.nodes if self._task_output_ports(nid)]
+
+    def task_sink_ids(self) -> list[str]:
+        """
+        Узлы со свободным (никуда не подключённым) выходом TASK — кандидаты
+        в финал. Ровно один такой узел = корректный финал графа; несколько —
+        конфликт (движок откажется собирать граф).
+
+        В отличие от has_task_sink, не требует валидности всего графа —
+        считается прямо по модели, поэтому пригодно для живой подсветки.
+        """
+        consumed = {(e.from_node, e.from_port) for e in self.edges}
+        return [
+            nid for nid in self.nodes
+            if any((nid, port) not in consumed
+                   for port in self._task_output_ports(nid))
+        ]
+
+    def type_has_task_output(self, type_id: str) -> bool:
+        """Есть ли у типа узла (с параметрами по умолчанию) выход TASK."""
+        if not self.registry.has(type_id):
+            return False
+        _ins, outs = self.safe_ports(type_id, {})
+        return any(p.type is PortType.TASK for p in outs)

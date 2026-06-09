@@ -33,6 +33,7 @@ _PORT_AFFECTING = {
     "map_item": {"type"},       # (на будущее — у map_item тоже типизованный выход)
     "shift_get": {"type"},      # тип регистра меняет выход
     "shift_set": {"type"},      # тип регистра меняет вход и выход
+    "select": {"value_type"},   # тип ветвей меняет порты on_true/on_false/out
 }
 
 
