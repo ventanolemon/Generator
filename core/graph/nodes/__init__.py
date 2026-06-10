@@ -22,8 +22,8 @@ from .lists import (
     ListAppendNode, ListGetNode, ListJoinNode, ListLengthNode, ListNewNode,
 )
 from .loop import (
-    CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, RepeatNode,
-    ShiftGetNode, ShiftSetNode,
+    CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, OutputVarNode,
+    RepeatNode, ShiftGetNode, ShiftSetNode,
 )
 from .sources import (
     ConstantBoolNode, ConstantNumberNode, ConstantStringNode,
@@ -34,12 +34,13 @@ from .linalg import (
     ChangeBasisOperatorNode, CharPolyNode, CoordinatesInBasisNode,
     CrossProductNode, DeterminantNode, DotProductNode, EigenvaluesNode,
     EigenvectorsNode, GramSchmidtNode, IdentityNode, InverseNode,
-    LineCanonicalNode, LinSolveNode, MatrixAddNode, MatrixBlockNode,
-    MatrixConstNode, MatrixMultiplyNode, MatrixPowerNode, MatrixToQuadFormNode,
-    NormNode, NullspaceNode, PlaneFromPointNormalNode, PointPlaneDistanceNode,
-    QuadFormCanonicalNode, QuadFormSignatureNode, QuadFormToMatrixNode,
-    RandomMatrixNode, RankNode, RrefNode, ScalarMultiplyNode, TraceNode,
-    TransposeNode, TripleProductNode, VectorAngleNode,
+    LineCanonicalNode, LinSolveNode, ListToMatrixNode, MatrixAddNode,
+    MatrixBlockNode, MatrixConstNode, MatrixMultiplyNode, MatrixPowerNode,
+    MatrixToQuadFormNode, NormNode, NullspaceNode, PlaneFromPointNormalNode,
+    PointPlaneDistanceNode, QuadFormCanonicalNode, QuadFormSignatureNode,
+    QuadFormToMatrixNode, RandomMatrixNode, RankNode, RrefNode,
+    ScalarMultiplyNode, TraceNode, TransposeNode, TripleProductNode,
+    VectorAngleNode,
 )
 from .ode import (
     OdeCheckNode, OdeClassifyNode, OdeConstNode, OdeSolveNode,
@@ -65,7 +66,8 @@ _ALL_NODES = [
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
     # control
     CompareNode, NumberCheckNode, SelectNode,
-    LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode, CaseNode,
+    LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode,
+    OutputVarNode, CaseNode,
     ShiftGetNode, ShiftSetNode,
     # symbolic (символьная арифметика)
     SymbolNode, ExprConstNode, RandomPolynomialNode,
@@ -78,7 +80,7 @@ _ALL_NODES = [
     LaplaceNode, InverseLaplaceNode, FourierNode, InverseFourierNode,
     ExprBlockNode,
     # linalg (линейная алгебра)
-    MatrixConstNode, RandomMatrixNode, IdentityNode,
+    MatrixConstNode, RandomMatrixNode, IdentityNode, ListToMatrixNode,
     DeterminantNode, InverseNode, TransposeNode, RankNode, TraceNode,
     ScalarMultiplyNode, MatrixPowerNode, MatrixMultiplyNode, MatrixAddNode,
     RrefNode, CharPolyNode, EigenvaluesNode, EigenvectorsNode, NullspaceNode,

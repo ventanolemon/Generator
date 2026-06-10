@@ -26,16 +26,19 @@ _PORT_AFFECTING = {
     "formula": {"expr"},        # переменные формулы → именованные входы
     "template": {"text"},       # маркеры #имя# → именованные входы
     "text": {"text"},           # то же для узла «Текст»
-    "repeat": {"imports", "registers"},  # imports → входы, registers → выходы
+    # imports → входы; outputs (туннели) и registers (reg_<имя>) → выходы
+    "repeat": {"imports", "outputs", "registers"},
     "list_new": {"count", "elem_type"},  # число/тип входов-элементов
     "list_append": {"elem_type"},        # тип входа item
     "list_get": {"elem_type"},           # тип выхода
-    "map": {"imports"},
-    "case": {"imports", "cases"},  # imports → входы; cases → число кнопок-ветвей
+    "map": {"imports", "outputs"},
+    "case": {"imports", "cases", "outputs"},  # cases → число кнопок-ветвей
     "input_var": {"type"},      # тип внешней переменной меняет выходной порт
+    "output_var": {"type"},     # тип туннеля меняет вход value
     "map_item": {"type"},       # (на будущее — у map_item тоже типизованный выход)
     "shift_get": {"type"},      # тип регистра меняет выход
     "shift_set": {"type"},      # тип регистра меняет вход и выход
+    "select": {"value_type"},   # тип ветвей меняет порты on_true/on_false/out
 }
 
 

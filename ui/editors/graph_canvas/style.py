@@ -49,6 +49,34 @@ NODE_TEXT = QColor("#ECECEC")
 SCENE_BG = QColor("#1E1E1E")
 GRID = QColor("#2A2A2A")
 
+# Рамка-структура развёрнутого цикла (тело на холсте, LabVIEW-style).
+FRAME_BG = QColor(34, 38, 34)            # чуть зеленее фона сцены
+FRAME_BORDER = QColor("#8A6D1F")         # тёмно-янтарная (категория control)
+
+# Роль узла относительно финала графа: рамка и бейдж в заголовке.
+#   result    — единственный свободный выход TASK: финал графа;
+#   conflict  — свободных TASK несколько: финал неоднозначен;
+#   forbidden — узел-задание внутри тела цикла/ветви: TASK здесь запрещён.
+ROLE_BORDERS: dict[str, QColor] = {
+    "result":    QColor("#27AE60"),   # зелёный — как тип TASK
+    "conflict":  QColor("#E67E22"),   # оранжевый — требует решения
+    "forbidden": QColor("#C0392B"),   # красный — здесь нельзя
+}
+ROLE_BADGES: dict[str, tuple[str, QColor]] = {
+    "result":    ("ВЫХОД",  ROLE_BORDERS["result"]),
+    "conflict":  ("ВЫХОД?", ROLE_BORDERS["conflict"]),
+    "forbidden": ("✗ TASK", ROLE_BORDERS["forbidden"]),
+}
+ROLE_TOOLTIPS: dict[str, str] = {
+    "result": "Финальный узел: его свободный выход TASK — результат всего графа.",
+    "conflict": ("Несколько узлов со свободным выходом TASK — финал графа "
+                 "неоднозначен. Оставьте свободным ровно один (лишние удалите "
+                 "или подключите)."),
+    "forbidden": ("Узел-задание внутри тела цикла/ветви: выход TASK здесь "
+                  "запрещён. Результат итерации — свободный выход BLOCK, "
+                  "а финальное задание собирается во внешнем графе."),
+}
+
 PORT_RADIUS = 6.0
 NODE_WIDTH = 180.0
 HEADER_H = 26.0

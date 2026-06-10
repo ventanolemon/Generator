@@ -12,6 +12,8 @@ GraphExecutor — сборка, валидация и исполнение гр�
      случайностью пере-бросятся). Это аналог цикла в fisic_generater.generate_task.
 
 Финал графа — единственный узел с выходом типа TASK, который никуда не подключён.
+Внутри вложенных тел (repeat/map/ветви case) узлы с выходом TASK запрещены:
+финал собирается только на верхнем уровне графа.
 """
 
 from __future__ import annotations
@@ -96,9 +98,36 @@ class GraphExecutor:
         # выходов (финал TASK, а также тело цикла — свободный BLOCK).
         self._out_port_types = out_ports
 
-        # 4. Топосортировка и поиск финала
+        # 4. Узлы-задания внутри вложенных тел (цикл/map/ветви case) запрещены:
+        #    их TASK-выход там некому потребить — результат итерации передаётся
+        #    свободным выходом BLOCK, а финал графа собирается на верхнем уровне.
+        self._check_no_task_in_subgraphs()
+
+        # 5. Структурные проверки узлов (согласованность с вложенными телами,
+        #    например туннели вывода циклов) — строже, чем validate_params.
+        for node in self.nodes.values():
+            node.validate_structure()
+
+        # 6. Топосортировка и поиск финала
         self.order = self._toposort()
         self.result = self._find_result(out_ports)
+
+    def _check_no_task_in_subgraphs(self) -> None:
+        offenders: list[str] = []
+        for ns in self.spec.nodes:
+            for key, val in (ns.params or {}).items():
+                if _looks_like_subgraph(val):
+                    offenders += [
+                        f"{ns.id}.{key} › {path}"
+                        for path in find_task_nodes(val, self.registry)
+                    ]
+        if offenders:
+            raise GraphValidationError(
+                "Узлы-задания (с выходом TASK) нельзя размещать внутри тела "
+                f"цикла или ветви: {', '.join(offenders)}. Тело отдаёт результат "
+                "итерации свободным выходом типа BLOCK, а финальное задание "
+                "собирается во внешнем графе."
+            )
 
     def _toposort(self) -> list[str]:
         """Kahn: A зависит от B, если вход A подключён к выходу B."""
@@ -134,8 +163,11 @@ class GraphExecutor:
             if t == PortType.TASK and ep not in self.consumed
         ]
         if len(sinks) > 1:
+            names = ", ".join(sorted({nid for nid, _port in sinks}))
             raise GraphValidationError(
-                f"В графе несколько финальных узлов (TASK): {sinks}. Должен быть один."
+                f"В графе несколько финальных узлов: свободный выход TASK есть "
+                f"сразу у {names}. Финальным может быть только один — удалите "
+                f"лишние узлы-задания или оставьте свободным один выход TASK."
             )
         return sinks[0] if sinks else None
 
@@ -163,7 +195,9 @@ class GraphExecutor:
         """Исполнить граф и вернуть значение финального TASK-узла."""
         if self.result is None:
             raise GraphValidationError(
-                "В графе нет финального узла с выходом TASK — нечего возвращать."
+                "В графе нет финального узла: ни у одного узла нет свободного "
+                "выхода типа TASK — нечего возвращать. Добавьте узел-задание "
+                "(например, «Статическое задание» или «Числовое задание»)."
             )
         outputs = self.run_full()
         node_id, port = self.result
@@ -225,3 +259,48 @@ class GraphExecutor:
                 inputs[p.name] = value
             outputs[node_id] = node.compute(inputs, ctx)
         return outputs
+
+
+# ---------- Поиск узлов-заданий во вложенных телах ----------
+
+def _looks_like_subgraph(value: Any) -> bool:
+    """Параметр узла является вложенным графом (тело цикла/map, ветвь case)."""
+    return isinstance(value, dict) and isinstance(value.get("nodes"), list)
+
+
+def _output_types(registry: NodeRegistry, type_id: str, params: dict) -> list[PortType]:
+    """
+    Типы выходных портов узла по его параметрам. Если экземпляр с такими
+    параметрами не создаётся (params ещё некорректны) — статический шаблон
+    класса; неизвестный тип узла — пусто (его отловит обычная валидация).
+    """
+    if not registry.has(type_id):
+        return []
+    cls = registry.get(type_id)
+    try:
+        ports = cls("_probe", dict(params or {})).output_ports()
+    except Exception:
+        ports = list(cls.OUTPUTS)
+    return [p.type for p in ports]
+
+
+def find_task_nodes(body: dict, registry: NodeRegistry) -> list[str]:
+    """
+    id узлов вложенного графа, у которых есть выход типа TASK, — рекурсивно,
+    включая подграфы в их параметрах. Вложенность кодируется путём
+    'узел.параметр › узел' (как хлебные крошки редактора).
+    """
+    found: list[str] = []
+    for raw in body.get("nodes") or []:
+        if not isinstance(raw, dict):
+            continue
+        node_id = str(raw.get("id", "?"))
+        params = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+        if any(t is PortType.TASK
+               for t in _output_types(registry, str(raw.get("type", "")), params)):
+            found.append(node_id)
+        for key, val in params.items():
+            if _looks_like_subgraph(val):
+                found += [f"{node_id}.{key} › {path}"
+                          for path in find_task_nodes(val, registry)]
+    return found

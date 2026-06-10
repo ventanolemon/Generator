@@ -53,6 +53,7 @@ class GraphEditor(PartitionEditor):
         self._history = GraphHistory()
         self._clipboard: dict | None = None
         self._restoring = False        # подавляем запись в историю при undo/redo
+        self._sel_doc = None           # документ-владелец выбранного узла
         self._build_ui()
         if self.is_edit_mode:
             self.load_existing()
@@ -134,7 +135,7 @@ class GraphEditor(PartitionEditor):
         self.view.moved_nodes.connect(self.snapshot_after_move)
 
         self.inspector = ParamInspector(self.doc, splitter)
-        self.inspector.ports_changed.connect(self.scene.refresh_node)
+        self.inspector.ports_changed.connect(self._on_ports_changed)
         self.inspector.params_changed.connect(self._on_param_changed)
         self.inspector.open_subgraph.connect(self._enter_subgraph)
 
@@ -156,13 +157,16 @@ class GraphEditor(PartitionEditor):
         crumbs.addStretch()
 
         hint = QLabel(
-            "Двойной клик в палитре — добавить узел. Тяните от порта к порту — "
-            "провод (только совместимые типы). Del — удалить, Ctrl+A — выделить всё. "
-            "Ctrl+C/V — копировать/вставить, Ctrl+Z — отменить, "
-            "Ctrl+Shift+Z — повторить.",
+            "Двойной клик в палитре — добавить узел (в тело цикла, если "
+            "выделена его рамка). Тяните от порта к порту — провод (только "
+            "совместимые типы). Двойной клик по узлу цикла — развернуть тело "
+            "рамкой на холсте. Del — удалить, Ctrl+A — выделить всё, "
+            "Ctrl+C/V — копировать/вставить, Ctrl+Z/Ctrl+Shift+Z — "
+            "отменить/повторить.",
             wrap,
         )
         hint.setStyleSheet("color: #888;")
+        hint.setWordWrap(True)
         outer = QVBoxLayout()
         outer.addLayout(crumbs)
         outer.addWidget(splitter, stretch=1)
@@ -190,7 +194,11 @@ class GraphEditor(PartitionEditor):
     # ---- Загрузка графа в холст ----
 
     def _load_doc(self, doc: GraphDocument) -> None:
+        # Внутри тела цикла/ветви узлы-задания (TASK) запрещены — сцена
+        # помечает их, палитра не даёт добавлять новые.
+        doc.is_subgraph = bool(self._nav_stack)
         self.doc = doc
+        self._sel_doc = None
         self.scene.doc = doc
         self.scene.registry = doc.registry
         self.inspector.doc = doc
@@ -203,10 +211,25 @@ class GraphEditor(PartitionEditor):
     # ---- Палитра / выбор / параметры ----
 
     def _on_palette_add(self, type_id: str) -> None:
-        # ставим в видимый центр сцены
-        center = self.view.mapToScene(self.view.viewport().rect().center())
+        # Выделена рамка цикла (или её узел) — добавляем в её тело.
+        frame = self.scene.target_frame_for_add()
+        target_doc = frame.body_doc if frame is not None else self.doc
+        if target_doc.is_subgraph and target_doc.type_has_task_output(type_id):
+            QMessageBox.warning(
+                self, "Узел недоступен в теле цикла",
+                "Узлы-задания (с выходом TASK) нельзя размещать внутри тела "
+                "цикла или ветви: результат итерации передаётся свободным "
+                "выходом типа BLOCK, а финальное задание собирается во "
+                "внешнем графе.",
+            )
+            return
         try:
-            self.scene.add_node(type_id, QPointF(center.x(), center.y()))
+            if frame is not None:
+                self.scene.add_node_to_frame(frame, type_id)
+            else:
+                # ставим в видимый центр сцены
+                center = self.view.mapToScene(self.view.viewport().rect().center())
+                self.scene.add_node(type_id, QPointF(center.x(), center.y()))
         except GraphError as e:
             QMessageBox.warning(self, "Не удалось добавить узел", str(e))
 
@@ -224,11 +247,38 @@ class GraphEditor(PartitionEditor):
         item.update()
         self._mark_canvas_dirty()
 
-    def _on_node_selected(self, node_id) -> None:
+    def _on_node_selected(self, payload) -> None:
+        """payload — (документ-владелец, node_id) или None: внутренние узлы
+        рамок принадлежат документу тела цикла, а не корневому."""
+        if payload is None:
+            self._sel_doc = None
+            self.inspector.show_node(None)
+            return
+        doc, node_id = payload
+        self._sel_doc = doc
+        self.inspector.doc = doc
         self.inspector.show_node(node_id)
 
+    def _selected_frame(self):
+        """Рамка, телу которой принадлежит выбранный в инспекторе узел."""
+        if self._sel_doc is None or self._sel_doc is self.doc:
+            return None
+        return self.scene.find_frame_by_body(self._sel_doc)
+
+    def _on_ports_changed(self, node_id: str) -> None:
+        frame = self._selected_frame()
+        if frame is not None:
+            self.scene.refresh_inner_node(frame, node_id)
+        else:
+            self.scene.refresh_node(node_id)
+
     def _on_param_changed(self, node_id: str) -> None:
-        item = self.scene.node_items.get(node_id)
+        frame = self._selected_frame()
+        if frame is not None:
+            item = frame.inner_nodes.get(node_id)
+            frame.commit_body()
+        else:
+            item = self.scene.node_items.get(node_id)
         if item is not None:
             item.update()
         self._mark_canvas_dirty()
@@ -282,6 +332,15 @@ class GraphEditor(PartitionEditor):
         parent_doc = self.doc
         node = parent_doc.nodes.get(node_id)
         if node is None:
+            # Узел внутри развёрнутой рамки: сериализуем её тело, входим в него
+            # как в холст, а затем уже в подграф самого узла (двойной уровень).
+            frame = next((f for f in self.scene.frames()
+                          if node_id in f.body_doc.nodes), None)
+            if frame is None:
+                return
+            frame.commit_body()
+            self._enter_subgraph(frame.node_id, frame.body_key)
+            self._enter_subgraph(node_id, param_key)
             return
         body = node.params.get(param_key) or {"nodes": [], "edges": [], "meta": {}}
         try:
@@ -350,6 +409,8 @@ class GraphEditor(PartitionEditor):
         Корневой граф как dict, даже если открыто вложенное тело цикла.
         Текущий уровень сворачивается в стек неразрушающе (UI не трогаем).
         """
+        # Тела развёрнутых рамок — в params их узлов (страховочный коммит).
+        self.scene.commit_frames()
         if not self._nav_stack:
             return self.doc.to_spec_dict()
         # Свернуть текущее тело в копию родительских узлов снизу вверх.
@@ -368,11 +429,21 @@ class GraphEditor(PartitionEditor):
 
     def _on_check(self) -> None:
         try:
-            GraphExecutor(self._current_spec())
+            ex = GraphExecutor(self._current_spec())
         except GraphError as e:
             self.preview.setPlainText(f"✗ Ошибка: {e}")
             return
-        self.preview.setPlainText("✓ Граф корректен.")
+        if ex.result is None:
+            self.preview.setPlainText(
+                "⚠ Структура корректна, но финального узла нет: ни у одного "
+                "узла нет свободного выхода TASK, генерация не вернёт задание. "
+                "Добавьте узел-задание (например, «Статическое задание»)."
+            )
+            return
+        self.preview.setPlainText(
+            f"✓ Граф корректен. Финальный узел: {ex.result[0]} "
+            f"(помечен бейджем «ВЫХОД» на холсте)."
+        )
 
     def _on_preview(self) -> None:
         from exercises.graph.generators import GraphConstructorGenerator

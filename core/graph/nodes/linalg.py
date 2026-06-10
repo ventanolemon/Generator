@@ -17,6 +17,8 @@ sympy импортируется лениво (см. core.graph.symbolic): дв�
 
 from __future__ import annotations
 
+import math
+
 from ..errors import GraphValidationError, RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
@@ -138,6 +140,82 @@ class IdentityNode(Node):
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         return {"out": sp.eye(int(self.params.get("size", 3)))}
+
+
+class ListToMatrixNode(Node):
+    """
+    Собрать матрицу из плоского списка чисел (построчно). Вход items:LIST —
+    например, индексированный туннель вывода цикла (числа, накопленные по
+    итерациям). Форма: rows/cols параметрами или входами; достаточно одного —
+    второй выводится из длины списка; без обоих список должен быть полным
+    квадратом (n² элементов → n×n). Несоответствие длины форме или нечисловой
+    элемент → RetryGeneration (данные зависят от генерации). Выход MATRIX.
+    """
+    type_id = "list_to_matrix"
+    category = "linalg"
+    display_name = "Список → матрица"
+    description = ("Плоский список чисел → матрица rows×cols (построчно). "
+                   "Достаточно одного из rows/cols — второй выводится из длины; "
+                   "без обоих — квадратная. Вход: LIST (+ rows/cols NUMBER). "
+                   "Выход: MATRIX.")
+    INPUTS = [
+        Port("items", PortType.LIST),
+        Port("rows", PortType.NUMBER, required=False),
+        Port("cols", PortType.NUMBER, required=False),
+    ]
+    OUTPUTS = [Port("out", PortType.MATRIX)]
+    PARAMS_SCHEMA = {
+        "rows": {"type": "int", "default": 0, "optional": True},
+        "cols": {"type": "int", "default": 0, "optional": True},
+    }
+
+    def _dim(self, inputs, key: str) -> int:
+        """Размер из входа (приоритетно) или параметра; ≤ 0 — не задан."""
+        raw = inputs.get(key, self.params.get(key, 0))
+        try:
+            return int(round(float(raw)))
+        except (TypeError, ValueError):
+            return 0
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        items = inputs.get("items")
+        if not isinstance(items, (list, tuple)):
+            raise RetryGeneration(
+                f"list_to_matrix {self.node_id!r}: на входе items не список "
+                f"({type(items).__name__})."
+            )
+        vals = []
+        for v in items:
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                raise RetryGeneration(
+                    f"list_to_matrix {self.node_id!r}: элемент {v!r} не число."
+                )
+            vals.append(sp.Integer(round(f)) if abs(f - round(f)) < 1e-9
+                        else sp.nsimplify(f, rational=True))
+
+        n = len(vals)
+        rows, cols = self._dim(inputs, "rows"), self._dim(inputs, "cols")
+        if rows <= 0 and cols <= 0:
+            side = math.isqrt(n) if n else 0
+            if n == 0 or side * side != n:
+                raise RetryGeneration(
+                    f"list_to_matrix {self.node_id!r}: {n} элементов не образуют "
+                    f"квадратную матрицу — задайте rows или cols."
+                )
+            rows = cols = int(side)
+        elif rows <= 0:
+            rows = n // cols if cols and n % cols == 0 else 0
+        elif cols <= 0:
+            cols = n // rows if rows and n % rows == 0 else 0
+        if rows <= 0 or cols <= 0 or rows * cols != n:
+            raise RetryGeneration(
+                f"list_to_matrix {self.node_id!r}: {n} элементов не укладываются "
+                f"в форму {rows or '?'}×{cols or '?'}."
+            )
+        return {"out": sp.Matrix(rows, cols, vals)}
 
 
 # ---------- Операции над одной матрицей (MATRIX → …) ----------
