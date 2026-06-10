@@ -86,10 +86,14 @@ class GraphEditor(PartitionEditor):
         tools = QHBoxLayout()
         check_btn = QPushButton("Проверить", self)
         preview_btn = QPushButton("Предпросмотр", self)
+        export_btn = QPushButton("Экспорт в .py", self)
+        export_btn.setToolTip("Скомпилировать граф в самостоятельный Python-модуль")
         check_btn.clicked.connect(self._on_check)
         preview_btn.clicked.connect(self._on_preview)
+        export_btn.clicked.connect(self._on_export_python)
         tools.addWidget(check_btn)
         tools.addWidget(preview_btn)
+        tools.addWidget(export_btn)
         tools.addStretch()
         root.addLayout(tools)
 
@@ -118,6 +122,7 @@ class GraphEditor(PartitionEditor):
 
         self.palette = NodePalette(self.doc.registry, splitter)
         self.palette.add_requested.connect(self._on_palette_add)
+        self.palette.add_file_requested.connect(self._on_palette_add_file)
 
         self.scene = GraphScene(self.doc, splitter)
         self.scene.selection_node.connect(self._on_node_selected)
@@ -227,6 +232,20 @@ class GraphEditor(PartitionEditor):
                 self.scene.add_node(type_id, QPointF(center.x(), center.y()))
         except GraphError as e:
             QMessageBox.warning(self, "Не удалось добавить узел", str(e))
+
+    def _on_palette_add_file(self, type_id: str, path: str) -> None:
+        """Добавить узел-источник словаря/предложений, настроенный на файл."""
+        center = self.view.mapToScene(self.view.viewport().rect().center())
+        try:
+            item = self.scene.add_node(type_id, QPointF(center.x(), center.y()))
+        except GraphError as e:
+            QMessageBox.warning(self, "Не удалось добавить узел", str(e))
+            return
+        params = dict(self.doc.nodes[item.node_id].params)
+        params["file"] = path
+        self.doc.set_params(item.node_id, params)
+        item.update()
+        self._mark_canvas_dirty()
 
     def _on_node_selected(self, payload) -> None:
         """payload — (документ-владелец, node_id) или None: внутренние узлы
@@ -443,6 +462,31 @@ class GraphEditor(PartitionEditor):
         lines += ["", "ОТВЕТ:"]
         lines += [b.render_plain() for b in getattr(task, "answer", [])]
         self.preview.setPlainText("\n".join(lines))
+
+    def _on_export_python(self) -> None:
+        """Скомпилировать текущий (корневой) граф в .py и сохранить файлом."""
+        from PyQt6.QtWidgets import QFileDialog
+        from core.graph.compiler import compile_graph
+        try:
+            src = compile_graph(self._root_spec_dict())
+        except GraphError as e:
+            self.preview.setPlainText(f"✗ Не удалось скомпилировать: {e}")
+            return
+        suggested = (self.name_edit.text().strip() or "task_generator")
+        suggested = "".join(c if c.isalnum() else "_" for c in suggested) + ".py"
+        fn, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить Python-модуль", suggested, "Python (*.py)")
+        if not fn:
+            return
+        if not fn.lower().endswith(".py"):
+            fn += ".py"
+        try:
+            with open(fn, "w", encoding="utf-8") as f:
+                f.write(src)
+        except OSError as e:
+            self.preview.setPlainText(f"✗ Ошибка записи: {e}")
+            return
+        self.preview.setPlainText(f"✓ Граф скомпилирован в Python:\n{fn}")
 
     # ---- Загрузка существующего раздела ----
 

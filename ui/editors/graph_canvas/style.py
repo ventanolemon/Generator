@@ -22,6 +22,7 @@ PORT_COLORS: dict[PortType, QColor] = {
     PortType.EXPR:        QColor("#AB47BC"),   # пурпурный — символьное выражение
     PortType.MATRIX:      QColor("#5C6BC0"),   # индиго — матрица/вектор
     PortType.WORDS:       QColor("#26A69A"),   # бирюзовый — словарь слов
+    PortType.SENTENCES:   QColor("#4DB6AC"),   # светло-бирюзовый — предложения
     PortType.TASK:        QColor("#27AE60"),   # зелёный
 }
 
@@ -31,10 +32,12 @@ CATEGORY_COLORS: dict[str, QColor] = {
     "source":   QColor("#6C3483"),   # источники — фиолетовые
     "compute":  QColor("#117864"),   # вычисление — бирюзовые
     "control":  QColor("#B9770E"),   # управление — янтарные
+    "list":     QColor("#558B2F"),   # списки — оливковый
     "symbolic": QColor("#7D3C98"),   # символьная арифметика — пурпурные
     "linalg":   QColor("#3949AB"),   # линейная алгебра — индиго
     "ode":      QColor("#00838F"),   # дифференциальные уравнения — тёмная бирюза
     "english":  QColor("#00695C"),   # английский язык — глубокий бирюзовый
+    "image":    QColor("#2E7D32"),   # изображения / ОПВС — зелёный
     "content":  QColor("#A93226"),   # контент — коралловые
     "assembly": QColor("#1F618D"),   # сборка — синие
 }

@@ -433,8 +433,15 @@ class RepeatNode(Node):
                 f"Узел {self.node_id!r}: 'body' должен быть вложенным графом (объектом)."
             )
         parse_imports(self.params)    # формат объявлений внешних переменных
-        parse_outputs(self.params)    # формат объявлений туннелей вывода
-        parse_registers(self.params)  # формат объявлений регистров сдвига
+        # Имя туннеля не должно совпадать с портом регистра reg_<имя>.
+        reg_ports = {f"reg_{name}"
+                     for name, _t, _i in parse_registers(self.params)}
+        for name, _t, _m in parse_outputs(self.params):
+            if name in reg_ports:
+                raise GraphValidationError(
+                    f"Узел {self.node_id!r}: туннель вывода {name!r} совпадает "
+                    f"с выходом регистра — переименуйте туннель или регистр."
+                )
 
     def validate_structure(self) -> None:
         _check_tunnels(self.node_id, self.params,
@@ -448,10 +455,14 @@ class RepeatNode(Node):
         return ports
 
     def output_ports(self):
-        # out (блоки итераций) + по порту на каждый туннель вывода.
+        # out (блоки итераций) + по порту на каждый туннель вывода + по выходу
+        # reg_<имя> на каждый регистр — его ФИНАЛЬНОЕ значение после всех
+        # итераций (накопленное/последнее, например list-регистр со списком).
         ports = [Port("out", PortType.BLOCK_LIST)]
         for name, t, mode in parse_outputs(self.params):
             ports.append(_tunnel_port(name, t, mode))
+        for name, t, _init in parse_registers(self.params):
+            ports.append(Port(f"reg_{name}", t))
         return ports
 
     def _count(self, inputs) -> int:
@@ -515,7 +526,12 @@ class RepeatNode(Node):
                 sid = setters.get(name)
                 if sid is not None and sid in outputs and "out" in outputs[sid]:
                     reg_state[name] = outputs[sid]["out"]
-        return {"out": collected, **tunnels}
+        # Помимо собранных блоков — значения туннелей вывода и финальное
+        # значение каждого регистра (выход reg_<имя>).
+        result = {"out": collected, **tunnels}
+        for name in reg_state:
+            result[f"reg_{name}"] = reg_state[name]
+        return result
 
     def _registry(self):
         # Тело использует тот же реестр узлов, что и внешний граф.

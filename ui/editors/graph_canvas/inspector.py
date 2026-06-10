@@ -26,7 +26,11 @@ _PORT_AFFECTING = {
     "formula": {"expr"},        # переменные формулы → именованные входы
     "template": {"text"},       # маркеры #имя# → именованные входы
     "text": {"text"},           # то же для узла «Текст»
-    "repeat": {"imports", "outputs"},   # imports → входы; outputs → выходы-туннели
+    # imports → входы; outputs (туннели) и registers (reg_<имя>) → выходы
+    "repeat": {"imports", "outputs", "registers"},
+    "list_new": {"count", "elem_type"},  # число/тип входов-элементов
+    "list_append": {"elem_type"},        # тип входа item
+    "list_get": {"elem_type"},           # тип выхода
     "map": {"imports", "outputs"},
     "case": {"imports", "cases", "outputs"},  # cases → число кнопок-ветвей
     "input_var": {"type"},      # тип внешней переменной меняет выходной порт
