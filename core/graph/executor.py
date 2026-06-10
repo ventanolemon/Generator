@@ -103,7 +103,12 @@ class GraphExecutor:
         #    свободным выходом BLOCK, а финал графа собирается на верхнем уровне.
         self._check_no_task_in_subgraphs()
 
-        # 5. Топосортировка и поиск финала
+        # 5. Структурные проверки узлов (согласованность с вложенными телами,
+        #    например туннели вывода циклов) — строже, чем validate_params.
+        for node in self.nodes.values():
+            node.validate_structure()
+
+        # 6. Топосортировка и поиск финала
         self.order = self._toposort()
         self.result = self._find_result(out_ports)
 
