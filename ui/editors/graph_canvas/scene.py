@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 from core.graph import DocEdge, GraphDocument
 
 from . import style
+from .frame import FRAMEABLE_TYPES, InnerNodeItem, LoopFrameItem, make_frame_item
 from .items import EdgeItem, NodeItem, PortItem, can_connect
 
 
@@ -77,13 +78,83 @@ class GraphScene(QGraphicsScene):
                 roles = {nid: "conflict" for nid in sinks}
         for nid, item in self.node_items.items():
             item.set_result_role(roles.get(nid))
+        # Внутри рамок циклов узлы-задания запрещены (это тела-подграфы).
+        for f in self.frames():
+            inner_roles = {nid: "forbidden" for nid in f.body_doc.task_node_ids()}
+            for nid, item in f.inner_nodes.items():
+                item.set_result_role(inner_roles.get(nid))
 
     def _spawn_node_item(self, node_id: str) -> NodeItem:
-        entry = self._entries[self.doc.nodes[node_id].type]
+        node = self.doc.nodes[node_id]
+        entry = self._entries[node.type]
+        # Развёрнутый цикл — рамка-структура с телом внутри; битое тело
+        # (или невозможность создать рамку) откатывает к компактному узлу.
+        if node.type in FRAMEABLE_TYPES and self.doc.is_node_expanded(node_id):
+            frame = make_frame_item(self.doc, node_id, entry)
+            if frame is not None:
+                self.addItem(frame)
+                frame.populate(self)
+                self.node_items[node_id] = frame
+                return frame
         item = NodeItem(self.doc, node_id, entry)
         self.addItem(item)
         self.node_items[node_id] = item
         return item
+
+    # ---------- Рамки циклов ----------
+
+    def set_frame_expanded(self, node_id: str, expanded: bool) -> None:
+        """Развернуть цикл в рамку на холсте / свернуть обратно в узел."""
+        node = self.doc.nodes.get(node_id)
+        if node is None or node.type not in FRAMEABLE_TYPES:
+            return
+        if self.doc.is_node_expanded(node_id) == expanded:
+            return
+        self.doc.set_node_expanded(node_id, expanded)
+        self.rebuild()
+        again = self.node_items.get(node_id)
+        if again is not None:
+            again.setSelected(True)
+        self.changed_doc.emit()
+
+    def frames(self) -> list[LoopFrameItem]:
+        return [it for it in self.node_items.values()
+                if isinstance(it, LoopFrameItem)]
+
+    def frame_of_inner(self, item: NodeItem) -> Optional[LoopFrameItem]:
+        return item.frame if isinstance(item, InnerNodeItem) else None
+
+    def find_frame_by_body(self, body_doc) -> Optional[LoopFrameItem]:
+        for f in self.frames():
+            if f.body_doc is body_doc:
+                return f
+        return None
+
+    def commit_frames(self) -> None:
+        """Сериализовать тела всех развёрнутых рамок обратно в params."""
+        for f in self.frames():
+            f.commit_body()
+
+    def all_node_items(self) -> list[NodeItem]:
+        """Все элементы-узлы: корневые, рамки и внутренние узлы рамок."""
+        out: list[NodeItem] = list(self.node_items.values())
+        for f in self.frames():
+            out.extend(f.inner_nodes.values())
+        return out
+
+    def add_node_to_frame(self, frame: LoopFrameItem, type_id: str) -> NodeItem:
+        item = frame.add_inner_node(self, type_id)
+        self.changed_doc.emit()
+        return item
+
+    def target_frame_for_add(self) -> Optional[LoopFrameItem]:
+        """Рамка-адресат для добавления из палитры: выделена сама или её узел."""
+        for it in self.selectedItems():
+            if isinstance(it, LoopFrameItem):
+                return it
+            if isinstance(it, InnerNodeItem):
+                return it.frame
+        return None
 
     def _find_port(self, node_id: str, port_name: str, is_output: bool) -> Optional[PortItem]:
         item = self.node_items.get(node_id)
@@ -120,16 +191,33 @@ class GraphScene(QGraphicsScene):
     def delete_selected(self) -> None:
         removed = False
         for it in list(self.selectedItems()):
-            if isinstance(it, NodeItem):
+            if isinstance(it, InnerNodeItem):
+                if it.scene():                    # мог уйти вместе с рамкой
+                    it.frame.remove_inner_node(self, it)
+                    removed = True
+            elif isinstance(it, NodeItem):
                 self._remove_node_item(it)
                 removed = True
             elif isinstance(it, EdgeItem):
-                self._remove_edge_item(it)
-                removed = True
+                if it.scene():
+                    owner = self._inner_edge_owner(it)
+                    if owner is not None:
+                        owner.remove_inner_edge(self, it)
+                    else:
+                        self._remove_edge_item(it)
+                    removed = True
         if removed:
             self.changed_doc.emit()
 
+    def _inner_edge_owner(self, edge: EdgeItem) -> Optional[LoopFrameItem]:
+        for f in self.frames():
+            if edge in f.inner_edges:
+                return f
+        return None
+
     def _remove_node_item(self, item: NodeItem) -> None:
+        if isinstance(item, LoopFrameItem):
+            item.clear_inner(self)
         for e in list(item.edges):
             self._remove_edge_item(e)
         self.doc.remove_node(item.node_id)
@@ -145,7 +233,7 @@ class GraphScene(QGraphicsScene):
         Провода к невыделенным узлам не копируются. None — если ничего не выбрано.
         """
         sel_ids = [it.node_id for it in self.selectedItems()
-                   if isinstance(it, NodeItem)]
+                   if isinstance(it, NodeItem) and not it.is_inner]
         if not sel_ids:
             return None
         sel = set(sel_ids)
@@ -251,6 +339,16 @@ class GraphScene(QGraphicsScene):
 
     def _commit_connection(self, a: PortItem, b: PortItem) -> None:
         src, dst = (a, b) if a.is_output else (b, a)
+        # Контексты концов: None — корневой холст, рамка — её тело. Провод
+        # через границу рамки невозможен — это делают туннели (imports/outputs).
+        src_frame = self.frame_of_inner(src.node_item)
+        dst_frame = self.frame_of_inner(dst.node_item)
+        if src_frame is not dst_frame:
+            return
+        if src_frame is not None:
+            src_frame.add_inner_edge(self, src, dst)
+            self.changed_doc.emit()
+            return
         # вытеснить существующий провод на этом входе (модель + сцена)
         for e in list(self.edge_items):
             if e.dst.node_id == dst.node_id and e.dst.port.name == dst.port.name:
@@ -258,6 +356,23 @@ class GraphScene(QGraphicsScene):
         self.doc.add_edge(src.node_id, src.port.name, dst.node_id, dst.port.name)
         self._spawn_edge_item(src.node_id, src.port.name, dst.node_id, dst.port.name)
         self.changed_doc.emit()
+
+    def mouseDoubleClickEvent(self, event):
+        # Двойной клик по компактному узлу цикла — развернуть в рамку.
+        for it in self.items(event.scenePos()):
+            node = self._climb_to_node(it)
+            if node is None:
+                continue
+            if (not node.is_frame and not node.is_inner
+                    and self.doc.nodes.get(node.node_id) is not None
+                    and self.doc.nodes[node.node_id].type in FRAMEABLE_TYPES):
+                from PyQt6.QtCore import QTimer
+                nid = node.node_id
+                QTimer.singleShot(0, lambda n=nid: self.set_frame_expanded(n, True))
+                event.accept()
+                return
+            break
+        super().mouseDoubleClickEvent(event)
 
     def _port_at(self, scene_pos: QPointF) -> Optional[PortItem]:
         for it in self.items(scene_pos):
@@ -280,9 +395,25 @@ class GraphScene(QGraphicsScene):
             again.setSelected(True)
         self.changed_doc.emit()
 
+    def refresh_inner_node(self, frame: LoopFrameItem, node_id: str) -> None:
+        """Перестроить тело рамки после смены портов внутреннего узла."""
+        frame.refresh_inner(self)
+        again = frame.inner_nodes.get(node_id)
+        if again is not None:
+            again.setSelected(True)
+        self._update_result_marks()
+        self.changed_doc.emit()
+
     def _on_selection(self) -> None:
+        """Выбран один узел → (его документ, id): внутренние узлы рамок
+        принадлежат документу тела, остальные — документу холста."""
         sel = [it for it in self.selectedItems() if isinstance(it, NodeItem)]
-        self.selection_node.emit(sel[0].node_id if len(sel) == 1 else None)
+        if len(sel) != 1:
+            self.selection_node.emit(None)
+            return
+        item = sel[0]
+        owner = item.frame.body_doc if isinstance(item, InnerNodeItem) else self.doc
+        self.selection_node.emit((owner, item.node_id))
 
     # ---------- Порядок наложения узлов (z-order) ----------
 
@@ -291,8 +422,9 @@ class GraphScene(QGraphicsScene):
         Пере-нумеровать узлы целыми z = 1..N в текущем порядке наложения
         (по zValue, затем по порядку вставки). Провода остаются на z=0 —
         узлы всегда выше них. Делает шаги вперёд/назад однозначными.
+        Рамки циклов — фон (z=0.5) и в нумерации не участвуют.
         """
-        items = list(self.node_items.values())
+        items = [it for it in self.node_items.values() if not it.is_frame]
         idx = {it: i for i, it in enumerate(items)}
         ordered = sorted(items, key=lambda it: (it.zValue(), idx[it]))
         for i, it in enumerate(ordered, start=1):
@@ -332,13 +464,37 @@ class GraphScene(QGraphicsScene):
             return super().contextMenuEvent(event)
 
         menu = QMenu()
-        a_front = menu.addAction("На передний план")
-        a_back = menu.addAction("На задний план")
-        menu.addSeparator()
-        a_fwd = menu.addAction("Переместить вперёд")
-        a_bwd = menu.addAction("Переместить назад")
+        # Рамка: только свернуть; внутренний узел: без z-операций.
+        a_collapse = a_expand = None
+        if node.is_frame:
+            a_collapse = menu.addAction("Свернуть тело в узел")
+        elif (not node.is_inner
+              and self.doc.nodes.get(node.node_id) is not None
+              and self.doc.nodes[node.node_id].type in FRAMEABLE_TYPES):
+            a_expand = menu.addAction("Развернуть тело на холсте")
+
+        a_front = a_back = a_fwd = a_bwd = None
+        if not node.is_frame and not node.is_inner:
+            if not menu.isEmpty():
+                menu.addSeparator()
+            a_front = menu.addAction("На передний план")
+            a_back = menu.addAction("На задний план")
+            menu.addSeparator()
+            a_fwd = menu.addAction("Переместить вперёд")
+            a_bwd = menu.addAction("Переместить назад")
+        if menu.isEmpty():
+            event.accept()
+            return
+
         chosen = menu.exec(event.screenPos())
-        if chosen is a_front:
+        if chosen is None:
+            event.accept()
+            return
+        if chosen is a_collapse:
+            self.set_frame_expanded(node.node_id, False)
+        elif chosen is a_expand:
+            self.set_frame_expanded(node.node_id, True)
+        elif chosen is a_front:
             self.node_to_front(node)
         elif chosen is a_back:
             self.node_to_back(node)
@@ -382,12 +538,13 @@ class GraphCanvasView(QGraphicsView):
             self.scale(factor, factor)
 
     def mousePressEvent(self, event):
-        # Запомнить позиции узлов до возможного перетаскивания.
+        # Запомнить позиции узлов (включая внутренние узлы рамок) до
+        # возможного перетаскивания.
         sc = self.scene()
         if (event.button() == Qt.MouseButton.LeftButton
                 and not self._space_pan and isinstance(sc, GraphScene)):
             self._press_positions = {
-                nid: (it.x(), it.y()) for nid, it in sc.node_items.items()
+                it: (it.x(), it.y()) for it in sc.all_node_items()
             }
         super().mousePressEvent(event)
 
@@ -395,15 +552,15 @@ class GraphCanvasView(QGraphicsView):
         super().mouseReleaseEvent(event)
         # Если какой-то узел реально сместился — зафиксировать в истории.
         if self._press_positions:
-            sc = self.scene()
             moved = False
-            if isinstance(sc, GraphScene):
-                for nid, (px, py) in self._press_positions.items():
-                    it = sc.node_items.get(nid)
-                    if it is not None and (abs(it.x() - px) > 0.5
-                                           or abs(it.y() - py) > 0.5):
+            for it, (px, py) in self._press_positions.items():
+                try:
+                    if it.scene() is not None and (abs(it.x() - px) > 0.5
+                                                   or abs(it.y() - py) > 0.5):
                         moved = True
                         break
+                except RuntimeError:
+                    continue       # элемент удалён вместе с C++-объектом
             self._press_positions = {}
             if moved:
                 self.moved_nodes.emit()

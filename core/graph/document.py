@@ -82,6 +82,7 @@ class GraphDocument:
         self.nodes.pop(node_id, None)
         self.edges = [e for e in self.edges
                       if e.from_node != node_id and e.to_node != node_id]
+        self.set_node_expanded(node_id, False)
 
     def set_params(self, node_id: str, params: dict) -> None:
         if node_id in self.nodes:
@@ -251,3 +252,27 @@ class GraphDocument:
             return False
         _ins, outs = self.safe_ports(type_id, {})
         return any(p.type is PortType.TASK for p in outs)
+
+    # ---------- Развёрнутые рамки циклов (состояние вида, в meta) ----------
+    #
+    # Развёрнутый узел цикла рисуется на холсте рамкой-структурой с телом
+    # внутри (LabVIEW-style). Список id хранится в meta["expanded_nodes"]:
+    # движок исполнения meta не интерпретирует, а сериализация общая.
+
+    def expanded_nodes(self) -> set[str]:
+        raw = self.meta.get("expanded_nodes")
+        return {str(x) for x in raw} if isinstance(raw, list) else set()
+
+    def is_node_expanded(self, node_id: str) -> bool:
+        return node_id in self.expanded_nodes()
+
+    def set_node_expanded(self, node_id: str, expanded: bool) -> None:
+        cur = self.expanded_nodes()
+        if expanded:
+            cur.add(node_id)
+        else:
+            cur.discard(node_id)
+        if cur:
+            self.meta["expanded_nodes"] = sorted(cur)
+        else:
+            self.meta.pop("expanded_nodes", None)

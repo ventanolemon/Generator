@@ -83,6 +83,11 @@ class EdgeItem(QGraphicsPathItem):
 class NodeItem(QGraphicsObject):
     """Прямоугольный узел с портами и подписью параметров."""
 
+    # Разновидности элементов холста: обычный узел / узел внутри рамки цикла /
+    # сама рамка (см. frame.py). Сцена различает их по этим флагам.
+    is_inner = False
+    is_frame = False
+
     def __init__(self, doc: GraphDocument, node_id: str, palette_entry: dict):
         super().__init__()
         self.doc = doc
