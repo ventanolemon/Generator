@@ -372,6 +372,16 @@ BOOL), `number_check` (чётность/знак/делимость/целочи
 проходами — позволяет аккумуляторы, ряды Фибоначчи, бегущие суммы. Без
 `registers` поведение прежнее. Тесты: `tests/test_graph_shift.py` (15).
 
+*Вывод значений из цикла + списки. ✅ СДЕЛАНО.* `repeat` теперь, помимо `out`
+(собранные блоки), выдаёт по выходу `reg_<имя>` на каждый регистр — его ФИНАЛЬНОЕ
+значение после всех итераций. Так из цикла «выводятся» последнее/накопленное
+значение. Регистр типа `list` + узел `list_append` в теле даёт накопление в
+список по итерациям; после цикла `reg_<имя>` отдаёт собранный список. Новые
+узлы списков (категория `list`, тип LIST = list[Any]): `list_new` (создать из
+входов/литералов), `list_append` (добавить → новый список), `list_length`,
+`list_get` (по индексу, ±), `list_join` (в строку). Совместимо с компилятором
+(паритет на seed). Тесты: `tests/test_graph_lists.py` (17).
+
 На этом фаза 3b (управляющие структуры: ветвление, цикл, map, внешние
 переменные, case, shift register) закрыта.
 
@@ -499,7 +509,37 @@ QFileDialog; параметр `inline` хранит правки прямо в �
 — диалог `WordEditorDialog` (таблица term|translation, добавить/удалить/сохранить
 в JSON). Логика чтения форматов и сессия переиспользованы из
 exercises.english.generators. Тесты: `tests/test_graph_english.py` (13).
-Дальше — статические предложения с пропусками (SentenceFill) отдельным PR.
+
+Предложения с пропусками (статические): `PortType.SENTENCES` (список объектов
+{template, answers, translation?}); узлы `sentences_file` (источник, читает JSON)
+и `sentence_fill` (выбирает случайное предложение через ctx.rng, строит
+FillInTheBlankBlock; два выхода statement/answer типа BLOCK_LIST → подключаются
+прямо в static_task). Тесты: `tests/test_graph_english_sentences.py` (11).
+
+**Изображения / ОПВС (`core/graph/nodes/image.py`). ✅ СДЕЛАНО.** Категория
+`image`, тип `PortType.IMAGE` (PIL.Image в памяти). Узлы: `logic_circuit`
+(процедурная логическая схема ОПВС по ГОСТ 2.743-91 — выходы image:IMAGE и
+formula:STRING; переиспользует make_function/render_circuit из
+exercises.opvs.png_generator, воспроизводимо через глобальный random),
+`image_file` (картинка из файла PNG/JPG через QFileDialog → IMAGE) и
+`image_block` (IMAGE → BLOCK через ImageBlock, с подписью). Полный граф
+`logic_circuit → image_block → static_task` даёт задание ОПВС (схема в условии,
+булева формула в ответе). Совместимо с компилятором (универсальный путь, паритет
+на seed). Тесты: `tests/test_graph_image.py` (11).
+
+**Компилятор графа в Python (`core/graph/compiler.py`). ✅ СДЕЛАНО (ядро + кнопка).**
+`compile_graph(spec)` разворачивает граф в самостоятельный Python-модуль с
+функцией `generate(seed)` и явным retry-циклом. Стратегия «dataflow + инлайн
+простых»: частые простые узлы (константы, var_dict, formula, template,
+случайные, text_block, block_list, static_task) эмитятся как читаемый нативный
+код (`_vd_out = {'a': float(_ra_out), ...}`), а все прочие ~85 узлов — через
+универсальный путь (`_node(type_id, id, params).compute(inputs, ctx)`), что
+гарантирует точную семантику без эмиттера под каждый узел. Провода становятся
+присваиваниями переменных `_<node>_<port>`. Каждый выход узла — отдельная
+переменная; финал — значение TASK-узла. Кнопка «Экспорт в .py» в редакторе
+сохраняет модуль файлом. Паритет с GraphExecutor проверен на нескольких seed и
+на универсальном пути (linalg/symbolic/repeat с вложенным телом). Тесты:
+`tests/test_graph_compiler.py` (9).
 
 *Шаг 3c — узлы-обёртки.* image (ОПВС/`render_circuit`), `random_choice`,
 английский (`json_dict`, `fill_in_blank`). Правок ядра не требуют.
