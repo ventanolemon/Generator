@@ -20,6 +20,7 @@ from .english import (
 from .image import ImageBlockNode, ImageFileNode, LogicCircuitNode
 from .lists import (
     ListAppendNode, ListGetNode, ListJoinNode, ListLengthNode, ListNewNode,
+    RandomChoiceNode,
 )
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, OutputVarNode,
@@ -61,7 +62,7 @@ _ALL_NODES = [
     # source
     ConstantNumberNode, ConstantStringNode, ConstantBoolNode,
     RandomNaturalNode, RandomRealNode,
-    StringListNode, NumberRangeNode,
+    StringListNode, NumberRangeNode, RandomChoiceNode,
     # compute
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
     # control

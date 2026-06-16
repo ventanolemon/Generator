@@ -139,7 +139,8 @@ class TextNode(Node):
 
     def input_ports(self):
         from .compute import _marker_names
-        ports = [Port(n, PortType.NUMBER, required=False)
+        # Маркеры #имя# — полиморфные входы (ANY): число, строка, выражение.
+        ports = [Port(n, PortType.ANY, required=False)
                  for n in _marker_names(self.params.get("text", ""))]
         ports.append(Port("vars", PortType.NUMBER_DICT, required=False))
         return ports

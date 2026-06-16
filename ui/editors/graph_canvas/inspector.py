@@ -31,6 +31,7 @@ _PORT_AFFECTING = {
     "list_new": {"count", "elem_type"},  # число/тип входов-элементов
     "list_append": {"elem_type"},        # тип входа item
     "list_get": {"elem_type"},           # тип выхода
+    "random_choice": {"elem_type"},      # тип выхода (варианта)
     "map": {"imports", "outputs"},
     "case": {"imports", "cases", "outputs"},  # cases → число кнопок-ветвей
     "input_var": {"type"},      # тип внешней переменной меняет выходной порт

@@ -159,6 +159,69 @@ class ListGetNode(Node):
         return {"out": items[idx]}
 
 
+class RandomChoiceNode(Node):
+    """
+    Случайный выбор одного элемента из набора — «пул вариантов» одним узлом.
+
+    Набор берётся из входа list (LIST), а если он не подключён — из параметра
+    items (текстовые литералы). Выбранный элемент приводится к типу elem_type
+    (number/string/expr/matrix/bool/block), поэтому результат можно сразу
+    подать дальше: строку — в маркер #имя# текста, выражение — в diff/limit и т.п.
+    Воспроизводимо через ctx.rng (как random_natural).
+
+    Покрывает самый частый паттерн реальных генераторов (пулы эквивалентностей,
+    варианты функций) без связки list_new + random_natural + list_get.
+    """
+    type_id = "random_choice"
+    category = "source"
+    display_name = "Случайный выбор"
+    description = ("Случайно выбрать элемент из набора (вход LIST или параметр "
+                   "items). Тип выхода — elem_type. Источник варианта.")
+    INPUTS = [Port("list", PortType.LIST, required=False)]
+    PARAMS_SCHEMA = {
+        "elem_type": {"type": "enum", "values": list(_ELEM_TYPES),
+                      "default": "string", "optional": True},
+        "items": {"type": "list", "default": [], "optional": True},
+    }
+
+    def output_ports(self):
+        et = _ELEM_TYPES.get(self.params.get("elem_type", "string"), PortType.STRING)
+        return [Port("out", et)]
+
+    def _coerce(self, value):
+        et = self.params.get("elem_type", "string")
+        if et == "number":
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                raise RetryGeneration(
+                    f"random_choice {self.node_id!r}: элемент {value!r} не число."
+                )
+        if et == "string":
+            return _fmt(value) if isinstance(value, (int, float)) else str(value)
+        if et == "bool":
+            if isinstance(value, str):
+                return value.strip().lower() in ("1", "true", "да", "yes")
+            return bool(value)
+        if et == "expr":
+            from ..symbolic import as_expr
+            return as_expr(value)
+        if et == "matrix":
+            from ..symbolic import as_matrix
+            return as_matrix(value)
+        return value      # block — как есть
+
+    def compute(self, inputs, ctx: ExecContext):
+        items = _as_list(inputs.get("list"))
+        if not items:
+            items = list(self.params.get("items") or [])
+        if not items:
+            raise RetryGeneration(
+                f"random_choice {self.node_id!r}: пустой набор для выбора."
+            )
+        return {"out": self._coerce(ctx.rng.choice(items))}
+
+
 class ListJoinNode(Node):
     """Склеить элементы списка в строку через разделитель (LIST → STRING)."""
     type_id = "list_join"
