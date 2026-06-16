@@ -25,6 +25,8 @@ class PortType(Enum):
     WORDS = "words"              # dict[str, str] — словарь term→translation (англ.)
     SENTENCES = "sentences"      # list[dict] — предложения с пропусками (англ.)
     TASK = "task"                # StaticTask / InteractiveTask — финал графа
+    ANY = "any"                  # полиморфный порт: принимает значение любого
+                                 # типа (узел сам диспетчеризует по факт. типу)
 
 
 def is_compatible(src: PortType, dst: PortType) -> bool:
@@ -33,6 +35,9 @@ def is_compatible(src: PortType, dst: PortType) -> bool:
 
     Базово — строгое равенство типов. Допускаются удобные авто-повышения,
     убирающие лишние «служебные» узлы:
+      * ANY: полиморфный порт совместим с любым типом. Используется входом
+        узла-диспетчера (например, to_block: ANY → BLOCK), который сам
+        разбирает фактический тип значения в compute().
       * BLOCK → BLOCK_LIST: одиночный блок можно подать туда, где ждут список
         (исполнитель обернёт его в [block]). Это избавляет от обязательного
         block_list для задания из одного блока.
@@ -40,6 +45,8 @@ def is_compatible(src: PortType, dst: PortType) -> bool:
     Само оборачивание делает исполнитель (см. executor: _coerce_input).
     """
     if src == dst:
+        return True
+    if src is PortType.ANY or dst is PortType.ANY:
         return True
     if src is PortType.BLOCK and dst is PortType.BLOCK_LIST:
         return True
@@ -51,7 +58,7 @@ def is_compatible(src: PortType, dst: PortType) -> bool:
 def coerce_value(value, src: PortType, dst: PortType):
     """
     Привести значение от выхода типа src ко входу типа dst при авто-повышении.
-    Для равных типов — без изменений.
+    Для равных типов и для ANY-портов — без изменений (значение разбирает узел).
     """
     if src == dst:
         return value

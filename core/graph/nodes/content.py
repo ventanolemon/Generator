@@ -8,8 +8,105 @@
 
 from __future__ import annotations
 
+from ..errors import RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
+
+
+# Окружения LaTeX для матриц (как в matrix_block) — для стиля рендера матрицы.
+_MATRIX_ENVS = ("pmatrix", "bmatrix", "vmatrix", "Vmatrix")
+
+
+class ToBlockNode(Node):
+    """
+    Полиморфный рендер значения в блок задания (ANY → BLOCK).
+
+    Принимает значение ЛЮБОГО типа и оборачивает его в подходящий Block,
+    диспетчеризуя по фактическому типу значения в рантайме:
+      * Block            → как есть (passthrough — удобно «протащить» блок);
+      * IMAGE (PIL)      → ImageBlock (подпись — параметр caption);
+      * MATRIX (sympy)   → FormulaBlock (как matrix_block, окружение env);
+      * EXPR (sympy)     → FormulaBlock (как expr_block);
+      * число/bool/строка→ TextBlock (число при style=formula — формульный блок).
+    Параметр prefix добавляет 'prefix = …' к формульным блокам (и 'prefix …'
+    к текстовым). Заменяет четыре узла text_block/expr_block/matrix_block/
+    image_block одним и закрывает дыру «число → текстовый блок».
+    """
+    type_id = "to_block"
+    category = "content"
+    display_name = "Блок (любой тип)"
+    description = ("Универсальный рендер значения в блок: число/строка/формула/"
+                   "матрица/картинка/блок → BLOCK. Вход: любой тип. Выход: BLOCK.")
+    INPUTS = [Port("in", PortType.ANY)]
+    OUTPUTS = [Port("out", PortType.BLOCK)]
+    PARAMS_SCHEMA = {
+        "style": {"type": "enum", "values": ["auto", "text", "formula"],
+                  "default": "auto"},
+        "prefix": {"type": "string", "default": "", "optional": True},
+        "env": {"type": "enum", "values": list(_MATRIX_ENVS),
+                "default": "pmatrix", "optional": True},
+        "caption": {"type": "string", "default": "", "optional": True},
+    }
+
+    @staticmethod
+    def _module_root(value) -> str:
+        return type(value).__module__.split(".")[0]
+
+    def _formula(self, latex: str):
+        from core.blocks import FormulaBlock
+        prefix = str(self.params.get("prefix", "")).strip()
+        if prefix:
+            latex = f"{prefix} = {latex}"
+        return FormulaBlock(latex)
+
+    def _text(self, text: str):
+        from core.blocks import TextBlock
+        prefix = str(self.params.get("prefix", "")).strip()
+        return TextBlock(f"{prefix} {text}".strip() if prefix else text)
+
+    def compute(self, inputs, ctx: ExecContext):
+        from core.blocks import Block, ImageBlock
+        value = inputs.get("in")
+        if value is None:
+            raise RetryGeneration(
+                f"to_block {self.node_id!r}: на вход не пришло значение."
+            )
+        style = str(self.params.get("style", "auto"))
+
+        # 1. Уже блок — отдать как есть.
+        if isinstance(value, Block):
+            return {"out": value}
+
+        # 2. Картинка (PIL) — без жёсткого импорта PIL: по модулю класса.
+        if self._module_root(value) == "PIL":
+            return {"out": ImageBlock(value, caption=str(self.params.get("caption", "")))}
+
+        # 3. Символьное (sympy): матрица → сетка, иначе формула.
+        if self._module_root(value) == "sympy":
+            from ..symbolic import is_matrix, sympy, to_latex
+            if is_matrix(value):
+                env = self.params.get("env", "pmatrix")
+                return {"out": self._formula(
+                    sympy().latex(value, mat_delim="", mat_str=env))}
+            return {"out": self._formula(to_latex(value))}
+
+        # 4. bool раньше int (bool — подкласс int).
+        if isinstance(value, bool):
+            return {"out": self._text("да" if value else "нет")}
+
+        # 5. Число: по умолчанию текст, при style=formula — формула.
+        if isinstance(value, (int, float)):
+            if style == "formula":
+                from ..symbolic import as_expr, to_latex
+                return {"out": self._formula(to_latex(as_expr(value)))}
+            from .compute import _format_value
+            return {"out": self._text(_format_value(value))}
+
+        # 6. Строка (и всё прочее как строка): текст или формула по style.
+        text = str(value)
+        if style == "formula":
+            return {"out": self._formula(text)}
+        return {"out": self._text(text)}
 
 
 class TextBlockNode(Node):

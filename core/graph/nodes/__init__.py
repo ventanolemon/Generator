@@ -10,7 +10,7 @@ from __future__ import annotations
 from ..registry import NodeRegistry
 from .assembly import BlockListNode, StaticTaskNode
 from .compute import ConstraintNode, FormulaNode, TemplateNode, VarDictNode
-from .content import TextBlockNode, TextNode
+from .content import TextBlockNode, TextNode, ToBlockNode
 from .control import (
     CompareNode, NumberCheckNode, SelectNode,
 )
@@ -101,7 +101,7 @@ _ALL_NODES = [
     # list (операции со списками)
     ListNewNode, ListAppendNode, ListLengthNode, ListGetNode, ListJoinNode,
     # content
-    TextNode, TextBlockNode,
+    TextNode, TextBlockNode, ToBlockNode,
     # assembly
     BlockListNode, StaticTaskNode,
 ]
