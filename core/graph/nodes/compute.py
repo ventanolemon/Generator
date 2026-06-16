@@ -147,6 +147,25 @@ def _format_value(value) -> str:
     return format_number(v)
 
 
+def _join_prefix(prefix: str, body: str, relation: str = "=") -> str:
+    """
+    Приписать префикс к выражению/строке с разумной связкой.
+
+    Связка relation (по умолчанию '=') вставляется между префиксом и телом —
+    НО не дублируется, если префикс уже кончается знаком отношения/двоеточием
+    ('y\\' =' → 'y\\' = …', а не 'y\\' = = …'). relation='' (или пустой
+    префикс) — без связки, просто 'prefix body'. Так prefix перестаёт навязывать
+    лишний '='.
+    """
+    prefix = str(prefix or "").strip()
+    if not prefix:
+        return body
+    rel = str(relation or "").strip()
+    if not rel or prefix[-1] in "=:<>≈≤≥≠":
+        return f"{prefix} {body}"
+    return f"{prefix} {rel} {body}"
+
+
 def _marker_str(value) -> str:
     """
     Строковое представление значения маркера #имя# — полиморфно по типу:

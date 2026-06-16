@@ -43,6 +43,7 @@ class ToBlockNode(Node):
         "style": {"type": "enum", "values": ["auto", "text", "formula"],
                   "default": "auto"},
         "prefix": {"type": "string", "default": "", "optional": True},
+        "relation": {"type": "string", "default": "=", "optional": True},
         "env": {"type": "enum", "values": list(_MATRIX_ENVS),
                 "default": "pmatrix", "optional": True},
         "caption": {"type": "string", "default": "", "optional": True},
@@ -54,15 +55,17 @@ class ToBlockNode(Node):
 
     def _formula(self, latex: str):
         from core.blocks import FormulaBlock
-        prefix = str(self.params.get("prefix", "")).strip()
-        if prefix:
-            latex = f"{prefix} = {latex}"
-        return FormulaBlock(latex)
+        from .compute import _join_prefix
+        return FormulaBlock(_join_prefix(self.params.get("prefix", ""), latex,
+                                         self.params.get("relation", "=")))
 
     def _text(self, text: str):
         from core.blocks import TextBlock
-        prefix = str(self.params.get("prefix", "")).strip()
-        return TextBlock(f"{prefix} {text}".strip() if prefix else text)
+        from .compute import _join_prefix
+        # Связка '=' добавляется только при наличии префикса; для прозы задайте
+        # relation='' (или префикс с двоеточием — дедуп не продублирует).
+        return TextBlock(_join_prefix(self.params.get("prefix", ""), text,
+                                      self.params.get("relation", "=")))
 
     def compute(self, inputs, ctx: ExecContext):
         from core.blocks import Block, ImageBlock

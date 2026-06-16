@@ -767,13 +767,15 @@ class ExprBlockNode(Node):
     display_name = "Формульный блок"
     INPUTS = [Port("in", PortType.EXPR)]
     OUTPUTS = [Port("out", PortType.BLOCK)]
-    PARAMS_SCHEMA = {"prefix": {"type": "string", "default": "", "optional": True}}
+    PARAMS_SCHEMA = {
+        "prefix": {"type": "string", "default": "", "optional": True},
+        "relation": {"type": "string", "default": "=", "optional": True},
+    }
 
     def compute(self, inputs, ctx: ExecContext):
         from core.blocks import FormulaBlock          # ленивый: тянет Qt
+        from .compute import _join_prefix
         expr = as_expr(inputs["in"])
-        latex = to_latex(expr)
-        prefix = str(self.params.get("prefix", "")).strip()
-        if prefix:
-            latex = f"{prefix} = {latex}"
+        latex = _join_prefix(self.params.get("prefix", ""), to_latex(expr),
+                             self.params.get("relation", "="))
         return {"out": FormulaBlock(latex)}
