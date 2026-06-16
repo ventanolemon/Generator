@@ -25,6 +25,40 @@ from ..symbolic import (
 )
 
 
+def _resolve_var(node, inputs, expr):
+    """
+    Переменная для diff/limit/integrate/… — без обязательного отдельного symbol.
+
+    Приоритет: (1) подключённый вход var; (2) параметр var по имени — берётся
+    тот же символ из выражения (с его предположениями), либо создаётся; (3) если
+    в выражении ровно одна переменная — она. Иначе понятная ошибка (нет
+    переменной / несколько — укажите var). Молча «угадывать» при нескольких
+    переменных не станем — это и приводило к незаметно неверным ответам. Авто-
+    вывод точнее ручного symbol: совпадение предположений гарантировано.
+    """
+    if inputs.get("var") is not None:
+        return as_expr(inputs["var"])
+    sp = sympy()
+    syms = sorted(getattr(expr, "free_symbols", set()), key=lambda s: s.name)
+    name = str(node.params.get("var", "")).strip()
+    if name:
+        for s in syms:
+            if s.name == name:
+                return s
+        return sp.Symbol(name)
+    if len(syms) == 1:
+        return syms[0]
+    if not syms:
+        raise GraphValidationError(
+            f"{node.type_id} {node.node_id!r}: в выражении нет переменной — "
+            f"укажите параметр var или подключите вход var."
+        )
+    raise GraphValidationError(
+        f"{node.type_id} {node.node_id!r}: в выражении несколько переменных "
+        f"{[s.name for s in syms]} — укажите, по какой (параметр var)."
+    )
+
+
 # ---------- Источники ----------
 
 _ASSUMPTIONS = ["complex", "real", "positive"]
@@ -188,14 +222,16 @@ class TrigsimpNode(_UnaryExprNode):
 class _ExprWithVarNode(Node):
     """База для операций «выражение + переменная» (collect, apart)."""
     category = "symbolic"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"var": {"type": "string", "default": "", "optional": True}}
     SYMPY_OP = "collect"
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         try:
             result = getattr(sp, self.SYMPY_OP)(expr, var)
         except Exception as e:
@@ -331,9 +367,13 @@ class DiffNode(Node):
     type_id = "diff"
     category = "symbolic"
     display_name = "Производная"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
-    PARAMS_SCHEMA = {"order": {"type": "int", "default": 1}}
+    PARAMS_SCHEMA = {
+        "order": {"type": "int", "default": 1},
+        "var": {"type": "string", "default": "", "optional": True},
+    }
 
     def validate_params(self) -> None:
         try:
@@ -347,7 +387,7 @@ class DiffNode(Node):
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         order = int(self.params.get("order", 1))
         try:
             result = sp.diff(expr, var, order)
@@ -365,17 +405,19 @@ class IntegrateNode(Node):
     type_id = "integrate"
     category = "symbolic"
     display_name = "Интеграл"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
     PARAMS_SCHEMA = {
         "lower": {"type": "string", "default": "", "optional": True},
         "upper": {"type": "string", "default": "", "optional": True},
+        "var": {"type": "string", "default": "", "optional": True},
     }
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         lo = str(self.params.get("lower", "")).strip()
         hi = str(self.params.get("upper", "")).strip()
         try:
@@ -399,17 +441,19 @@ class LimitNode(Node):
     type_id = "limit"
     category = "symbolic"
     display_name = "Предел"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
     PARAMS_SCHEMA = {
         "point": {"type": "string", "default": "0"},
         "dir": {"type": "enum", "values": ["+-", "+", "-"], "default": "+-"},
+        "var": {"type": "string", "default": "", "optional": True},
     }
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         point = _parse_point(sp, self.params.get("point", "0"))
         direction = self.params.get("dir", "+-")
         try:
@@ -428,17 +472,19 @@ class LimitDisplayNode(Node):
     type_id = "limit_display"
     category = "symbolic"
     display_name = "Знак предела (lim)"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
     PARAMS_SCHEMA = {
         "point": {"type": "string", "default": "0"},
         "dir": {"type": "enum", "values": ["+-", "+", "-"], "default": "+-"},
+        "var": {"type": "string", "default": "", "optional": True},
     }
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         point = _parse_point(sp, self.params.get("point", "0"))
         direction = self.params.get("dir", "+-")
         try:
@@ -456,11 +502,13 @@ class SeriesNode(Node):
     type_id = "series"
     category = "symbolic"
     display_name = "Ряд Тейлора"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
     PARAMS_SCHEMA = {
         "point": {"type": "string", "default": "0"},
         "order": {"type": "int", "default": 6},
+        "var": {"type": "string", "default": "", "optional": True},
     }
 
     def validate_params(self) -> None:
@@ -475,7 +523,7 @@ class SeriesNode(Node):
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         point = _parse_point(sp, self.params.get("point", "0"))
         order = int(self.params.get("order", 6))
         try:
@@ -623,14 +671,18 @@ class ResidueNode(Node):
     type_id = "residue"
     category = "symbolic"
     display_name = "Вычет"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
-    PARAMS_SCHEMA = {"point": {"type": "string", "default": "0"}}
+    PARAMS_SCHEMA = {
+        "point": {"type": "string", "default": "0"},
+        "var": {"type": "string", "default": "", "optional": True},
+    }
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         point = _parse_point(sp, self.params.get("point", "0"))
         try:
             result = sp.residue(expr, var, point)
@@ -649,15 +701,19 @@ class SolveNode(Node):
     type_id = "solve"
     category = "symbolic"
     display_name = "Решить уравнение"
-    INPUTS = [Port("in", PortType.EXPR), Port("var", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("var", PortType.EXPR, required=False)]
     OUTPUTS = [Port("out", PortType.BLOCK_LIST)]
-    PARAMS_SCHEMA = {"prefix": {"type": "string", "default": "", "optional": True}}
+    PARAMS_SCHEMA = {
+        "prefix": {"type": "string", "default": "", "optional": True},
+        "var": {"type": "string", "default": "", "optional": True},
+    }
 
     def compute(self, inputs, ctx: ExecContext):
         from core.blocks import FormulaBlock          # ленивый: тянет Qt
         sp = sympy()
         expr = as_expr(inputs["in"])
-        var = as_expr(inputs["var"])
+        var = _resolve_var(self, inputs, expr)
         try:
             roots = sp.solve(expr, var)
         except Exception as e:
