@@ -9,7 +9,8 @@
 Узлы:
   compare       — NUMBER op NUMBER -> BOOL (==, !=, <, <=, >, >=);
   number_check  — NUMBER -> BOOL (even/odd/positive/negative/divisible_by);
-  select        — BOOL + on_true:T + on_false:T -> T (тип T параметризуется).
+  select        — BOOL + on_true:T + on_false:T -> T (тип T параметризуется);
+  guard         — BOOL -> отбраковка (rejection sampling): cond ложно → retry.
 
 Источник BOOL — constant_bool — живёт в sources (категория source), рядом с
 константами числа/строки.
@@ -17,9 +18,49 @@
 
 from __future__ import annotations
 
-from ..errors import GraphValidationError
+from ..errors import GraphValidationError, RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
+
+
+class GuardNode(Node):
+    """
+    Сторож: отбраковка кандидата по булеву условию (rejection sampling).
+
+    Вход cond (BOOL) проверяется; если он не совпал с ожидаемым (mode), узел
+    бросает RetryGeneration — весь граф пересобирается с новыми случайными
+    значениями (whole-graph retry). Так выражается «генерируй, пока не выполнено
+    условие»: дискриминант не полный квадрат, dx/dt≠0, корень рационален и т.п.
+
+    Необязательный вход value (любой тип) проходит насквозь на выход out — чтобы
+    guard можно было вставить в середину конвейера, не разрывая поток данных.
+    mode: require_true (по умолчанию — оставить, если cond истинно) или
+    require_false (оставить, если cond ложно — удобно «отвергнуть, если …»).
+    """
+    type_id = "guard"
+    category = "control"
+    display_name = "Сторож (проверка)"
+    description = ("Отбраковать кандидата по условию: если cond не выполнен — "
+                   "перегенерация графа. value (любой тип) проходит насквозь. "
+                   "Вход: cond (BOOL), value. Выход: value.")
+    INPUTS = [
+        Port("cond", PortType.BOOL),
+        Port("value", PortType.ANY, required=False),
+    ]
+    OUTPUTS = [Port("out", PortType.ANY)]
+    PARAMS_SCHEMA = {
+        "mode": {"type": "enum", "values": ["require_true", "require_false"],
+                 "default": "require_true"},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        cond = bool(inputs.get("cond"))
+        want = self.params.get("mode", "require_true") == "require_true"
+        if cond != want:
+            raise RetryGeneration(
+                f"guard {self.node_id!r}: условие не выполнено (cond={cond})."
+            )
+        return {"out": inputs.get("value")}
 
 
 # Операторы сравнения. Имя → функция от (a, b).

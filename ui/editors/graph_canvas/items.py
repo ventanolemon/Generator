@@ -30,12 +30,29 @@ class PortItem(QGraphicsEllipseItem):
         self.node_item = node_item
         self.port = port
         self.is_output = is_output
+        self.highlight = None          # None | "ok" | "convert" — подсветка при drag
         self.setBrush(QBrush(style.port_color(port.type)))
         self.setPen(QPen(QColor("#1A1A1A"), 1))
         self.setZValue(2)
         self.setAcceptHoverEvents(True)
         opt = "" if (is_output or port.required) else " (необязательный)"
         self.setToolTip(f"{port.name} : {port.type.value}{opt}")
+
+    def set_drop_highlight(self, kind) -> None:
+        """Подсветка совместимости при протягивании провода: None|'ok'|'convert'."""
+        if kind == self.highlight:
+            return
+        self.highlight = kind
+        r = style.PORT_RADIUS
+        if kind == "ok":
+            self.setPen(QPen(style.DROP_OK, 2.5))
+            self.setRect(-r - 2, -r - 2, 2 * r + 4, 2 * r + 4)
+        elif kind == "convert":
+            self.setPen(QPen(style.DROP_CONVERT, 2.5, Qt.PenStyle.DashLine))
+            self.setRect(-r - 2, -r - 2, 2 * r + 4, 2 * r + 4)
+        else:
+            self.setPen(QPen(QColor("#1A1A1A"), 1))
+            self.setRect(-r, -r, 2 * r, 2 * r)
 
     @property
     def node_id(self) -> str:

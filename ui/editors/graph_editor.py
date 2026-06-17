@@ -88,12 +88,16 @@ class GraphEditor(PartitionEditor):
         preview_btn = QPushButton("Предпросмотр", self)
         export_btn = QPushButton("Экспорт в .py", self)
         export_btn.setToolTip("Скомпилировать граф в самостоятельный Python-модуль")
+        legend_btn = QPushButton("Типы и конверсии", self)
+        legend_btn.setToolTip("Справка: цвета типов и узлы-конвертеры")
         check_btn.clicked.connect(self._on_check)
         preview_btn.clicked.connect(self._on_preview)
         export_btn.clicked.connect(self._on_export_python)
+        legend_btn.clicked.connect(self._on_show_legend)
         tools.addWidget(check_btn)
         tools.addWidget(preview_btn)
         tools.addWidget(export_btn)
+        tools.addWidget(legend_btn)
         tools.addStretch()
         root.addLayout(tools)
 
@@ -462,6 +466,10 @@ class GraphEditor(PartitionEditor):
         lines += ["", "ОТВЕТ:"]
         lines += [b.render_plain() for b in getattr(task, "answer", [])]
         self.preview.setPlainText("\n".join(lines))
+
+    def _on_show_legend(self) -> None:
+        from .graph_canvas.legend import TypeLegendDialog
+        TypeLegendDialog(self).exec()
 
     def _on_export_python(self) -> None:
         """Скомпилировать текущий (корневой) граф в .py и сохранить файлом."""

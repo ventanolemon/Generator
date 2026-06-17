@@ -13,6 +13,7 @@ Qt подгружается лениво только узлами-блокам�
 
 from __future__ import annotations
 
+from .conversions import conversion_table, find_converter
 from .errors import GraphError, GraphValidationError, RetryGeneration
 from .executor import GraphExecutor
 from .node import ExecContext, Node, Port
@@ -23,7 +24,7 @@ from .document import DocEdge, DocNode, GraphDocument
 from .nodes import DEFAULT_REGISTRY, build_default_registry
 
 __all__ = [
-    "PortType", "is_compatible",
+    "PortType", "is_compatible", "find_converter", "conversion_table",
     "Node", "Port", "ExecContext",
     "NodeRegistry", "DEFAULT_REGISTRY", "build_default_registry",
     "GraphSpec", "NodeSpec", "EdgeSpec",

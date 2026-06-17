@@ -10,9 +10,9 @@ from __future__ import annotations
 from ..registry import NodeRegistry
 from .assembly import BlockListNode, StaticTaskNode
 from .compute import ConstraintNode, FormulaNode, TemplateNode, VarDictNode
-from .content import TextBlockNode, TextNode
+from .content import TextBlockNode, TextNode, ToBlockNode
 from .control import (
-    CompareNode, NumberCheckNode, SelectNode,
+    CompareNode, GuardNode, NumberCheckNode, SelectNode,
 )
 from .english import (
     SentenceFillNode, SentencesFileNode, WordsFileNode, WordsTrainerNode,
@@ -20,6 +20,7 @@ from .english import (
 from .image import ImageBlockNode, ImageFileNode, LogicCircuitNode
 from .lists import (
     ListAppendNode, ListGetNode, ListJoinNode, ListLengthNode, ListNewNode,
+    RandomChoiceNode,
 )
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, OutputVarNode,
@@ -61,11 +62,11 @@ _ALL_NODES = [
     # source
     ConstantNumberNode, ConstantStringNode, ConstantBoolNode,
     RandomNaturalNode, RandomRealNode,
-    StringListNode, NumberRangeNode,
+    StringListNode, NumberRangeNode, RandomChoiceNode,
     # compute
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
     # control
-    CompareNode, NumberCheckNode, SelectNode,
+    CompareNode, NumberCheckNode, SelectNode, GuardNode,
     LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode,
     OutputVarNode, CaseNode,
     ShiftGetNode, ShiftSetNode,
@@ -101,7 +102,7 @@ _ALL_NODES = [
     # list (операции со списками)
     ListNewNode, ListAppendNode, ListLengthNode, ListGetNode, ListJoinNode,
     # content
-    TextNode, TextBlockNode,
+    TextNode, TextBlockNode, ToBlockNode,
     # assembly
     BlockListNode, StaticTaskNode,
 ]

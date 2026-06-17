@@ -24,6 +24,7 @@ PORT_COLORS: dict[PortType, QColor] = {
     PortType.WORDS:       QColor("#26A69A"),   # бирюзовый — словарь слов
     PortType.SENTENCES:   QColor("#4DB6AC"),   # светло-бирюзовый — предложения
     PortType.TASK:        QColor("#27AE60"),   # зелёный
+    PortType.ANY:         QColor("#D0D0D0"),   # светло-серый — полиморфный порт
 }
 
 # Цвет заголовка узла по категории.
@@ -45,6 +46,10 @@ CATEGORY_COLORS: dict[str, QColor] = {
 NODE_BG = QColor("#2B2B2B")
 NODE_BORDER = QColor("#555555")
 NODE_BORDER_SEL = QColor("#F7C948")
+
+# Подсветка портов при протягивании провода: прямо совместим / нужен конвертер.
+DROP_OK = QColor("#7CFC8A")          # зелёный — типы совместимы напрямую
+DROP_CONVERT = QColor("#F5B041")     # янтарный — есть конвертер X→Y
 NODE_TEXT = QColor("#ECECEC")
 SCENE_BG = QColor("#1E1E1E")
 GRID = QColor("#2A2A2A")

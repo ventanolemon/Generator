@@ -147,15 +147,52 @@ def _format_value(value) -> str:
     return format_number(v)
 
 
+def _join_prefix(prefix: str, body: str, relation: str = "=") -> str:
+    """
+    Приписать префикс к выражению/строке с разумной связкой.
+
+    Связка relation (по умолчанию '=') вставляется между префиксом и телом —
+    НО не дублируется, если префикс уже кончается знаком отношения/двоеточием
+    ('y\\' =' → 'y\\' = …', а не 'y\\' = = …'). relation='' (или пустой
+    префикс) — без связки, просто 'prefix body'. Так prefix перестаёт навязывать
+    лишний '='.
+    """
+    prefix = str(prefix or "").strip()
+    if not prefix:
+        return body
+    rel = str(relation or "").strip()
+    if not rel or prefix[-1] in "=:<>≈≤≥≠":
+        return f"{prefix} {body}"
+    return f"{prefix} {rel} {body}"
+
+
+def _marker_str(value) -> str:
+    """
+    Строковое представление значения маркера #имя# — полиморфно по типу:
+    число → аккуратно (целые без .0), bool → да/нет, sympy-выражение/матрица →
+    математическая запись (** → ^), строка и прочее → как есть. Позволяет
+    подставлять в текст не только числа, но и выбранные строки/выражения.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "да" if value else "нет"
+    if isinstance(value, (int, float)):
+        return _format_value(value)
+    if type(value).__module__.split(".")[0] == "sympy":
+        return str(value).replace("**", "^")
+    return str(value)
+
+
 def _fill_template(text: str, inputs: dict) -> str:
-    """Подставить #имя# из именованных входов и из словаря vars."""
+    """Подставить #имя# из именованных входов и из словаря vars (любой тип)."""
     variables = dict(inputs.get("vars") or {})
     for name in _marker_names(text):
         if name in inputs and inputs[name] is not None:
             variables[name] = inputs[name]
     out = str(text)
     for name, value in variables.items():
-        out = out.replace(f"#{name}#", _format_value(value))
+        out = out.replace(f"#{name}#", _marker_str(value))
     return out
 
 
@@ -180,7 +217,8 @@ class TemplateNode(Node):
     PARAMS_SCHEMA = {"text": {"type": "text", "default": ""}}
 
     def input_ports(self):
-        ports = [Port(n, PortType.NUMBER, required=False)
+        # Маркеры — полиморфные входы (ANY): принимают число, строку, выражение.
+        ports = [Port(n, PortType.ANY, required=False)
                  for n in _marker_names(self.params.get("text", ""))]
         ports.append(Port("vars", PortType.NUMBER_DICT, required=False))
         return ports
@@ -190,4 +228,4 @@ class TemplateNode(Node):
 
     @staticmethod
     def _format(value) -> str:
-        return _format_value(value)
+        return _marker_str(value)

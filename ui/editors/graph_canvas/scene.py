@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QGraphicsScene, QGraphicsView, QGraphicsPathItem, QMenu,
 )
 
-from core.graph import DocEdge, GraphDocument
+from core.graph import DocEdge, GraphDocument, find_converter, is_compatible
 
 from . import style
 from .frame import FRAMEABLE_TYPES, InnerNodeItem, LoopFrameItem, make_frame_item
@@ -309,9 +309,39 @@ class GraphScene(QGraphicsScene):
                 self._temp_edge.setPen(QPen(style.port_color(port.port.type), 2, Qt.PenStyle.DashLine))
                 self._temp_edge.setZValue(3)
                 self.addItem(self._temp_edge)
+                self._apply_drag_highlights(port)
                 event.accept()
                 return
         super().mousePressEvent(event)
+
+    # ---------- Подсветка совместимых портов при протягивании ----------
+
+    def _all_port_items(self) -> list[PortItem]:
+        return [it for it in self.items() if isinstance(it, PortItem)]
+
+    def _drop_kind(self, drag_from: PortItem, cand: PortItem):
+        """Совместимость кандидата с источником drag: 'ok' | 'convert' | None."""
+        if cand is drag_from or cand.is_output == drag_from.is_output:
+            return None
+        out_p, in_p = ((drag_from, cand) if drag_from.is_output else (cand, drag_from))
+        if out_p.node_id == in_p.node_id:
+            return None
+        # Провод через границу рамки невозможен (как в _commit_connection).
+        if self.frame_of_inner(out_p.node_item) is not self.frame_of_inner(in_p.node_item):
+            return None
+        if is_compatible(out_p.port.type, in_p.port.type):
+            return "ok"
+        if find_converter(out_p.port.type, in_p.port.type):
+            return "convert"
+        return None
+
+    def _apply_drag_highlights(self, drag_from: PortItem) -> None:
+        for p in self._all_port_items():
+            p.set_drop_highlight(self._drop_kind(drag_from, p))
+
+    def _clear_drag_highlights(self) -> None:
+        for p in self._all_port_items():
+            p.set_drop_highlight(None)
 
     def mouseMoveEvent(self, event):
         if self._temp_edge is not None and self._drag_from is not None:
@@ -329,13 +359,68 @@ class GraphScene(QGraphicsScene):
         if self._temp_edge is not None and self._drag_from is not None:
             self.removeItem(self._temp_edge)
             self._temp_edge = None
+            self._clear_drag_highlights()
             target = self._port_at(event.scenePos())
-            if can_connect(self._drag_from, target):
-                self._commit_connection(self._drag_from, target)
+            drag_from = self._drag_from
             self._drag_from = None
+            if can_connect(drag_from, target):
+                self._commit_connection(drag_from, target)
+            elif target is not None and self._drop_kind(drag_from, target) == "convert":
+                self._suggest_converter(drag_from, target, event)
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    # ---------- Вставка узла-конвертера ----------
+
+    def _converter_ports(self, type_id: str, src_type, dst_type):
+        """Вход (совместимый с src) и выход (совместимый с dst) узла-конвертера."""
+        ins, outs = self.doc.safe_ports(type_id, {})
+        inp = next((p for p in ins if is_compatible(src_type, p.type)), None)
+        outp = next((p for p in outs if is_compatible(p.type, dst_type)), None)
+        return inp, outp
+
+    def _suggest_converter(self, drag_from: PortItem, target: PortItem, event) -> None:
+        out_p, in_p = ((drag_from, target) if drag_from.is_output
+                       else (target, drag_from))
+        # Вставка в тело рамки пока не поддержана — подсказку не показываем.
+        if (self.frame_of_inner(out_p.node_item) is not None
+                or self.frame_of_inner(in_p.node_item) is not None):
+            return
+        type_id = find_converter(out_p.port.type, in_p.port.type)
+        if type_id is None:
+            return
+        entry = self._entries.get(type_id, {})
+        name = entry.get("display_name", type_id)
+        menu = QMenu()
+        act = menu.addAction(
+            f"Вставить «{name}» ({out_p.port.type.value} → {in_p.port.type.value})"
+        )
+        if menu.exec(event.screenPos()) is act:
+            self.insert_converter(out_p, in_p, type_id)
+
+    def insert_converter(self, out_port: PortItem, in_port: PortItem,
+                         type_id: str) -> bool:
+        """Вставить узел-конвертер между выходом out_port и входом in_port."""
+        inp, outp = self._converter_ports(type_id, out_port.port.type,
+                                          in_port.port.type)
+        if inp is None or outp is None:
+            return False
+        n_out = self.doc.nodes[out_port.node_id]
+        n_in = self.doc.nodes[in_port.node_id]
+        node = self.doc.add_node(type_id, x=(n_out.x + n_in.x) / 2,
+                                 y=(n_out.y + n_in.y) / 2)
+        self._spawn_node_item(node.id)
+        # Вытеснить старый провод на этом входе.
+        for e in list(self.edge_items):
+            if e.dst.node_id == in_port.node_id and e.dst.port.name == in_port.port.name:
+                self._remove_edge_item(e)
+        self.doc.add_edge(out_port.node_id, out_port.port.name, node.id, inp.name)
+        self._spawn_edge_item(out_port.node_id, out_port.port.name, node.id, inp.name)
+        self.doc.add_edge(node.id, outp.name, in_port.node_id, in_port.port.name)
+        self._spawn_edge_item(node.id, outp.name, in_port.node_id, in_port.port.name)
+        self.changed_doc.emit()
+        return True
 
     def _commit_connection(self, a: PortItem, b: PortItem) -> None:
         src, dst = (a, b) if a.is_output else (b, a)

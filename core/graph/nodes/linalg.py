@@ -947,15 +947,16 @@ class MatrixBlockNode(Node):
     PARAMS_SCHEMA = {
         "env": {"type": "enum", "values": list(_MATRIX_ENVS), "default": "pmatrix"},
         "prefix": {"type": "string", "default": "", "optional": True},
+        "relation": {"type": "string", "default": "=", "optional": True},
     }
 
     def compute(self, inputs, ctx: ExecContext):
         from core.blocks import FormulaBlock          # ленивый: тянет Qt
+        from .compute import _join_prefix
         sp = sympy()
         M = as_matrix(inputs["in"])
         env = self.params.get("env", "pmatrix")
-        latex = sp.latex(M, mat_delim="", mat_str=env)
-        prefix = str(self.params.get("prefix", "")).strip()
-        if prefix:
-            latex = f"{prefix} = {latex}"
+        latex = _join_prefix(self.params.get("prefix", ""),
+                             sp.latex(M, mat_delim="", mat_str=env),
+                             self.params.get("relation", "="))
         return {"out": FormulaBlock(latex)}
