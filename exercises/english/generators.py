@@ -68,6 +68,38 @@ def _read_json_lenient(path: Path):
     raise OSError(f"Не удалось прочитать JSON {path!s}.")
 
 
+# Глобальный кэш транскрипций — читается один раз за процесс. См.
+# tools/generate_transcriptions.py для процесса генерации файла.
+_global_transcriptions_cache: dict[str, str] | None = None
+
+
+def _load_global_transcriptions() -> dict[str, str]:
+    """
+    Подгрузить общий resources/transcriptions.json (если он существует).
+    Возвращает map term → IPA-строка. При отсутствии файла — пустой dict;
+    тренажёр в этом случае просто не покажет транскрипции.
+    """
+    global _global_transcriptions_cache
+    if _global_transcriptions_cache is not None:
+        return _global_transcriptions_cache
+    # Локальный импорт чтобы не тянуть const на верхний уровень модуля
+    # (он легковесный, но единый источник пути).
+    try:
+        from const import TRANSCRIPTIONS_PATH
+        if TRANSCRIPTIONS_PATH.exists():
+            data = _read_json_lenient(TRANSCRIPTIONS_PATH)
+            if isinstance(data, dict):
+                _global_transcriptions_cache = {
+                    k: v for k, v in data.items()
+                    if isinstance(k, str) and isinstance(v, str)
+                }
+                return _global_transcriptions_cache
+    except Exception:
+        pass
+    _global_transcriptions_cache = {}
+    return _global_transcriptions_cache
+
+
 def _levenshtein(a: str, b: str) -> int:
     """
     Расстояние Левенштейна — минимальное число односимвольных операций
@@ -141,6 +173,7 @@ class WordsSession(InteractiveTask):
         stats_store: WordStatsStore | None = None,
         user_id: str | None = None,
         priority_recent_wrong: float = DEFAULT_PRIORITY_RECENT_WRONG,
+        transcriptions: dict[str, str] | None = None,
     ):
         # _remaining: {english: russian}
         self._remaining: dict[str, str] = dict(words_dict)
@@ -161,6 +194,10 @@ class WordsSession(InteractiveTask):
         self._priority_recent_wrong = max(
             0.0, min(1.0, float(priority_recent_wrong))
         )
+
+        # IPA-транскрипции для показа в фидбэке. None / пустой dict —
+        # тренажёр работает как раньше, без подсказки произношения.
+        self._transcriptions: dict[str, str] = dict(transcriptions or {})
 
         # Снимок stats для всех слов словаря. Подгружаем один раз —
         # дальше держим в памяти и обновляем после submit, параллельно
@@ -309,6 +346,7 @@ class WordsSession(InteractiveTask):
                 expected=expected,
                 correct=ok,
                 tolerant_accept=tolerant_accept,
+                transcription=self._transcriptions.get(expected),
             )
         ]
 
@@ -386,11 +424,23 @@ class WordsTrainerGenerator(TaskGenerator):
         if self._cache is None:
             data = _read_json_lenient(self.words_path)
             self._cache = self._flatten_words(data)
+            self._cache_inline_transcriptions = self._extract_transcriptions(data)
             # Если имя генератора не задано явно — берём заголовок из JSON
             extracted = self._extract_title(data)
             if extracted and self.name.startswith("Английский:"):
                 self.name = extracted
         return self._cache
+
+    def _resolved_transcriptions(self) -> dict[str, str]:
+        """
+        Финальная карта term → IPA для текущего словаря: глобальный файл
+        перекрывается inline-полями `"transcription"` из vocab JSON.
+        """
+        merged: dict[str, str] = dict(_load_global_transcriptions())
+        merged.update(getattr(self, "_cache_inline_transcriptions", {}) or {})
+        # Оставляем только те термины, что реально есть в текущем словаре
+        words = self._cache or {}
+        return {t: ipa for t, ipa in merged.items() if t in words}
 
     @staticmethod
     def _flatten_words(data) -> dict[str, str]:
@@ -449,6 +499,34 @@ class WordsTrainerGenerator(TaskGenerator):
         return out
 
     @staticmethod
+    def _extract_transcriptions(data) -> dict[str, str]:
+        """
+        Достать inline-поля `"transcription"` из любого поддерживаемого
+        формата vocab JSON. Возвращает только то, что явно прописано в
+        самом словаре; глобальная таблица из resources/transcriptions.json
+        накладывается отдельно в _resolved_transcriptions().
+
+        Старые форматы без структуры vocabulary/term — возвращают пустой dict.
+        """
+        out: dict[str, str] = {}
+        if isinstance(data, dict):
+            if "vocabulary" in data and isinstance(data["vocabulary"], list):
+                for entry in data["vocabulary"]:
+                    if (isinstance(entry, dict)
+                            and isinstance(entry.get("term"), str)
+                            and isinstance(entry.get("transcription"), str)
+                            and entry["transcription"]):
+                        out[entry["term"]] = entry["transcription"]
+                return out
+            if "units" in data and isinstance(data["units"], list):
+                for unit in data["units"]:
+                    out.update(
+                        WordsTrainerGenerator._extract_transcriptions(unit)
+                    )
+                return out
+        return out
+
+    @staticmethod
     def _extract_title(data) -> str | None:
         """
         Извлечь человекочитаемый заголовок из нового формата JSON.
@@ -472,12 +550,14 @@ class WordsTrainerGenerator(TaskGenerator):
                 user_id = self.user_id_provider()
             except Exception:
                 user_id = None
+        words = self._load()
         return WordsSession(
-            self._load(),
+            words,
             tolerant=self.tolerant,
             stats_store=self.stats_store,
             user_id=user_id,
             priority_recent_wrong=self.priority_recent_wrong,
+            transcriptions=self._resolved_transcriptions(),
         )
 
 

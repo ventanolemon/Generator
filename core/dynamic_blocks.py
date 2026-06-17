@@ -233,6 +233,9 @@ class WordCorrectionBlock(Block):
                         не совпадает посимвольно с expected. В этом случае
                         diff и правильное написание всё равно показываются,
                         чтобы формирующая обратная связь не терялась.
+      transcription   — опциональная IPA-транскрипция expected; показывается
+                        рядом с правильным ответом как учебная подсказка
+                        по произношению. None — ничего не выводится.
     """
 
     def __init__(
@@ -242,12 +245,14 @@ class WordCorrectionBlock(Block):
         expected: str,
         correct: bool,
         tolerant_accept: bool = False,
+        transcription: str | None = None,
     ):
         self.translation = translation
         self.user_answer = user_answer
         self.expected = expected
         self.correct = correct
         self.tolerant_accept = tolerant_accept
+        self.transcription = transcription
 
     # --- Qt ---
 
@@ -290,15 +295,31 @@ class WordCorrectionBlock(Block):
 
         # Правильный ответ — при ошибке или при мягком принятии.
         if not self.correct or self.tolerant_accept:
-            right = QLabel(
+            right_html = (
                 f"&nbsp;&nbsp;ответ: "
                 f"<span style='font-family: Consolas, monospace; color:#2a5a8a;'>"
-                f"{_html_escape(self.expected)}</span>",
-                wrap,
+                f"{_html_escape(self.expected)}</span>"
             )
+            if self.transcription:
+                right_html += (
+                    f"&nbsp;&nbsp;<span style='color:#7a4a8a;'>"
+                    f"{_html_escape(self.transcription)}</span>"
+                )
+            right = QLabel(right_html, wrap)
             right.setTextFormat(Qt.TextFormat.RichText)
             right.setWordWrap(True)
             v.addWidget(right)
+        elif self.transcription:
+            # Ответили строго правильно — отдельной строки «ответ» нет,
+            # но транскрипцию всё равно показываем мелкой подсказкой.
+            tr = QLabel(
+                f"&nbsp;&nbsp;<span style='color:#7a4a8a;'>"
+                f"{_html_escape(self.transcription)}</span>",
+                wrap,
+            )
+            tr.setTextFormat(Qt.TextFormat.RichText)
+            tr.setWordWrap(True)
+            v.addWidget(tr)
 
         return wrap
 
@@ -316,7 +337,12 @@ class WordCorrectionBlock(Block):
             f"   ввод: {self.user_answer}",
         ]
         if not self.correct or self.tolerant_accept:
-            lines.append(f"   ответ: {self.expected}")
+            tail = self.expected
+            if self.transcription:
+                tail = f"{self.expected}  {self.transcription}"
+            lines.append(f"   ответ: {tail}")
+        elif self.transcription:
+            lines.append(f"   {self.transcription}")
         return "\n".join(lines)
 
     def render_docx(self, doc) -> None:
@@ -334,6 +360,10 @@ class WordCorrectionBlock(Block):
             p3 = doc.add_paragraph()
             run = p3.add_run(f"  ответ: {self.expected}")
             run.italic = True
+            if self.transcription:
+                p3.add_run(f"  {self.transcription}").italic = True
+        elif self.transcription:
+            doc.add_paragraph().add_run(f"  {self.transcription}").italic = True
 
 
 def _html_escape(s: str) -> str:
