@@ -32,7 +32,7 @@ from typing import Callable, List, Optional
 from core import (
     TaskGenerator, InteractiveTask, TurnResult, Capability,
     Block, TextBlock, StaticTask, STATIC_DEFAULT,
-    FillInTheBlankBlock, WordCorrectionBlock,
+    FillInTheBlankBlock, WordCorrectionBlock, AudioBlock,
     WordStat, WordStatsStore,
 )
 
@@ -98,6 +98,38 @@ def _load_global_transcriptions() -> dict[str, str]:
         pass
     _global_transcriptions_cache = {}
     return _global_transcriptions_cache
+
+
+# Глобальный кэш аудио-манифеста (term → абсолютный путь к WAV).
+_global_audio_cache: dict[str, str] | None = None
+
+
+def _load_global_audio() -> dict[str, str]:
+    """
+    Подгрузить resources/audio/index.json и развернуть имена файлов в
+    абсолютные пути. Возвращает map term → wav-путь. Отсутствие каталога/
+    манифеста — пустой dict (тренажёр работает без звука).
+    """
+    global _global_audio_cache
+    if _global_audio_cache is not None:
+        return _global_audio_cache
+    try:
+        from const import AUDIO_DIR
+        index_path = AUDIO_DIR / "index.json"
+        if index_path.exists():
+            data = _read_json_lenient(index_path)
+            if isinstance(data, dict):
+                _global_audio_cache = {
+                    term: str(AUDIO_DIR / fname)
+                    for term, fname in data.items()
+                    if isinstance(term, str) and isinstance(fname, str)
+                    and (AUDIO_DIR / fname).exists()
+                }
+                return _global_audio_cache
+    except Exception:
+        pass
+    _global_audio_cache = {}
+    return _global_audio_cache
 
 
 def _levenshtein(a: str, b: str) -> int:
@@ -174,6 +206,7 @@ class WordsSession(InteractiveTask):
         user_id: str | None = None,
         priority_recent_wrong: float = DEFAULT_PRIORITY_RECENT_WRONG,
         transcriptions: dict[str, str] | None = None,
+        audio_index: dict[str, str] | None = None,
     ):
         # _remaining: {english: russian}
         self._remaining: dict[str, str] = dict(words_dict)
@@ -198,6 +231,9 @@ class WordsSession(InteractiveTask):
         # IPA-транскрипции для показа в фидбэке. None / пустой dict —
         # тренажёр работает как раньше, без подсказки произношения.
         self._transcriptions: dict[str, str] = dict(transcriptions or {})
+
+        # Аудио-произношение: term → путь к WAV. Пустой — без кнопки звука.
+        self._audio_index: dict[str, str] = dict(audio_index or {})
 
         # Снимок stats для всех слов словаря. Подгружаем один раз —
         # дальше держим в памяти и обновляем после submit, параллельно
@@ -349,6 +385,10 @@ class WordsSession(InteractiveTask):
                 transcription=self._transcriptions.get(expected),
             )
         ]
+        # Кнопка прослушивания произношения — если для слова есть аудио.
+        audio_path = self._audio_index.get(expected)
+        if audio_path:
+            feedback.append(AudioBlock(audio_path, label=f"Прослушать «{expected}»"))
 
         # Обновляем межсессионную статистику (и снимок в памяти, и store).
         self._record_stat(expected, ok)
@@ -441,6 +481,15 @@ class WordsTrainerGenerator(TaskGenerator):
         # Оставляем только те термины, что реально есть в текущем словаре
         words = self._cache or {}
         return {t: ipa for t, ipa in merged.items() if t in words}
+
+    def _resolved_audio(self) -> dict[str, str]:
+        """
+        Карта term → путь к WAV для слов текущего словаря (из общего
+        манифеста resources/audio/index.json). Пустая, если аудио не собрано.
+        """
+        audio = _load_global_audio()
+        words = self._cache or {}
+        return {t: path for t, path in audio.items() if t in words}
 
     @staticmethod
     def _flatten_words(data) -> dict[str, str]:
@@ -558,6 +607,7 @@ class WordsTrainerGenerator(TaskGenerator):
             user_id=user_id,
             priority_recent_wrong=self.priority_recent_wrong,
             transcriptions=self._resolved_transcriptions(),
+            audio_index=self._resolved_audio(),
         )
 
 

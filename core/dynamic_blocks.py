@@ -8,14 +8,115 @@
 """
 
 from __future__ import annotations
+from pathlib import Path
 from typing import Callable, List
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, QPushButton
 )
 
 from core.content import Block
+
+
+# ---------- AudioBlock ----------
+#
+# Кнопка проигрывания пре-рендеренного произношения. Аудио готовится
+# скриптом tools/generate_audio.py; рантайм лишь воспроизводит WAV.
+#
+# QtMultimedia импортируется лениво и опционально: если модуль/звуковое
+# устройство недоступны, блок деградирует до выключенной кнопки с
+# подсказкой — приложение не падает и работает без звука.
+
+# Разделяемый плеер уровня процесса. QMediaPlayer должен пережить
+# проигрывание (иначе сборщик мусора оборвёт звук), поэтому держим
+# ссылки на плеер и аудиовыход в модульных переменных.
+_shared_player = None
+_shared_audio_output = None
+_qtmultimedia_checked = False
+_qtmultimedia_ok = False
+
+
+def _ensure_player():
+    """
+    Лениво создать общий QMediaPlayer. Возвращает (player, output) или
+    (None, None), если QtMultimedia недоступен.
+    """
+    global _shared_player, _shared_audio_output
+    global _qtmultimedia_checked, _qtmultimedia_ok
+    if _qtmultimedia_checked:
+        return (_shared_player, _shared_audio_output) if _qtmultimedia_ok \
+            else (None, None)
+    _qtmultimedia_checked = True
+    try:
+        from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+        _shared_audio_output = QAudioOutput()
+        _shared_player = QMediaPlayer()
+        _shared_player.setAudioOutput(_shared_audio_output)
+        _qtmultimedia_ok = True
+    except Exception:
+        _qtmultimedia_ok = False
+        _shared_player = None
+        _shared_audio_output = None
+    return (_shared_player, _shared_audio_output)
+
+
+class AudioBlock(Block):
+    """
+    Блок «прослушать произношение»: кнопка ▶, проигрывающая WAV-файл.
+
+    Параметры:
+      audio_path — путь к готовому WAV (из resources/audio).
+      label      — подпись на кнопке (по умолчанию «Прослушать»).
+
+    Рендер:
+      * Qt   — QPushButton; по клику играет файл через общий QMediaPlayer.
+               Если QtMultimedia или файл недоступны — кнопка выключена
+               с поясняющей подсказкой.
+      * plain — «[аудио: <label>]» (для буфера/отладки).
+      * docx  — короткая подпись в скобках; звук в документ не вставляется.
+    """
+
+    def __init__(self, audio_path: str | Path, label: str = "Прослушать"):
+        self.audio_path = Path(audio_path)
+        self.label = label
+
+    # --- Qt ---
+
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        btn = QPushButton(f"🔊 {self.label}", parent)
+        btn.setMaximumWidth(220)
+
+        player, _ = _ensure_player()
+        if player is None:
+            btn.setEnabled(False)
+            btn.setToolTip("Звук недоступен: модуль QtMultimedia не загружен.")
+            return btn
+        if not self.audio_path.exists():
+            btn.setEnabled(False)
+            btn.setToolTip(f"Аудиофайл не найден: {self.audio_path.name}")
+            return btn
+
+        def play():
+            from PyQt6.QtCore import QUrl
+            p, _out = _ensure_player()
+            if p is None:
+                return
+            p.stop()
+            p.setSource(QUrl.fromLocalFile(str(self.audio_path.resolve())))
+            p.play()
+
+        btn.clicked.connect(play)
+        return btn
+
+    # --- Plain / Docx ---
+
+    def render_plain(self) -> str:
+        return f"[аудио: {self.label}]"
+
+    def render_docx(self, doc) -> None:
+        run = doc.add_paragraph().add_run(f"[аудио: {self.label}]")
+        run.italic = True
 
 
 class FillInTheBlankBlock(Block):

@@ -14,3 +14,6 @@ UI_FILES_DIR = RESOURCES_DIR / "ui_files"
 # Используется WordsSession как fallback, если в самом vocab-JSON нет inline
 # поля "transcription". Файл опционален: если его нет — тренажёр работает без IPA.
 TRANSCRIPTIONS_PATH = RESOURCES_DIR / "transcriptions.json"
+# Каталог с пре-рендеренным аудио произношения и манифестом index.json
+# (см. tools/generate_audio.py). Опционален: без него тренажёр работает без звука.
+AUDIO_DIR = RESOURCES_DIR / "audio"

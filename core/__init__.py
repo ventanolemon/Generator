@@ -7,7 +7,7 @@
 
 from .content import Block
 from .blocks import TextBlock, FormulaBlock, ImageBlock, CodeBlock, TableBlock
-from .dynamic_blocks import FillInTheBlankBlock, WordCorrectionBlock
+from .dynamic_blocks import FillInTheBlankBlock, WordCorrectionBlock, AudioBlock
 from .task import Task, StaticTask, InteractiveTask, TurnResult
 from .generator import TaskGenerator, Capability, STATIC_DEFAULT
 from .registry import GeneratorRegistry, GeneratorFactory
@@ -19,7 +19,7 @@ __all__ = [
     # content
     "Block",
     "TextBlock", "FormulaBlock", "ImageBlock", "CodeBlock", "TableBlock",
-    "FillInTheBlankBlock", "WordCorrectionBlock",
+    "FillInTheBlankBlock", "WordCorrectionBlock", "AudioBlock",
     # tasks
     "Task", "StaticTask", "InteractiveTask", "TurnResult",
     # generator contract
