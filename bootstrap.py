@@ -85,17 +85,23 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
             name=gen.name,
         )
 
-    # Английские словари: 1000+i → раздел английского
+    # Английские словари: 1000+i → словарный тренажёр; 2000+i → multiple-choice
+    # по транскрипции (только для kind=="words"). Разнесённые диапазоны pid
+    # дают стабильные id при добавлении/удалении файлов в resources/words.
     if words_dir.exists():
+        from exercises.english.generators import _detect_kind
         for i, path in enumerate(sorted(words_dir.glob("*.json"))):
             pid = 1000 + i
-            # Имя зависит от типа: для предложений — пометим как «(предложения)»
             display = _english_display_name(path)
             repo.ensure_code_partition(
-                partition_id=pid,
-                subject_id=2,
-                name=display,
+                partition_id=pid, subject_id=2, name=display,
             )
+            if _detect_kind(path) == "words":
+                repo.ensure_code_partition(
+                    partition_id=2000 + i,
+                    subject_id=2,
+                    name=_english_transcription_display_name(path),
+                )
 
 
 def _english_display_name(path: Path) -> str:
@@ -105,6 +111,11 @@ def _english_display_name(path: Path) -> str:
     if kind == "sentences":
         return f"Английский: {path.stem} (предложения)"
     return f"Английский: {path.stem}"
+
+
+def _english_transcription_display_name(path: Path) -> str:
+    """Имя раздела для multiple-choice по транскрипции."""
+    return f"Английский: {path.stem} (транскрипция)"
 
 
 # ---------- Сборка реестра ----------
@@ -125,6 +136,9 @@ def build_registry(
 
     # 2. Английские словари
     if words_dir.exists():
+        from exercises.english.generators import (
+            _detect_kind, TranscriptionChoiceGenerator,
+        )
         for i, path in enumerate(sorted(words_dir.glob("*.json"))):
             pid = 1000 + i
             display = _english_display_name(path)
@@ -135,6 +149,14 @@ def build_registry(
             )
             if gen is not None:
                 registry.register(gen)
+            # Параллельно — multiple-choice по транскрипции для словарных юнитов
+            if _detect_kind(path) == "words":
+                tpid = 2000 + i
+                registry.register(TranscriptionChoiceGenerator(
+                    name=_english_transcription_display_name(path),
+                    words_path=path,
+                    partition_id=tpid,
+                ))
 
     # 3. БД: фабрики для физики, групп, тестов
     for subj in repo.list_subjects():

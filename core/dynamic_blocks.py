@@ -234,6 +234,142 @@ class FillInTheBlankBlock(Block):
                 run.italic = True
 
 
+# ---------- TranscriptionChoiceBlock ----------
+#
+# Задание формата «выбери правильную транскрипцию слова». Используется
+# генератором TranscriptionChoiceGenerator: на вход — термин, верная IPA
+# и список distractors; на выходе — интерактивный блок multiple-choice.
+#
+# При клике по варианту: правильный подсвечивается зелёным, выбранный
+# неверный — красным (а верный всё равно подсвечивается, чтобы студент
+# увидел ответ); все кнопки блокируются. В docx/plain рендере правильный
+# вариант помечается, чтобы документ оставался самодостаточным.
+
+
+class TranscriptionChoiceBlock(Block):
+    """
+    Multiple-choice по транскрипции.
+
+    Параметры:
+      term        — слово, для которого выбирается транскрипция.
+      correct     — правильная IPA-строка (целиком, включая ограничители /…/).
+      distractors — список заведомо неверных вариантов (3 шт. рекомендуется).
+      on_answer(correct: bool) — опциональный коллбек: вызывается один раз,
+                   когда студент сделал выбор. Несколько кликов не считаются.
+
+    Опции перемешиваются один раз при конструировании, чтобы повторный
+    render_qt не «прыгал» при resize.
+    """
+
+    def __init__(
+        self,
+        term: str,
+        correct: str,
+        distractors: list[str],
+        on_answer: "Callable[[bool], None] | None" = None,
+    ):
+        import random as _random
+        self.term = term
+        self.correct = correct
+        self._distractors = list(distractors)
+        self.on_answer = on_answer
+
+        # Дедупликация на всякий случай: distractor может случайно совпасть
+        # с correct (особенно если пул маленький). Сохраняем порядок.
+        seen: set[str] = {correct}
+        options: list[str] = [correct]
+        for d in self._distractors:
+            if d not in seen:
+                options.append(d)
+                seen.add(d)
+        _random.shuffle(options)
+        self.options: list[str] = options
+        self._correct_idx: int = options.index(correct)
+
+    # --- Qt ---
+
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        wrap = QWidget(parent)
+        v = QVBoxLayout(wrap)
+        v.setContentsMargins(4, 4, 4, 4)
+        v.setSpacing(6)
+
+        title = QLabel(
+            f"<span style='font-size: 14pt;'>"
+            f"Выберите правильную транскрипцию слова "
+            f"<b>{_html_escape(self.term)}</b>:</span>",
+            wrap,
+        )
+        title.setTextFormat(Qt.TextFormat.RichText)
+        title.setWordWrap(True)
+        v.addWidget(title)
+
+        buttons: list[QPushButton] = []
+        # Состояние «уже ответили» держим в замыкании через одноэлементный
+        # список — чтобы next click был no-op.
+        answered = [False]
+
+        def make_handler(idx: int):
+            def handler():
+                if answered[0]:
+                    return
+                answered[0] = True
+                is_correct = (idx == self._correct_idx)
+                # Правильный — всегда зелёный (даже если кликнули не его)
+                for j, btn in enumerate(buttons):
+                    if j == self._correct_idx:
+                        btn.setStyleSheet(
+                            "QPushButton { background: #d8f0d8; color: #1a4d1a; "
+                            "font-family: Consolas, monospace; text-align: left; "
+                            "padding: 6px 12px; }"
+                        )
+                    elif j == idx:
+                        btn.setStyleSheet(
+                            "QPushButton { background: #f4d8d8; color: #5a1a1a; "
+                            "font-family: Consolas, monospace; text-align: left; "
+                            "padding: 6px 12px; }"
+                        )
+                    btn.setEnabled(False)
+                if self.on_answer is not None:
+                    self.on_answer(is_correct)
+            return handler
+
+        for i, opt in enumerate(self.options):
+            btn = QPushButton(opt, wrap)
+            btn.setStyleSheet(
+                "QPushButton { font-family: Consolas, monospace; "
+                "text-align: left; padding: 6px 12px; }"
+            )
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(make_handler(i))
+            buttons.append(btn)
+            v.addWidget(btn)
+
+        return wrap
+
+    # --- Plain / Docx ---
+
+    def render_plain(self) -> str:
+        lines = [f"Выберите правильную транскрипцию слова «{self.term}»:"]
+        for i, opt in enumerate(self.options, start=1):
+            marker = " ← ответ" if i - 1 == self._correct_idx else ""
+            lines.append(f"  {i}. {opt}{marker}")
+        return "\n".join(lines)
+
+    def render_docx(self, doc) -> None:
+        p = doc.add_paragraph()
+        p.add_run("Выберите правильную транскрипцию слова ")
+        p.add_run(self.term).bold = True
+        p.add_run(":")
+        for i, opt in enumerate(self.options, start=1):
+            line = doc.add_paragraph()
+            run = line.add_run(f"  {i}. {opt}")
+            if i - 1 == self._correct_idx:
+                # Правильный вариант — жирным, в скобках ставим метку
+                run.bold = True
+                line.add_run("  ← правильный ответ").italic = True
+
+
 # ---------- Лейаут с переносом строк, для FillInTheBlankBlock ----------
 
 from PyQt6.QtWidgets import QLayout, QSizePolicy

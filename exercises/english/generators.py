@@ -33,6 +33,7 @@ from core import (
     TaskGenerator, InteractiveTask, TurnResult, Capability,
     Block, TextBlock, StaticTask, STATIC_DEFAULT,
     FillInTheBlankBlock, WordCorrectionBlock, AudioBlock,
+    TranscriptionChoiceBlock,
     WordStat, WordStatsStore,
 )
 
@@ -665,6 +666,136 @@ class SentenceFillGenerator(TaskGenerator):
         return StaticTask(
             statement=statement, answer=answer,
             meta={"partition_id": self.partition_id},
+        )
+
+
+# ---------- TranscriptionChoiceGenerator (STATIC, multiple-choice) ----------
+
+class TranscriptionChoiceGenerator(TaskGenerator):
+    """
+    Задание: выбрать правильную IPA-транскрипцию для термина из словаря.
+
+    Цель — закрепить ассоциацию «написание ↔ звучание»: терминов с
+    готовой транскрипцией ~405 в корпусе, для каждого юнита берётся одно
+    из его слов как «правильный», а distractors — из всего глобального
+    пула транскрипций, отфильтрованного по похожей длине строки.
+
+    Архитектурно — обычный STATIC-генератор: возвращает StaticTask с
+    TranscriptionChoiceBlock в условии. Это значит, что он попадает в
+    табличный вид, экспортируется в docx (с пометкой правильного
+    варианта) и может быть включён в группу или тест наряду с любым
+    другим STATIC-заданием.
+
+    Если в текущем словаре нет ни одного термина с известной IPA —
+    задача отдаёт информативный StaticTask «нет данных», а не падает.
+    """
+
+    capabilities = STATIC_DEFAULT
+
+    # Сколько вариантов всего и сколько distractors из общего пула
+    NUM_OPTIONS = 4
+    LENGTH_TOLERANCE = 0.35   # ±35% от длины правильной IPA для distractors
+
+    def __init__(
+        self,
+        name: str,
+        words_path,
+        partition_id: int | None = None,
+    ):
+        self.name = name
+        self.partition_id = partition_id
+        self.words_path = Path(words_path)
+        self._cache_terms: list[str] | None = None
+        self._cache_inline_trans: dict[str, str] = {}
+
+    def _load_terms(self) -> list[str]:
+        """Список терминов этого юнита, у которых есть IPA. Кэшируется."""
+        if self._cache_terms is not None:
+            return self._cache_terms
+        data = _read_json_lenient(self.words_path)
+        words = WordsTrainerGenerator._flatten_words(data)
+        self._cache_inline_trans = (
+            WordsTrainerGenerator._extract_transcriptions(data)
+        )
+        # Слово годится, если для него есть IPA либо inline, либо глобально
+        global_trans = _load_global_transcriptions()
+        self._cache_terms = [
+            t for t in words
+            if t in self._cache_inline_trans or t in global_trans
+        ]
+        return self._cache_terms
+
+    def _ipa_for(self, term: str) -> str | None:
+        """IPA термина: inline побеждает глобальный файл."""
+        return (
+            self._cache_inline_trans.get(term)
+            or _load_global_transcriptions().get(term)
+        )
+
+    def _pick_distractors(
+        self, correct_ipa: str, exclude_term: str, k: int,
+    ) -> list[str]:
+        """
+        Выбрать k фальшивых вариантов IPA из общего пула транскрипций.
+        Фильтр по близости длины делает варианты визуально похожими и
+        задачу — содержательной. Если близких не хватило (редко) —
+        дополняем случайными.
+        """
+        global_trans = _load_global_transcriptions()
+        target_len = len(correct_ipa)
+        tol = self.LENGTH_TOLERANCE
+        lo = int(target_len * (1 - tol))
+        hi = int(target_len * (1 + tol))
+
+        seen = {correct_ipa}
+        nearby: list[str] = []
+        rest: list[str] = []
+        for t, ipa in global_trans.items():
+            if t == exclude_term or ipa in seen:
+                continue
+            seen.add(ipa)
+            if lo <= len(ipa) <= hi:
+                nearby.append(ipa)
+            else:
+                rest.append(ipa)
+
+        random.shuffle(nearby)
+        result = nearby[:k]
+        if len(result) < k:
+            random.shuffle(rest)
+            result.extend(rest[:k - len(result)])
+        return result[:k]
+
+    def generate(self) -> StaticTask:
+        terms = self._load_terms()
+        if not terms:
+            return StaticTask(
+                statement=[TextBlock(
+                    "В этом словаре нет терминов с известной транскрипцией. "
+                    "Сгенерируйте файл resources/transcriptions.json "
+                    "через tools/generate_transcriptions.py."
+                )],
+                answer=[],
+                meta={"partition_id": self.partition_id},
+            )
+
+        term = random.choice(terms)
+        correct_ipa = self._ipa_for(term) or ""
+        distractors = self._pick_distractors(
+            correct_ipa, exclude_term=term, k=self.NUM_OPTIONS - 1,
+        )
+
+        statement: list[Block] = [
+            TranscriptionChoiceBlock(
+                term=term, correct=correct_ipa, distractors=distractors,
+            )
+        ]
+        answer: list[Block] = [
+            TextBlock(f"Правильная транскрипция «{term}»: {correct_ipa}"),
+        ]
+        return StaticTask(
+            statement=statement, answer=answer,
+            meta={"partition_id": self.partition_id, "term": term},
         )
 
 
