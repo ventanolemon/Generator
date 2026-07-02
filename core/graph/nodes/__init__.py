@@ -18,9 +18,10 @@ from .english import (
     SentenceFillNode, SentencesFileNode, WordsFileNode, WordsTrainerNode,
 )
 from .image import ImageBlockNode, ImageFileNode, LogicCircuitNode
+from .plot import ComplexPointsPlotNode, ComplexRegionPlotNode
 from .lists import (
-    ListAppendNode, ListGetNode, ListJoinNode, ListLengthNode, ListNewNode,
-    RandomChoiceNode,
+    ListAppendNode, ListConcatNode, ListGetNode, ListJoinNode, ListLengthNode,
+    ListNewNode, RandomChoiceNode,
 )
 from .loop import (
     CaseNode, InputVarNode, LoopIndexNode, MapItemNode, MapNode, OutputVarNode,
@@ -52,8 +53,8 @@ from .symbolic import (
     ExprBlockNode, ExprConstNode, FactorNode, FourierNode, ImNode,
     IntegrateNode, InverseFourierNode, InverseLaplaceNode, IsConvergentNode,
     LaplaceNode, LimitNode, LimitDisplayNode, RandomPolynomialNode, ReNode, ResidueNode,
-    SeriesNode, SimplifyNode, SolveNode, SubstituteNode, SumDisplayNode,
-    SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
+    SeriesNode, SimplifyNode, SolveNode, SubsExprNode, SubstituteNode,
+    SumDisplayNode, SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
 )
 
 _ALL_NODES = [
@@ -73,7 +74,8 @@ _ALL_NODES = [
     # symbolic (символьная арифметика)
     SymbolNode, ExprConstNode, RandomPolynomialNode,
     ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
-    CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, EvaluateNode,
+    CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, SubsExprNode,
+    EvaluateNode,
     DiffNode, IntegrateNode, LimitNode, LimitDisplayNode, SeriesNode,
     SummationNode, SumDisplayNode, IsConvergentNode,
     ReNode, ImNode, ArgNode, AbsNode, ConjugateNode, ExpandComplexNode,
@@ -99,8 +101,11 @@ _ALL_NODES = [
     WordsFileNode, WordsTrainerNode, SentencesFileNode, SentenceFillNode,
     # image (изображения / ОПВС)
     LogicCircuitNode, ImageFileNode, ImageBlockNode,
+    # plot (графика на комплексной плоскости)
+    ComplexPointsPlotNode, ComplexRegionPlotNode,
     # list (операции со списками)
-    ListNewNode, ListAppendNode, ListLengthNode, ListGetNode, ListJoinNode,
+    ListNewNode, ListAppendNode, ListConcatNode, ListLengthNode, ListGetNode,
+    ListJoinNode,
     # content
     TextNode, TextBlockNode, ToBlockNode,
     # assembly

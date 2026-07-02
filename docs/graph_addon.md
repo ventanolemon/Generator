@@ -727,3 +727,15 @@ exercises.opvs.png_generator, воспроизводимо через глоба
 (5) `to_latex` печатает ln вместо log. Известный footgun задокументирован:
 в `formula` буквы c/e/pi/g — физические константы, не переменные. Тесты:
 `tests/test_graph_series_exam.py` (17).
+
+**Контрольная по ТФКП + категория plot. ✅ СДЕЛАНО.** 4 генератора по банку
+методички (`exercises/graph_examples/complex_exam.py`, алгоритмы —
+`docs/complex_exam_algorithms.md`): формы комплексного числа (точные r и
+структурный φ через Mod, условие неупрощённым через UnevaluatedExpr),
+области на плоскости (4 семейства), значения многозначной степени (точки
+ветвей циклом через expr-туннель), трансцендентные уравнения (e^z/cos/sh,
+обе ветви одним циклом K,S=±1). Язык получил графику: узлы
+`complex_points_plot`/`complex_region_plot` (LIST → IMAGE, ленивый
+matplotlib, AST-whitelist условий), `subs_expr` (EXPR в EXPR — шаблонные
+ответы с точными константами), `list_concat`; `as_expr` интифицирует целые
+float (z^4.0 → z^4). Тесты: `tests/test_graph_complex_exam.py` (18).

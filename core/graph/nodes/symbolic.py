@@ -305,11 +305,54 @@ class SubstituteNode(Node):
         sp = sympy()
         expr = as_expr(inputs["in"])
         values = inputs.get("values", {}) or {}
-        mapping = {sp.Symbol(str(k)): v for k, v in values.items()}
+        # Символы ищем в выражении по имени (предположения могут различаться).
+        free = {s.name: s for s in expr.free_symbols}
+        mapping = {
+            free.get(str(k), sp.Symbol(str(k))): v for k, v in values.items()
+        }
         try:
             result = expr.subs(mapping)
         except Exception as e:
             raise RetryGeneration(f"expr_subs {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class SubsExprNode(Node):
+    """
+    Подстановка ВЫРАЖЕНИЯ вместо символа: in[name := value] → EXPR.
+
+    Дополняет expr_subs (тот подставляет только числа из NUMBER_DICT): здесь
+    значением служит любой EXPR — так собираются шаблонные ответы с точными
+    величинами («z = r·(cos φ + i·sin φ)» c r = 576, φ = π/3). Символ ищется
+    в выражении по имени.
+    """
+    type_id = "subs_expr"
+    category = "symbolic"
+    display_name = "Подстановка выражения"
+    description = ("Заменить символ name выражением value (EXPR в EXPR) — "
+                   "шаблонные формулы с точными значениями. Вход: in, value "
+                   "(EXPR). Выход: EXPR.")
+    INPUTS = [Port("in", PortType.EXPR), Port("value", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"name": {"type": "string", "default": "w"}}
+
+    def validate_params(self) -> None:
+        if not str(self.params.get("name", "")).strip():
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: пустое имя подставляемого символа."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        value = as_expr(inputs["value"])
+        name = str(self.params.get("name", "w")).strip()
+        free = {s.name: s for s in expr.free_symbols}
+        sym = free.get(name, sp.Symbol(name))
+        try:
+            result = expr.subs(sym, value)
+        except Exception as e:
+            raise RetryGeneration(f"subs_expr {self.node_id!r}: {e}")
         return {"out": result}
 
 

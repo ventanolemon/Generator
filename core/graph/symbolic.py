@@ -110,7 +110,12 @@ def as_expr(value, symbols: dict | None = None):
     if isinstance(value, sp.Basic):
         return value
     if isinstance(value, (int, float)):
-        return sp.nsimplify(value) if isinstance(value, int) else sp.Float(value)
+        # Целочисленные значения (в т.ч. float 4.0 из NUMBER-провода) — точным
+        # Integer: иначе z**4.0 не раскрывается и ответы «плывут» в float.
+        f = float(value)
+        if f == int(f):
+            return sp.Integer(int(f))
+        return sp.Float(f)
     return parse_expr(str(value), symbols)
 
 

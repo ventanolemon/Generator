@@ -192,7 +192,13 @@ def _marker_str(value) -> str:
     if isinstance(value, (int, float)):
         return _format_value(value)
     if type(value).__module__.split(".")[0] == "sympy":
-        return str(value).replace("**", "^")
+        # Человекочитаемая математическая запись: ^, π, i, ln.
+        s = str(value).replace("**", "^")
+        s = re.sub(r"\blog\(", "ln(", s)
+        s = re.sub(r"\bsqrt\(", "√(", s)
+        s = re.sub(r"\bpi\b", "π", s)
+        s = re.sub(r"\bI\b", "i", s)
+        return s
     return str(value)
 
 

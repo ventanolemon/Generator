@@ -13,8 +13,12 @@
 
 from .examples import EXAMPLES, example_graph, example_names
 from .series_exam import SERIES_EXAM, generate_variant, series_exam_names
+from .complex_exam import (
+    COMPLEX_EXAM, complex_exam_names, generate_complex_variant,
+)
 
 __all__ = [
     "EXAMPLES", "example_graph", "example_names",
     "SERIES_EXAM", "generate_variant", "series_exam_names",
+    "COMPLEX_EXAM", "complex_exam_names", "generate_complex_variant",
 ]
