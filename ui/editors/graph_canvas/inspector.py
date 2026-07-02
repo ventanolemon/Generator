@@ -23,7 +23,7 @@ from core.graph import GraphDocument
 _PORT_AFFECTING = {
     "var_dict": {"names"},
     "block_list": {"count"},
-    "formula": {"expr"},        # переменные формулы → именованные входы
+    "formula": {"expr", "constants"},  # переменные/режим констант → входы
     "template": {"text"},       # маркеры #имя# → именованные входы
     "text": {"text"},           # то же для узла «Текст»
     # imports → входы; outputs (туннели) и registers (reg_<имя>) → выходы
@@ -40,6 +40,7 @@ _PORT_AFFECTING = {
     "shift_get": {"type"},      # тип регистра меняет выход
     "shift_set": {"type"},      # тип регистра меняет вход и выход
     "select": {"value_type"},   # тип ветвей меняет порты on_true/on_false/out
+    "pick": {"count", "value_type"},  # число и тип каналов мультиплексора
 }
 
 

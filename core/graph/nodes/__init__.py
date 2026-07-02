@@ -12,7 +12,7 @@ from .assembly import BlockListNode, StaticTaskNode
 from .compute import ConstraintNode, FormulaNode, TemplateNode, VarDictNode
 from .content import TextBlockNode, TextNode, ToBlockNode
 from .control import (
-    CompareNode, GuardNode, NumberCheckNode, SelectNode,
+    CompareNode, GuardNode, NumberCheckNode, PickNode, SelectNode,
 )
 from .english import (
     SentenceFillNode, SentencesFileNode, WordsFileNode, WordsTrainerNode,
@@ -66,7 +66,7 @@ _ALL_NODES = [
     # compute
     VarDictNode, FormulaNode, ConstraintNode, TemplateNode,
     # control
-    CompareNode, NumberCheckNode, SelectNode, GuardNode,
+    CompareNode, NumberCheckNode, SelectNode, PickNode, GuardNode,
     LoopIndexNode, RepeatNode, MapItemNode, MapNode, InputVarNode,
     OutputVarNode, CaseNode,
     ShiftGetNode, ShiftSetNode,

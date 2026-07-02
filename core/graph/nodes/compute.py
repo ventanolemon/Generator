@@ -54,12 +54,21 @@ class FormulaNode(Node):
     в самой формуле — отдельный var_dict больше не нужен. Например, формула
     'a+b' даёт два входа a и b. Запасной вход vars (NUMBER_DICT) тоже принимается
     (для совместимости и динамических наборов).
+
+    Параметр constants: 'on' (по умолчанию) — буквы c, e, g, G, h, … означают
+    физические константы (скорость света и т.п.), как в физических формулах;
+    'off' — эти буквы становятся обычными входами-переменными («чистая
+    математика»). pi/π — константа всегда.
     """
     type_id = "formula"
     category = "compute"
     display_name = "Формула"
     OUTPUTS = [Port("out", PortType.NUMBER)]
-    PARAMS_SCHEMA = {"expr": {"type": "string", "default": ""}}
+    PARAMS_SCHEMA = {
+        "expr": {"type": "string", "default": ""},
+        "constants": {"type": "enum", "values": ["on", "off"],
+                      "default": "on", "optional": True},
+    }
 
     def validate_params(self) -> None:
         expr = self.params.get("expr")
@@ -73,7 +82,10 @@ class FormulaNode(Node):
     def required_names(self) -> set[str]:
         """Имена переменных, нужные формуле (для подсказок редактора/портов)."""
         try:
-            return extract_variable_names(self.params.get("expr", ""))
+            return extract_variable_names(
+                self.params.get("expr", ""),
+                include_constants=self.params.get("constants", "on") == "off",
+            )
         except Exception:
             return set()
 

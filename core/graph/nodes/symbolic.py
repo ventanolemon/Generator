@@ -821,7 +821,8 @@ class ExprBlockNode(Node):
     type_id = "expr_block"
     category = "symbolic"
     display_name = "Формульный блок"
-    INPUTS = [Port("in", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("prefix", PortType.STRING, required=False)]
     OUTPUTS = [Port("out", PortType.BLOCK)]
     PARAMS_SCHEMA = {
         "prefix": {"type": "string", "default": "", "optional": True},
@@ -832,6 +833,10 @@ class ExprBlockNode(Node):
         from core.blocks import FormulaBlock          # ленивый: тянет Qt
         from .compute import _join_prefix
         expr = as_expr(inputs["in"])
-        latex = _join_prefix(self.params.get("prefix", ""), to_latex(expr),
+        # Префикс — вход (значение из графа) либо статический параметр.
+        prefix = inputs.get("prefix")
+        if prefix is None:
+            prefix = self.params.get("prefix", "")
+        latex = _join_prefix(prefix, to_latex(expr),
                              self.params.get("relation", "="))
         return {"out": FormulaBlock(latex)}

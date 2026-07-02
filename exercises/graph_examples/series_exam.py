@@ -148,8 +148,6 @@ _S3_LEIBNIZ = {
         {"id": "term", "type": "expr_const",
          "params": {"expr": "(-1)**(n+1) * n**p / (n**q + c)",
                     "vars": ["p", "q", "c", "n"]}},
-        {"id": "k0", "type": "compare", "params": {"op": "==", "b": 0}},
-        {"id": "k1", "type": "compare", "params": {"op": "==", "b": 1}},
         {"id": "nsym", "type": "symbol", "params": {"name": "n"}},
         {"id": "disp", "type": "sum_display",
          "params": {"lower": "1", "upper": "oo"}},
@@ -164,8 +162,9 @@ _S3_LEIBNIZ = {
             "из модулей расходится."}},
         {"id": "ansDiv", "type": "text", "params": {"text":
             "Расходится: aₙ ↛ 0 — нарушено необходимое условие сходимости."}},
-        {"id": "sel1", "type": "select", "params": {"value_type": "block"}},
-        {"id": "ans", "type": "select", "params": {"value_type": "block"}},
+        # Три варианта ответа — один pick по категории (вместо цепочки select).
+        {"id": "ans", "type": "pick",
+         "params": {"count": 3, "value_type": "block"}},
         {"id": "task", "type": "static_task"},
     ],
     "edges": [
@@ -173,17 +172,14 @@ _S3_LEIBNIZ = {
         {"from": "p:out", "to": "vd:p"}, {"from": "q:out", "to": "vd:q"},
         {"from": "cc:out", "to": "vd:c"},
         {"from": "vd:out", "to": "term:values"},
-        {"from": "k:out", "to": "k0:a"}, {"from": "k:out", "to": "k1:a"},
         {"from": "term:out", "to": "disp:term"},
         {"from": "nsym:out", "to": "disp:index"},
         {"from": "disp:out", "to": "fb:in"},
         {"from": "intro:out", "to": "stmt:in0"}, {"from": "fb:out", "to": "stmt:in1"},
-        {"from": "k1:out", "to": "sel1:cond"},
-        {"from": "ansCond:out", "to": "sel1:on_true"},
-        {"from": "ansDiv:out", "to": "sel1:on_false"},
-        {"from": "k0:out", "to": "ans:cond"},
-        {"from": "ansAbs:out", "to": "ans:on_true"},
-        {"from": "sel1:out", "to": "ans:on_false"},
+        {"from": "k:out", "to": "ans:index"},
+        {"from": "ansAbs:out", "to": "ans:in0"},
+        {"from": "ansCond:out", "to": "ans:in1"},
+        {"from": "ansDiv:out", "to": "ans:in2"},
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ans:out", "to": "task:answer"},
     ],
@@ -192,17 +188,36 @@ _S3_LEIBNIZ = {
 
 
 # ---------- №4. Степенной ряд: радиус, интервал, концы, равномерная ----------
+# Четыре семейства коэффициентов (по банку «Задача 2.2») с разным поведением
+# концов: fam выбирает и структуру условия (pick expr), и текст ответа
+# (pick block). Радиус всегда R — заложен конструктивно.
 _S4_POWER = {
     "nodes": [
+        {"id": "fam", "type": "random_natural", "params": {"min": 0, "max": 3}},
         {"id": "R", "type": "random_natural", "params": {"min": 1, "max": 3}},
         {"id": "x0", "type": "random_natural", "params": {"min": 0, "max": 3}},
-        {"id": "a", "type": "random_natural", "params": {"min": 1, "max": 4}},
+        {"id": "a", "type": "random_natural", "params": {"min": 2, "max": 4}},
         {"id": "b", "type": "random_natural", "params": {"min": 1, "max": 3}},
         {"id": "vd", "type": "var_dict",
          "params": {"names": ["a", "b", "R", "x0"]}},
-        {"id": "term", "type": "expr_const",
+        # fam 0: правый конец условно, левый расходится.
+        {"id": "t0", "type": "expr_const",
          "params": {"expr": "(-1)**n * (x - x0)**n / ((a*n + b) * R**n)",
                     "vars": ["a", "b", "R", "x0", "x", "n"]}},
+        # fam 1: зеркально — левый условно, правый расходится.
+        {"id": "t1", "type": "expr_const",
+         "params": {"expr": "(x - x0)**n / ((a*n + b) * R**n)",
+                    "vars": ["a", "b", "R", "x0", "x", "n"]}},
+        # fam 2: оба конца сходятся абсолютно (знаменатель ~ n²).
+        {"id": "t2", "type": "expr_const",
+         "params": {"expr": "(x - x0)**n / ((a*n**2 + b) * R**n)",
+                    "vars": ["a", "b", "R", "x0", "x", "n"]}},
+        # fam 3: оба конца расходятся (aₙ ↛ 0).
+        {"id": "t3", "type": "expr_const",
+         "params": {"expr": "n * (x - x0)**n / R**n",
+                    "vars": ["R", "x0", "x", "n"]}},
+        {"id": "term", "type": "pick",
+         "params": {"count": 4, "value_type": "expr"}},
         {"id": "lo", "type": "formula", "params": {"expr": "x0 - R"}},
         {"id": "hi", "type": "formula", "params": {"expr": "x0 + R"}},
         {"id": "nsym", "type": "symbol", "params": {"name": "n"}},
@@ -214,52 +229,98 @@ _S4_POWER = {
             "сходимости."}},
         {"id": "fb", "type": "expr_block"},
         {"id": "stmt", "type": "block_list", "params": {"count": 2}},
-        {"id": "ans", "type": "text", "params": {"text":
-            "R = #R# (Даламбер: |cₙ/cₙ₊₁| → #R#). Интервал сходимости: "
-            "(#lo#; #hi#]. При x = #hi#: Σ(−1)ⁿ/(#a#n+#b#) — сходится условно "
-            "(Лейбниц). При x = #lo#: Σ1/(#a#n+#b#) — расходится (сравнение с "
-            "гармоническим). Равномерная сходимость: на любом отрезке "
-            "[c; #hi#], c > #lo# (теорема Абеля); на всём интервале — нет."}},
-        {"id": "ansb", "type": "to_block", "params": {"relation": ""}},
+        {"id": "a0", "type": "text", "params": {"text":
+            "R = #R#. Интервал: (#lo#; #hi#]. При x = #hi#: Σ(−1)ⁿ/(#a#n+#b#) "
+            "— сходится условно (Лейбниц); при x = #lo#: Σ1/(#a#n+#b#) — "
+            "расходится (гармонический). Равномерно: на [c; #hi#] при любом "
+            "c > #lo# (Абель)."}},
+        {"id": "a1", "type": "text", "params": {"text":
+            "R = #R#. Интервал: [#lo#; #hi#). При x = #lo#: Σ(−1)ⁿ/(#a#n+#b#) "
+            "— сходится условно (Лейбниц); при x = #hi#: Σ1/(#a#n+#b#) — "
+            "расходится. Равномерно: на [#lo#; c] при любом c < #hi# (Абель)."}},
+        {"id": "a2", "type": "text", "params": {"text":
+            "R = #R#. Сходится на всём отрезке [#lo#; #hi#]: на концах "
+            "Σ(±1)ⁿ/(#a#n²+#b#) сходится абсолютно (p-ряд, s = 2). Равномерно "
+            "на всём [#lo#; #hi#] (Вейерштрасс, Mₙ = 1/(#a#n²+#b#))."}},
+        {"id": "a3", "type": "text", "params": {"text":
+            "R = #R#. Интервал: (#lo#; #hi#) — на обоих концах aₙ = ±n ↛ 0, "
+            "ряд расходится. Равномерно на любом [α; β] ⊂ (#lo#; #hi#); на "
+            "всём интервале — нет."}},
+        {"id": "ans", "type": "pick",
+         "params": {"count": 4, "value_type": "block"}},
         {"id": "task", "type": "static_task"},
     ],
     "edges": [
         {"from": "a:out", "to": "vd:a"}, {"from": "b:out", "to": "vd:b"},
         {"from": "R:out", "to": "vd:R"}, {"from": "x0:out", "to": "vd:x0"},
-        {"from": "vd:out", "to": "term:values"},
+        {"from": "vd:out", "to": "t0:values"}, {"from": "vd:out", "to": "t1:values"},
+        {"from": "vd:out", "to": "t2:values"}, {"from": "vd:out", "to": "t3:values"},
+        {"from": "fam:out", "to": "term:index"},
+        {"from": "t0:out", "to": "term:in0"}, {"from": "t1:out", "to": "term:in1"},
+        {"from": "t2:out", "to": "term:in2"}, {"from": "t3:out", "to": "term:in3"},
         {"from": "x0:out", "to": "lo:x0"}, {"from": "R:out", "to": "lo:R"},
         {"from": "x0:out", "to": "hi:x0"}, {"from": "R:out", "to": "hi:R"},
         {"from": "term:out", "to": "disp:term"},
         {"from": "nsym:out", "to": "disp:index"},
         {"from": "disp:out", "to": "fb:in"},
         {"from": "intro:out", "to": "stmt:in0"}, {"from": "fb:out", "to": "stmt:in1"},
-        {"from": "R:out", "to": "ans:R"},
-        {"from": "lo:out", "to": "ans:lo"}, {"from": "hi:out", "to": "ans:hi"},
-        {"from": "a:out", "to": "ans:a"}, {"from": "b:out", "to": "ans:b"},
-        {"from": "ans:out", "to": "ansb:in"},
+        {"from": "R:out", "to": "a0:R"}, {"from": "lo:out", "to": "a0:lo"},
+        {"from": "hi:out", "to": "a0:hi"}, {"from": "a:out", "to": "a0:a"},
+        {"from": "b:out", "to": "a0:b"},
+        {"from": "R:out", "to": "a1:R"}, {"from": "lo:out", "to": "a1:lo"},
+        {"from": "hi:out", "to": "a1:hi"}, {"from": "a:out", "to": "a1:a"},
+        {"from": "b:out", "to": "a1:b"},
+        {"from": "R:out", "to": "a2:R"}, {"from": "lo:out", "to": "a2:lo"},
+        {"from": "hi:out", "to": "a2:hi"}, {"from": "a:out", "to": "a2:a"},
+        {"from": "b:out", "to": "a2:b"},
+        {"from": "R:out", "to": "a3:R"}, {"from": "lo:out", "to": "a3:lo"},
+        {"from": "hi:out", "to": "a3:hi"},
+        {"from": "fam:out", "to": "ans:index"},
+        {"from": "a0:out", "to": "ans:in0"}, {"from": "a1:out", "to": "ans:in1"},
+        {"from": "a2:out", "to": "ans:in2"}, {"from": "a3:out", "to": "ans:in3"},
         {"from": "stmt:out", "to": "task:statement"},
-        {"from": "ansb:out", "to": "task:answer"},
+        {"from": "ans:out", "to": "task:answer"},
     ],
     "meta": {"seed": 14, "max_attempts": 100},
 }
 
 
-# ---------- №5. Признак Вейерштрасса (равномерная сходимость на ℝ) ----------
+# ---------- №5. Признак Вейерштрасса (равномерная сходимость) ----------
+# Три структурных типа из банка «Задача 2.4»: AM–GM на всей оси,
+# ограниченный тригонометрический числитель, степень на отрезке [−k; k].
+# fam выбирает условие, промежуток и текст ответа (pick).
 _S5_WEIERSTRASS = {
     "nodes": [
+        {"id": "fam", "type": "random_natural", "params": {"min": 0, "max": 2}},
+        # fam 0: n^p·x/(1 + c·n^q·x²) на ℝ; q = 2p+2+m ⇒ s = 1+m/2 > 1.
         {"id": "p", "type": "random_natural", "params": {"min": 1, "max": 2}},
         {"id": "m", "type": "random_natural", "params": {"min": 1, "max": 3}},
         {"id": "k", "type": "random_natural", "params": {"min": 2, "max": 5}},
-        # Конструкция гарантирует применимость: q = 2p+2+m ⇒ s = q/2−p = 1+m/2 > 1.
         {"id": "q", "type": "formula", "params": {"expr": "2*p + 2 + m"}},
         {"id": "cc", "type": "formula", "params": {"expr": "k^2"}},
         {"id": "kk", "type": "formula", "params": {"expr": "2*k"}},
         {"id": "qh", "type": "formula", "params": {"expr": "(2*p + 2 + m)/2"}},
         {"id": "s", "type": "formula", "params": {"expr": "1 + m/2"}},
-        {"id": "vd", "type": "var_dict", "params": {"names": ["p", "q", "c"]}},
-        {"id": "term", "type": "expr_const",
+        {"id": "vd0", "type": "var_dict", "params": {"names": ["p", "q", "c"]}},
+        {"id": "t0", "type": "expr_const",
          "params": {"expr": "n**p * x / (1 + c * n**q * x**2)",
                     "vars": ["p", "q", "c", "x", "n"]}},
+        # fam 1: sin(a·n·x)/(n^p·√(n+b)) на ℝ; |sin| ≤ 1 ⇒ Mₙ = n^−(p+1/2).
+        {"id": "aa", "type": "random_natural", "params": {"min": 2, "max": 5}},
+        {"id": "bb", "type": "random_natural", "params": {"min": 1, "max": 5}},
+        {"id": "s1", "type": "formula", "params": {"expr": "p + 0.5"}},
+        {"id": "vd1", "type": "var_dict", "params": {"names": ["a", "p", "b"]}},
+        {"id": "t1", "type": "expr_const",
+         "params": {"expr": "sin(a*n*x) / (n**p * sqrt(n + b))",
+                    "vars": ["a", "p", "b", "x", "n"]}},
+        # fam 2: xⁿ/(kⁿ·(n²+w)) на [−k; k]; |x/k|ⁿ ≤ 1 ⇒ Mₙ = 1/(n²+w).
+        {"id": "w", "type": "random_natural", "params": {"min": 1, "max": 5}},
+        {"id": "vd2", "type": "var_dict", "params": {"names": ["k", "w"]}},
+        {"id": "t2", "type": "expr_const",
+         "params": {"expr": "x**n / (k**n * (n**2 + w))",
+                    "vars": ["k", "w", "x", "n"]}},
+        {"id": "term", "type": "pick",
+         "params": {"count": 3, "value_type": "expr"}},
         {"id": "nsym", "type": "symbol", "params": {"name": "n"}},
         {"id": "disp", "type": "sum_display",
          "params": {"lower": "1", "upper": "oo"}},
@@ -267,14 +328,27 @@ _S5_WEIERSTRASS = {
             "Пользуясь признаком Вейерштрасса, доказать равномерную сходимость "
             "функционального ряда на указанном промежутке:"}},
         {"id": "fb", "type": "expr_block"},
-        {"id": "rng", "type": "text", "params": {"text": "−∞ < x < +∞"}},
+        {"id": "r0", "type": "text", "params": {"text": "−∞ < x < +∞"}},
+        {"id": "r1", "type": "text", "params": {"text": "−∞ < x < +∞"}},
+        {"id": "r2", "type": "text", "params": {"text": "−#k# ≤ x ≤ #k#"}},
+        {"id": "rng", "type": "pick",
+         "params": {"count": 3, "value_type": "block"}},
         {"id": "stmt", "type": "block_list", "params": {"count": 3}},
-        {"id": "ans", "type": "text", "params": {"text":
+        {"id": "an0", "type": "text", "params": {"text":
             "По AM–GM: 1 + #c#·n^#q#·x² ≥ #kk#·n^#qh#·|x|, поэтому |uₙ(x)| ≤ "
             "n^#p#/(#kk#·n^#qh#) = (1/#kk#)·n^(−#s#) = Mₙ для всех x. Ряд "
             "Σ Mₙ сходится (p-ряд, s = #s# > 1) ⇒ по Вейерштрассу ряд "
             "сходится равномерно на всей оси."}},
-        {"id": "ansb", "type": "to_block", "params": {"relation": ""}},
+        {"id": "an1", "type": "text", "params": {"text":
+            "|sin(#aa#·n·x)| ≤ 1 и √(n+#bb#) ≥ √n, поэтому |uₙ(x)| ≤ "
+            "1/(n^#p#·√n) = n^(−#s1#) = Mₙ для всех x. Ряд Σ Mₙ сходится "
+            "(p-ряд, s = #s1# > 1) ⇒ равномерная сходимость на всей оси."}},
+        {"id": "an2", "type": "text", "params": {"text":
+            "На отрезке |x| ≤ #k#: |x/#k#|ⁿ ≤ 1, поэтому |uₙ(x)| ≤ "
+            "1/(n² + #w#) ≤ 1/n² = Mₙ. Ряд Σ Mₙ сходится (p-ряд, s = 2 > 1) "
+            "⇒ равномерная сходимость на [−#k#; #k#]."}},
+        {"id": "ans", "type": "pick",
+         "params": {"count": 3, "value_type": "block"}},
         {"id": "task", "type": "static_task"},
     ],
     "edges": [
@@ -282,21 +356,39 @@ _S5_WEIERSTRASS = {
         {"from": "k:out", "to": "cc:k"}, {"from": "k:out", "to": "kk:k"},
         {"from": "p:out", "to": "qh:p"}, {"from": "m:out", "to": "qh:m"},
         {"from": "m:out", "to": "s:m"},
-        {"from": "p:out", "to": "vd:p"}, {"from": "q:out", "to": "vd:q"},
-        {"from": "cc:out", "to": "vd:c"},
-        {"from": "vd:out", "to": "term:values"},
+        {"from": "p:out", "to": "vd0:p"}, {"from": "q:out", "to": "vd0:q"},
+        {"from": "cc:out", "to": "vd0:c"},
+        {"from": "vd0:out", "to": "t0:values"},
+        {"from": "aa:out", "to": "vd1:a"}, {"from": "p:out", "to": "vd1:p"},
+        {"from": "bb:out", "to": "vd1:b"},
+        {"from": "p:out", "to": "s1:p"},
+        {"from": "vd1:out", "to": "t1:values"},
+        {"from": "k:out", "to": "vd2:k"}, {"from": "w:out", "to": "vd2:w"},
+        {"from": "vd2:out", "to": "t2:values"},
+        {"from": "fam:out", "to": "term:index"},
+        {"from": "t0:out", "to": "term:in0"}, {"from": "t1:out", "to": "term:in1"},
+        {"from": "t2:out", "to": "term:in2"},
         {"from": "term:out", "to": "disp:term"},
         {"from": "nsym:out", "to": "disp:index"},
         {"from": "disp:out", "to": "fb:in"},
+        {"from": "k:out", "to": "r2:k"},
+        {"from": "fam:out", "to": "rng:index"},
+        {"from": "r0:out", "to": "rng:in0"}, {"from": "r1:out", "to": "rng:in1"},
+        {"from": "r2:out", "to": "rng:in2"},
         {"from": "intro:out", "to": "stmt:in0"},
         {"from": "fb:out", "to": "stmt:in1"},
         {"from": "rng:out", "to": "stmt:in2"},
-        {"from": "cc:out", "to": "ans:c"}, {"from": "q:out", "to": "ans:q"},
-        {"from": "kk:out", "to": "ans:kk"}, {"from": "qh:out", "to": "ans:qh"},
-        {"from": "p:out", "to": "ans:p"}, {"from": "s:out", "to": "ans:s"},
-        {"from": "ans:out", "to": "ansb:in"},
+        {"from": "cc:out", "to": "an0:c"}, {"from": "q:out", "to": "an0:q"},
+        {"from": "kk:out", "to": "an0:kk"}, {"from": "qh:out", "to": "an0:qh"},
+        {"from": "p:out", "to": "an0:p"}, {"from": "s:out", "to": "an0:s"},
+        {"from": "aa:out", "to": "an1:aa"}, {"from": "bb:out", "to": "an1:bb"},
+        {"from": "p:out", "to": "an1:p"}, {"from": "s1:out", "to": "an1:s1"},
+        {"from": "k:out", "to": "an2:k"}, {"from": "w:out", "to": "an2:w"},
+        {"from": "fam:out", "to": "ans:index"},
+        {"from": "an0:out", "to": "ans:in0"}, {"from": "an1:out", "to": "ans:in1"},
+        {"from": "an2:out", "to": "ans:in2"},
         {"from": "stmt:out", "to": "task:statement"},
-        {"from": "ansb:out", "to": "task:answer"},
+        {"from": "ans:out", "to": "task:answer"},
     ],
     "meta": {"seed": 15, "max_attempts": 100},
 }
@@ -505,6 +597,112 @@ _S8_TAYLOR_LN = {
 }
 
 
+# ---------- №9. Тейлор элементарной функции (по банку «Задача 2.5») ----------
+# y = A·(x−x₀)^j·F(k(x−x₀)), F ∈ {exp, sin, cos, sh, ch} — пять паттернов
+# решения через табличные разложения; ответ — готовое тождество Eq(…, Sum(…)).
+_S9_TAYLOR_ELEM = {
+    "nodes": [
+        {"id": "fam", "type": "random_natural", "params": {"min": 0, "max": 4}},
+        {"id": "A", "type": "random_natural", "params": {"min": 2, "max": 6}},
+        {"id": "j", "type": "random_natural", "params": {"min": 1, "max": 3}},
+        {"id": "kf", "type": "random_natural", "params": {"min": 2, "max": 5}},
+        {"id": "x0s", "type": "random_natural", "params": {"min": 0, "max": 6}},
+        {"id": "x0", "type": "formula", "params": {"expr": "x0s - 3"}},
+        {"id": "vd", "type": "var_dict",
+         "params": {"names": ["A", "j", "k", "x0"]}},
+        # Отображения функции (условие) — по семейству.
+        {"id": "d0", "type": "expr_const",
+         "params": {"expr": "A * (x - x0)**j * exp(k*(x - x0))",
+                    "vars": ["A", "j", "k", "x0", "x"]}},
+        {"id": "d1", "type": "expr_const",
+         "params": {"expr": "A * (x - x0)**j * sin(k*(x - x0))",
+                    "vars": ["A", "j", "k", "x0", "x"]}},
+        {"id": "d2", "type": "expr_const",
+         "params": {"expr": "A * (x - x0)**j * cos(k*(x - x0))",
+                    "vars": ["A", "j", "k", "x0", "x"]}},
+        {"id": "d3", "type": "expr_const",
+         "params": {"expr": "A * (x - x0)**j * sinh(k*(x - x0))",
+                    "vars": ["A", "j", "k", "x0", "x"]}},
+        {"id": "d4", "type": "expr_const",
+         "params": {"expr": "A * (x - x0)**j * cosh(k*(x - x0))",
+                    "vars": ["A", "j", "k", "x0", "x"]}},
+        {"id": "fdisp", "type": "pick",
+         "params": {"count": 5, "value_type": "expr"}},
+        # Готовые тождества-ответы (табличные разложения, сдвиг t = x−x₀).
+        {"id": "e0", "type": "expr_const",
+         "params": {"expr": "Eq(A*(x - x0)**j * exp(k*(x - x0)), "
+                            "A*Sum(k**m * (x - x0)**(m + j) / factorial(m), "
+                            "(m, 0, oo)))",
+                    "vars": ["A", "j", "k", "x0", "x", "m"]}},
+        {"id": "e1", "type": "expr_const",
+         "params": {"expr": "Eq(A*(x - x0)**j * sin(k*(x - x0)), "
+                            "A*Sum((-1)**m * k**(2*m+1) * "
+                            "(x - x0)**(2*m + 1 + j) / factorial(2*m + 1), "
+                            "(m, 0, oo)))",
+                    "vars": ["A", "j", "k", "x0", "x", "m"]}},
+        {"id": "e2", "type": "expr_const",
+         "params": {"expr": "Eq(A*(x - x0)**j * cos(k*(x - x0)), "
+                            "A*Sum((-1)**m * k**(2*m) * "
+                            "(x - x0)**(2*m + j) / factorial(2*m), "
+                            "(m, 0, oo)))",
+                    "vars": ["A", "j", "k", "x0", "x", "m"]}},
+        {"id": "e3", "type": "expr_const",
+         "params": {"expr": "Eq(A*(x - x0)**j * sinh(k*(x - x0)), "
+                            "A*Sum(k**(2*m+1) * (x - x0)**(2*m + 1 + j) / "
+                            "factorial(2*m + 1), (m, 0, oo)))",
+                    "vars": ["A", "j", "k", "x0", "x", "m"]}},
+        {"id": "e4", "type": "expr_const",
+         "params": {"expr": "Eq(A*(x - x0)**j * cosh(k*(x - x0)), "
+                            "A*Sum(k**(2*m) * (x - x0)**(2*m + j) / "
+                            "factorial(2*m), (m, 0, oo)))",
+                    "vars": ["A", "j", "k", "x0", "x", "m"]}},
+        {"id": "eq", "type": "pick",
+         "params": {"count": 5, "value_type": "expr"}},
+        {"id": "intro", "type": "text", "params": {"text":
+            "Разложить функцию f(x) в ряд Тейлора в окрестности точки "
+            "x₀ = #x0#. Указать область сходимости полученного степенного "
+            "ряда. Использовать разложения элементарных функций."}},
+        {"id": "fbF", "type": "expr_block", "params": {"prefix": "y"}},
+        {"id": "stmt", "type": "block_list", "params": {"count": 2}},
+        {"id": "fbEq", "type": "expr_block"},
+        {"id": "regT", "type": "text", "params": {"text":
+            "Область сходимости: −∞ < x < +∞ (разложение целой функции; "
+            "сдвиг t = x − #x0#)."}},
+        {"id": "ansBl", "type": "block_list", "params": {"count": 2}},
+        {"id": "task", "type": "static_task"},
+    ],
+    "edges": [
+        {"from": "x0s:out", "to": "x0:x0s"},
+        {"from": "A:out", "to": "vd:A"}, {"from": "j:out", "to": "vd:j"},
+        {"from": "kf:out", "to": "vd:k"}, {"from": "x0:out", "to": "vd:x0"},
+        {"from": "vd:out", "to": "d0:values"}, {"from": "vd:out", "to": "d1:values"},
+        {"from": "vd:out", "to": "d2:values"}, {"from": "vd:out", "to": "d3:values"},
+        {"from": "vd:out", "to": "d4:values"},
+        {"from": "vd:out", "to": "e0:values"}, {"from": "vd:out", "to": "e1:values"},
+        {"from": "vd:out", "to": "e2:values"}, {"from": "vd:out", "to": "e3:values"},
+        {"from": "vd:out", "to": "e4:values"},
+        {"from": "fam:out", "to": "fdisp:index"},
+        {"from": "d0:out", "to": "fdisp:in0"}, {"from": "d1:out", "to": "fdisp:in1"},
+        {"from": "d2:out", "to": "fdisp:in2"}, {"from": "d3:out", "to": "fdisp:in3"},
+        {"from": "d4:out", "to": "fdisp:in4"},
+        {"from": "fam:out", "to": "eq:index"},
+        {"from": "e0:out", "to": "eq:in0"}, {"from": "e1:out", "to": "eq:in1"},
+        {"from": "e2:out", "to": "eq:in2"}, {"from": "e3:out", "to": "eq:in3"},
+        {"from": "e4:out", "to": "eq:in4"},
+        {"from": "x0:out", "to": "intro:x0"},
+        {"from": "fdisp:out", "to": "fbF:in"},
+        {"from": "intro:out", "to": "stmt:in0"}, {"from": "fbF:out", "to": "stmt:in1"},
+        {"from": "eq:out", "to": "fbEq:in"},
+        {"from": "x0:out", "to": "regT:x0"},
+        {"from": "fbEq:out", "to": "ansBl:in0"},
+        {"from": "regT:out", "to": "ansBl:in1"},
+        {"from": "stmt:out", "to": "task:statement"},
+        {"from": "ansBl:out", "to": "task:answer"},
+    ],
+    "meta": {"seed": 19, "max_attempts": 100},
+}
+
+
 SERIES_EXAM: dict[str, dict] = {
     "s1_comparison": {
         "title": "№1. Сходимость: сравнение с p-рядом",
@@ -523,12 +721,12 @@ SERIES_EXAM: dict[str, dict] = {
     },
     "s4_power": {
         "title": "№4. Радиус и интервал сходимости степенного ряда",
-        "note": "R заложен конструктивно; поведение концов известно заранее.",
+        "note": "4 семейства коэффициентов (банк 2.2) с разными концами; pick.",
         "graph": _S4_POWER,
     },
     "s5_weierstrass": {
         "title": "№5. Признак Вейерштрасса",
-        "note": "q = 2p+2+m гарантирует мажоранту; c = k² для целого √c.",
+        "note": "3 структурных типа (банк 2.4): AM–GM / sin-числитель / отрезок.",
         "graph": _S5_WEIERSTRASS,
     },
     "s6_nonuniform": {
@@ -545,6 +743,11 @@ SERIES_EXAM: dict[str, dict] = {
         "title": "№8. Ряд Тейлора ln(x+a), почленное дифференцирование",
         "note": "Тождества Eq(…, Sum(…)) одним выражением.",
         "graph": _S8_TAYLOR_LN,
+    },
+    "s9_taylor_elem": {
+        "title": "№9. Тейлор элементарной функции (банк 2.5)",
+        "note": "y = A(x−x₀)^j·F(k(x−x₀)), F ∈ {exp, sin, cos, sh, ch}; pick.",
+        "graph": _S9_TAYLOR_ELEM,
     },
 }
 

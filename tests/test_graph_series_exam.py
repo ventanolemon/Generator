@@ -110,9 +110,65 @@ class LanguageExtensionTests(unittest.TestCase):
         self.assertEqual(str(out), "5**n")
 
 
+class PickAndPrefixTests(unittest.TestCase):
+    def test_pick_ports_follow_params(self):
+        from core.graph.nodes.control import PickNode
+        n = PickNode("p", {"count": 4, "value_type": "expr"})
+        names = [pt.name for pt in n.input_ports()]
+        self.assertEqual(names, ["index", "in0", "in1", "in2", "in3"])
+        self.assertEqual(n.output_ports()[0].type, PortType.EXPR)
+
+    def test_pick_selects_by_index(self):
+        from core.graph.nodes.control import PickNode
+        n = PickNode("p", {"count": 3, "value_type": "string"})
+        out = n.compute({"index": 1, "in0": "a", "in1": "b", "in2": "c"}, _ctx())
+        self.assertEqual(out["out"], "b")
+
+    def test_pick_out_of_range_retries(self):
+        from core.graph.errors import RetryGeneration
+        from core.graph.nodes.control import PickNode
+        n = PickNode("p", {"count": 3, "value_type": "string"})
+        with self.assertRaises(RetryGeneration):
+            n.compute({"index": 7, "in0": "a"}, _ctx())
+        with self.assertRaises(RetryGeneration):
+            n.compute({"index": 1, "in0": "a"}, _ctx())   # in1 не подключён
+
+    def test_formula_constants_off_exposes_c(self):
+        from core.graph.nodes.compute import FormulaNode
+        on = FormulaNode("f", {"expr": "a^b / c^c"})
+        self.assertNotIn("c", {p.name for p in on.input_ports()})
+        off = FormulaNode("f", {"expr": "a^b / c^c", "constants": "off"})
+        self.assertIn("c", {p.name for p in off.input_ports()})
+        out = off.compute({"a": 5, "b": 2, "c": 3}, _ctx())
+        self.assertAlmostEqual(out["out"], 25 / 27)
+
+    def test_formula_constants_off_keeps_pi(self):
+        from core.graph.nodes.compute import FormulaNode
+        off = FormulaNode("f", {"expr": "pi * r^2", "constants": "off"})
+        self.assertEqual({p.name for p in off.input_ports()} - {"vars"}, {"r"})
+
+    @unittest.skipUnless(HAS_QT and HAS_SYMPY, "нужны PyQt6 и sympy")
+    def test_expr_block_prefix_from_wire(self):
+        # Динамический префикс: значение приходит проводом, а не параметром.
+        data = {
+            "nodes": [
+                {"id": "s", "type": "constant_string",
+                 "params": {"value": "f'(x)"}},
+                {"id": "e", "type": "expr_const", "params": {"expr": "x + 1"}},
+                {"id": "b", "type": "expr_block", "params": {"prefix": "y"}},
+            ],
+            "edges": [
+                {"from": "e:out", "to": "b:in"},
+                {"from": "s:out", "to": "b:prefix"},
+            ],
+        }
+        outs = GraphExecutor(GraphSpec.parse(data)).run_full()
+        self.assertTrue(outs["b"]["out"].latex.startswith("f'(x) ="))
+
+
 class SeriesExamStructureTests(unittest.TestCase):
-    def test_eight_tasks(self):
-        self.assertEqual(len(series_exam_names()), 8)
+    def test_nine_tasks(self):
+        self.assertEqual(len(series_exam_names()), 9)
 
     def test_all_assemble_with_final(self):
         for name in series_exam_names():
@@ -187,7 +243,7 @@ class SeriesExamExecutionTests(unittest.TestCase):
 
     def test_variant_generation(self):
         v = generate_variant(7)
-        self.assertEqual(len(v), 8)
+        self.assertEqual(len(v), 9)
         for title, task in v:
             self.assertTrue(title)
             self.assertTrue(task.statement)

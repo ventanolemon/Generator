@@ -208,3 +208,77 @@ class SelectNode(Node):
 
     def compute(self, inputs, ctx: ExecContext):
         return {"out": inputs["on_true"] if inputs.get("cond") else inputs["on_false"]}
+
+
+class PickNode(Node):
+    """
+    N-канальный мультиплексор: индекс выбирает один из N входов одного типа.
+
+    Замена громоздким цепочкам select при трёх и более вариантах: категория
+    ответа/структура условия задаётся числом (0..N−1), pick отдаёт in<индекс>.
+    Тип каналов — value_type (как у select), число каналов — count. Все входы
+    вычисляются исполнителем жадно (обычные вершины DAG), pick лишь выбирает.
+
+    Индекс вне диапазона или неподключённый выбранный вход → RetryGeneration.
+    """
+    type_id = "pick"
+    category = "control"
+    display_name = "Выбор по индексу"
+    PARAMS_SCHEMA = {
+        "count": {"type": "int", "default": 3},
+        "value_type": {"type": "enum", "values": list(_SELECT_TYPES),
+                       "default": "block"},
+    }
+
+    def validate_params(self) -> None:
+        vt = self.params.get("value_type", "block")
+        if vt not in _SELECT_TYPES:
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: неизвестный тип каналов {vt!r}. "
+                f"Допустимы: {list(_SELECT_TYPES)}"
+            )
+        try:
+            if int(self.params.get("count", 3)) < 2:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: count должен быть целым ≥ 2."
+            )
+
+    def _count(self) -> int:
+        try:
+            return max(2, int(self.params.get("count", 3)))
+        except (TypeError, ValueError):
+            return 3
+
+    def _value_type(self) -> PortType:
+        return _SELECT_TYPES.get(self.params.get("value_type", "block"),
+                                 PortType.BLOCK)
+
+    def input_ports(self):
+        t = self._value_type()
+        ports = [Port("index", PortType.NUMBER)]
+        ports += [Port(f"in{i}", t, required=False) for i in range(self._count())]
+        return ports
+
+    def output_ports(self):
+        return [Port("out", self._value_type())]
+
+    def compute(self, inputs, ctx: ExecContext):
+        try:
+            i = int(round(float(inputs.get("index", 0))))
+        except (TypeError, ValueError):
+            raise RetryGeneration(
+                f"pick {self.node_id!r}: индекс не число ({inputs.get('index')!r})."
+            )
+        if not 0 <= i < self._count():
+            raise RetryGeneration(
+                f"pick {self.node_id!r}: индекс {i} вне диапазона "
+                f"[0; {self._count()})."
+            )
+        value = inputs.get(f"in{i}")
+        if value is None:
+            raise RetryGeneration(
+                f"pick {self.node_id!r}: выбранный вход in{i} не подключён."
+            )
+        return {"out": value}
