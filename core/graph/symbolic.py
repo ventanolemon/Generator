@@ -90,7 +90,8 @@ def parse_expr(text: str, symbols: dict | None = None):
 def to_latex(expr) -> str:
     """LaTeX-представление sympy-выражения (через core.latex.canonical_latex)."""
     sp = sympy()
-    raw = sp.latex(expr)
+    # ln вместо log: в отечественной нотации натуральный логарифм — ln.
+    raw = sp.latex(expr, ln_notation=True)
     try:
         from core.latex import canonical_latex
         return canonical_latex(raw)
@@ -173,7 +174,14 @@ def substitute_values(obj, values: dict | None):
     if not values:
         return obj
     sp = sympy()
-    mapping = {sp.Symbol(str(k)): _num(sp, v) for k, v in values.items()}
+    # Символы ищем в самом выражении ПО ИМЕНИ: Symbol('a') и
+    # Symbol('a', positive=True) — разные объекты sympy, поэтому свежий
+    # Symbol молча не совпал бы с символом, созданным с предположениями.
+    free = {s.name: s for s in getattr(obj, "free_symbols", set())}
+    mapping = {
+        free.get(str(k), sp.Symbol(str(k))): _num(sp, v)
+        for k, v in values.items()
+    }
     try:
         return obj.subs(mapping)
     except AttributeError:

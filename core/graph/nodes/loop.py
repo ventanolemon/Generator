@@ -41,6 +41,8 @@ _IMPORT_TYPES = {
     "bool": PortType.BOOL,
     "block": PortType.BLOCK,
     "list": PortType.LIST,
+    "expr": PortType.EXPR,      # символьные выражения проходят сквозь границу
+    "matrix": PortType.MATRIX,  # ...и матрицы тоже (туннели/импорты/регистры)
 }
 
 

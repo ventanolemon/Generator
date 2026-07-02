@@ -75,14 +75,20 @@ _COMPARE_OPS = {
 
 
 class CompareNode(Node):
-    """Сравнить два числа, вернуть BOOL."""
+    """
+    Сравнить два числа, вернуть BOOL.
+
+    Правый операнд — вход b либо (если не подключён) параметр b: сравнение
+    с константой не требует отдельного узла-числа.
+    """
     type_id = "compare"
     category = "control"
     display_name = "Сравнение"
-    INPUTS = [Port("a", PortType.NUMBER), Port("b", PortType.NUMBER)]
+    INPUTS = [Port("a", PortType.NUMBER), Port("b", PortType.NUMBER, required=False)]
     OUTPUTS = [Port("out", PortType.BOOL)]
     PARAMS_SCHEMA = {
         "op": {"type": "enum", "values": list(_COMPARE_OPS), "default": "=="},
+        "b": {"type": "number", "default": 0, "optional": True},
     }
 
     def validate_params(self) -> None:
@@ -95,7 +101,14 @@ class CompareNode(Node):
 
     def compute(self, inputs, ctx: ExecContext):
         op = _COMPARE_OPS[self.params.get("op", "==")]
-        return {"out": bool(op(float(inputs["a"]), float(inputs["b"])))}
+        right = inputs.get("b")
+        if right is None:
+            right = self.params.get("b", 0)
+        try:
+            right = float(right)
+        except (TypeError, ValueError):
+            right = 0.0
+        return {"out": bool(op(float(inputs["a"]), right))}
 
 
 # Проверки одного числа. Имя → функция от (value, param).
@@ -148,6 +161,9 @@ _SELECT_TYPES = {
     "block_list": PortType.BLOCK_LIST,
     "image": PortType.IMAGE,
     "task": PortType.TASK,
+    "expr": PortType.EXPR,      # выбор между символьными выражениями
+    "matrix": PortType.MATRIX,  # ...и матрицами
+    "list": PortType.LIST,      # ...и коллекциями
 }
 
 

@@ -67,8 +67,15 @@ class ParseOutputsTests(unittest.TestCase):
         )
 
     def test_unknown_type_rejected(self):
+        # matrix/expr теперь легальны в туннелях — берём заведомо чужой тип.
         with self.assertRaisesRegex(GraphValidationError, "неизвестный тип"):
-            parse_outputs({"outputs": ["x:matrix"]})
+            parse_outputs({"outputs": ["x:task"]})
+
+    def test_expr_and_matrix_tunnels_allowed(self):
+        self.assertEqual(parse_outputs({"outputs": ["e:expr:last"]}),
+                         [("e", PortType.EXPR, "last")])
+        self.assertEqual(parse_outputs({"outputs": ["M:matrix:last"]}),
+                         [("M", PortType.MATRIX, "last")])
 
     def test_unknown_mode_rejected(self):
         with self.assertRaisesRegex(GraphValidationError, "неизвестный режим"):

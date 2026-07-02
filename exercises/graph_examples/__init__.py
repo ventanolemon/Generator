@@ -12,5 +12,9 @@
 """
 
 from .examples import EXAMPLES, example_graph, example_names
+from .series_exam import SERIES_EXAM, generate_variant, series_exam_names
 
-__all__ = ["EXAMPLES", "example_graph", "example_names"]
+__all__ = [
+    "EXAMPLES", "example_graph", "example_names",
+    "SERIES_EXAM", "generate_variant", "series_exam_names",
+]
