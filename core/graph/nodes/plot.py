@@ -6,7 +6,8 @@
 
   complex_points_plot — точки (LIST комплексных значений) → IMAGE;
   complex_region_plot — область по системе неравенств (LIST строк-условий
-                        от z, И-логика) → IMAGE.
+                        от z, И-логика) → IMAGE;
+  conformal_map_plot  — область D₁ и её образ D₂ = f(D₁) (две панели) → IMAGE.
 
 matplotlib/numpy импортируются лениво (движок графа headless и не должен
 падать на загрузке без них — как с sympy). Условия областей разбираются
@@ -146,37 +147,46 @@ def _region_namespace(z):
         "re": np.real, "Re": np.real, "im": np.imag, "Im": np.imag,
         "arg": np.angle, "conj": np.conj,
         "sqrt": np.sqrt, "exp": np.exp, "log": np.log, "ln": np.log,
-        "pi": np.pi, "e": np.e, "i": 1j, "I": 1j, "j": 1j,
+        "sin": np.sin, "cos": np.cos, "tan": np.tan,
+        "pi": np.pi, "π": np.pi, "e": np.e, "i": 1j, "I": 1j, "j": 1j,
     }
 
 
-def eval_region_condition(cond: str, z):
+def _safe_z_eval(src: str, z, label: str = "выражение"):
     """
-    Вычислить булево условие от z на numpy-сетке. AST-whitelist: только
-    арифметика, сравнения, логика и вызовы разрешённых имён (abs/re/im/arg/…).
+    Безопасно вычислить выражение/условие от z на numpy-сетке.
+
+    AST-whitelist: только арифметика, сравнения, логика и вызовы разрешённых
+    имён (abs/re/im/arg/sqrt/exp/log/…) — та же политика, что у формул физики.
+    Используется и для булевых условий области, и для комплексного отображения
+    w = f(z).
     """
-    src = str(cond).replace("^", "**")
+    s = str(src).replace("^", "**")
     try:
-        tree = ast.parse(src, mode="eval")
+        tree = ast.parse(s, mode="eval")
     except SyntaxError as e:
-        raise GraphValidationError(f"Условие области {cond!r}: {e}")
+        raise GraphValidationError(f"{label} {src!r}: {e}")
     ns = _region_namespace(z)
     for node in ast.walk(tree):
         if not isinstance(node, _ALLOWED_AST):
             raise GraphValidationError(
-                f"Условие области {cond!r}: конструкция "
-                f"{type(node).__name__} не разрешена."
+                f"{label} {src!r}: конструкция {type(node).__name__} не разрешена."
             )
         if isinstance(node, ast.Name) and node.id not in ns:
             raise GraphValidationError(
-                f"Условие области {cond!r}: неизвестное имя {node.id!r}. "
+                f"{label} {src!r}: неизвестное имя {node.id!r}. "
                 f"Допустимы: {sorted(k for k in ns if len(k) > 0)}"
             )
         if isinstance(node, ast.Call) and not isinstance(node.func, ast.Name):
             raise GraphValidationError(
-                f"Условие области {cond!r}: разрешены только вызовы имён."
+                f"{label} {src!r}: разрешены только вызовы имён."
             )
-    return eval(compile(tree, "<region>", "eval"), {"__builtins__": {}}, ns)
+    return eval(compile(tree, "<safe>", "eval"), {"__builtins__": {}}, ns)
+
+
+def eval_region_condition(cond: str, z):
+    """Булево условие от z на numpy-сетке (см. _safe_z_eval)."""
+    return _safe_z_eval(cond, z, "Условие области")
 
 
 class ComplexRegionPlotNode(Node):
@@ -242,6 +252,93 @@ class ComplexRegionPlotNode(Node):
         title = str(self.params.get("title", "")).strip()
         if title:
             ax.set_title(title, fontsize=10)
+        img = _fig_to_image(fig)
+        plt.close(fig)
+        return {"out": img}
+
+
+class ConformalMapPlotNode(Node):
+    """
+    Область D₁ и её образ D₂ = f(D₁) под комплексным отображением → картинка
+    из двух панелей (плоскость Z и плоскость W). Для задач ТФКП «начертить D₁
+    и D₂».
+
+    Вход conds:LIST — строки-условия, задающие D₁ (как у complex_region_plot);
+    вход mapping:STRING — выражение w = f(z) (например «(sqrt(3)+I)*z**2+(1+5*I)»).
+    Образ считается ПРЯМЫМ отображением сетки точек D₁ (без разбора границ и
+    проблем разреза arg): точки D₁ переносятся в W и заполняют D₂.
+    """
+    type_id = "conformal_map_plot"
+    category = "plot"
+    display_name = "Отображение D₁→D₂"
+    description = ("Начертить область D₁ и её образ D₂ = f(D₁). Вход: conds "
+                   "(LIST условий D₁), mapping (STRING w=f(z)). Выход: IMAGE.")
+    INPUTS = [Port("conds", PortType.LIST), Port("mapping", PortType.STRING)]
+    OUTPUTS = [Port("out", PortType.IMAGE)]
+    PARAMS_SCHEMA = {
+        "span": {"type": "number", "default": 4, "optional": True},
+        "resolution": {"type": "int", "default": 700, "optional": True},
+        "title1": {"type": "string", "default": "D₁ (плоскость z)", "optional": True},
+        "title2": {"type": "string", "default": "D₂ (плоскость w)", "optional": True},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        import numpy as np
+        plt = _matplotlib()
+        conds = inputs.get("conds")
+        mapping = inputs.get("mapping")
+        if not isinstance(conds, (list, tuple)) or not conds:
+            raise RetryGeneration(
+                f"conformal_map_plot {self.node_id!r}: нет условий области D₁."
+            )
+        if not mapping:
+            raise RetryGeneration(
+                f"conformal_map_plot {self.node_id!r}: не задано отображение."
+            )
+        try:
+            span = float(self.params.get("span", 4))
+        except (TypeError, ValueError):
+            span = 4.0
+        try:
+            n = max(100, int(self.params.get("resolution", 700)))
+        except (TypeError, ValueError):
+            n = 700
+
+        xs = np.linspace(-span, span, n)
+        ys = np.linspace(-span, span, n)
+        X, Y = np.meshgrid(xs, ys)
+        Z = X + 1j * Y
+        with np.errstate(all="ignore"):
+            mask = np.ones_like(X, dtype=bool)
+            for cond in conds:
+                mask &= np.asarray(_safe_z_eval(str(cond), Z, "Условие D₁"),
+                                   dtype=bool)
+            if not mask.any():
+                raise RetryGeneration(
+                    f"conformal_map_plot {self.node_id!r}: D₁ пуста в окне ±{span}."
+                )
+            W = _safe_z_eval(str(mapping), Z[mask], "Отображение")
+        W = np.asarray(W, dtype=complex).ravel()
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.4, 4.8))
+        # D₁ — заливка маски.
+        ax1.imshow(mask, extent=(-span, span, -span, span), origin="lower",
+                   cmap="Blues", alpha=0.55, interpolation="nearest",
+                   vmin=0, vmax=1.6)
+        _axes_cross(ax1, None)
+        ax1.set_xlim(-span, span); ax1.set_ylim(-span, span)
+        ax1.set_title(str(self.params.get("title1", "D₁")), fontsize=10)
+
+        # D₂ — облако образов (заполняет область), авто-масштаб с полями.
+        ax2.plot(W.real, W.imag, ".", color="#AD1457", markersize=1.0,
+                 alpha=0.35)
+        _axes_cross(ax2, None)
+        wr = np.concatenate([W.real, [0.0]]); wi = np.concatenate([W.imag, [0.0]])
+        pad = 0.15 * max(np.ptp(wr), np.ptp(wi), 1.0)
+        ax2.set_xlim(wr.min() - pad, wr.max() + pad)
+        ax2.set_ylim(wi.min() - pad, wi.max() + pad)
+        ax2.set_title(str(self.params.get("title2", "D₂")), fontsize=10)
+
         img = _fig_to_image(fig)
         plt.close(fig)
         return {"out": img}

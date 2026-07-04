@@ -1,0 +1,524 @@
+{
+  "title": "№6. Отображение области ω = a·zⁿ + b",
+  "note": "сектор D₁ → D₂ (conformal_map_plot, две панели); точное описание D₂ через parse_expr.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "n",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "number",
+          "items": [
+            "2",
+            "3"
+          ]
+        }
+      },
+      {
+        "id": "R",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "id": "aStr",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "string",
+          "items": [
+            "sqrt(3) + I",
+            "1 + I",
+            "2*I",
+            "sqrt(3) - I",
+            "-1 + I",
+            "2"
+          ]
+        }
+      },
+      {
+        "id": "bStr",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "string",
+          "items": [
+            "1 + 5*I",
+            "-1 - 2*I",
+            "3*I",
+            "2 + 2*I",
+            "-2 + I"
+          ]
+        }
+      },
+      {
+        "id": "a1",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "string",
+          "items": [
+            "0",
+            "pi/6",
+            "pi/4"
+          ]
+        }
+      },
+      {
+        "id": "a2",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "string",
+          "items": [
+            "pi/3",
+            "pi/2",
+            "2*pi/3"
+          ]
+        }
+      },
+      {
+        "id": "c1",
+        "type": "template",
+        "params": {
+          "text": "abs(z) <= #R#"
+        }
+      },
+      {
+        "id": "c2",
+        "type": "template",
+        "params": {
+          "text": "arg(z) >= #A1#"
+        }
+      },
+      {
+        "id": "c3",
+        "type": "template",
+        "params": {
+          "text": "arg(z) <= #A2#"
+        }
+      },
+      {
+        "id": "conds",
+        "type": "list_new",
+        "params": {
+          "count": 3,
+          "elem_type": "string"
+        }
+      },
+      {
+        "id": "mapping",
+        "type": "template",
+        "params": {
+          "text": "(#a#)*z**#n# + (#b#)"
+        }
+      },
+      {
+        "id": "plot",
+        "type": "conformal_map_plot",
+        "params": {
+          "span": 3,
+          "title1": "D1 (плоскость z)",
+          "title2": "D2 (плоскость w)"
+        }
+      },
+      {
+        "id": "img",
+        "type": "to_block"
+      },
+      {
+        "id": "aE",
+        "type": "parse_expr"
+      },
+      {
+        "id": "bE",
+        "type": "parse_expr"
+      },
+      {
+        "id": "a1E",
+        "type": "parse_expr"
+      },
+      {
+        "id": "a2E",
+        "type": "parse_expr"
+      },
+      {
+        "id": "argA",
+        "type": "arg"
+      },
+      {
+        "id": "vdRn",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "R0",
+            "N0"
+          ]
+        }
+      },
+      {
+        "id": "radT",
+        "type": "expr_const",
+        "params": {
+          "expr": "Abs(AA)*R0**N0",
+          "vars": [
+            "AA",
+            "R0",
+            "N0"
+          ]
+        }
+      },
+      {
+        "id": "radA",
+        "type": "subs_expr",
+        "params": {
+          "name": "AA"
+        }
+      },
+      {
+        "id": "rad",
+        "type": "simplify"
+      },
+      {
+        "id": "b1T",
+        "type": "expr_const",
+        "params": {
+          "expr": "N0*A + AG",
+          "vars": [
+            "N0",
+            "A",
+            "AG"
+          ]
+        }
+      },
+      {
+        "id": "b1n",
+        "type": "expr_subs"
+      },
+      {
+        "id": "b1a",
+        "type": "subs_expr",
+        "params": {
+          "name": "A"
+        }
+      },
+      {
+        "id": "b1g",
+        "type": "subs_expr",
+        "params": {
+          "name": "AG"
+        }
+      },
+      {
+        "id": "b1",
+        "type": "simplify"
+      },
+      {
+        "id": "b2T",
+        "type": "expr_const",
+        "params": {
+          "expr": "N0*A + AG",
+          "vars": [
+            "N0",
+            "A",
+            "AG"
+          ]
+        }
+      },
+      {
+        "id": "b2n",
+        "type": "expr_subs"
+      },
+      {
+        "id": "b2a",
+        "type": "subs_expr",
+        "params": {
+          "name": "A"
+        }
+      },
+      {
+        "id": "b2g",
+        "type": "subs_expr",
+        "params": {
+          "name": "AG"
+        }
+      },
+      {
+        "id": "b2",
+        "type": "simplify"
+      },
+      {
+        "id": "vdN",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "N0"
+          ]
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Определить область D₂ плоскости W, на которую отобразится область D₁ плоскости Z заданной функцией ω = f(z). Начертить D₁ и D₂."
+        }
+      },
+      {
+        "id": "condT",
+        "type": "text",
+        "params": {
+          "text": "ω = (#a#)·zⁿ + (#b#), n = #n#;  D₁: |z| ≤ #R#, #A1# ≤ arg z ≤ #A2#."
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "ansT",
+        "type": "text",
+        "params": {
+          "text": "D₂ — круговой сектор с центром w₀ = #b#, радиусом ρ = |a|·Rⁿ = #rad# и углами arg(w − w₀) ∈ [#b1#; #b2#] (аргументы умножаются на n, затем поворот на arg a = #ag#, центр сдвигается в b)."
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "R:out",
+        "to": "c1:R"
+      },
+      {
+        "from": "a1:out",
+        "to": "c2:A1"
+      },
+      {
+        "from": "a2:out",
+        "to": "c3:A2"
+      },
+      {
+        "from": "c1:out",
+        "to": "conds:in0"
+      },
+      {
+        "from": "c2:out",
+        "to": "conds:in1"
+      },
+      {
+        "from": "c3:out",
+        "to": "conds:in2"
+      },
+      {
+        "from": "aStr:out",
+        "to": "mapping:a"
+      },
+      {
+        "from": "n:out",
+        "to": "mapping:n"
+      },
+      {
+        "from": "bStr:out",
+        "to": "mapping:b"
+      },
+      {
+        "from": "conds:out",
+        "to": "plot:conds"
+      },
+      {
+        "from": "mapping:out",
+        "to": "plot:mapping"
+      },
+      {
+        "from": "plot:out",
+        "to": "img:in"
+      },
+      {
+        "from": "aStr:out",
+        "to": "aE:text"
+      },
+      {
+        "from": "bStr:out",
+        "to": "bE:text"
+      },
+      {
+        "from": "a1:out",
+        "to": "a1E:text"
+      },
+      {
+        "from": "a2:out",
+        "to": "a2E:text"
+      },
+      {
+        "from": "aE:out",
+        "to": "argA:in"
+      },
+      {
+        "from": "R:out",
+        "to": "vdRn:R0"
+      },
+      {
+        "from": "n:out",
+        "to": "vdRn:N0"
+      },
+      {
+        "from": "vdRn:out",
+        "to": "radT:values"
+      },
+      {
+        "from": "radT:out",
+        "to": "radA:in"
+      },
+      {
+        "from": "aE:out",
+        "to": "radA:value"
+      },
+      {
+        "from": "radA:out",
+        "to": "rad:in"
+      },
+      {
+        "from": "n:out",
+        "to": "vdN:N0"
+      },
+      {
+        "from": "vdN:out",
+        "to": "b1n:values"
+      },
+      {
+        "from": "b1T:out",
+        "to": "b1n:in"
+      },
+      {
+        "from": "b1n:out",
+        "to": "b1a:in"
+      },
+      {
+        "from": "a1E:out",
+        "to": "b1a:value"
+      },
+      {
+        "from": "b1a:out",
+        "to": "b1g:in"
+      },
+      {
+        "from": "argA:out",
+        "to": "b1g:value"
+      },
+      {
+        "from": "b1g:out",
+        "to": "b1:in"
+      },
+      {
+        "from": "vdN:out",
+        "to": "b2n:values"
+      },
+      {
+        "from": "b2T:out",
+        "to": "b2n:in"
+      },
+      {
+        "from": "b2n:out",
+        "to": "b2a:in"
+      },
+      {
+        "from": "a2E:out",
+        "to": "b2a:value"
+      },
+      {
+        "from": "b2a:out",
+        "to": "b2g:in"
+      },
+      {
+        "from": "argA:out",
+        "to": "b2g:value"
+      },
+      {
+        "from": "b2g:out",
+        "to": "b2:in"
+      },
+      {
+        "from": "aE:out",
+        "to": "condT:a"
+      },
+      {
+        "from": "bE:out",
+        "to": "condT:b"
+      },
+      {
+        "from": "n:out",
+        "to": "condT:n"
+      },
+      {
+        "from": "R:out",
+        "to": "condT:R"
+      },
+      {
+        "from": "a1E:out",
+        "to": "condT:A1"
+      },
+      {
+        "from": "a2E:out",
+        "to": "condT:A2"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "condT:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "bE:out",
+        "to": "ansT:b"
+      },
+      {
+        "from": "rad:out",
+        "to": "ansT:rad"
+      },
+      {
+        "from": "b1:out",
+        "to": "ansT:b1"
+      },
+      {
+        "from": "b2:out",
+        "to": "ansT:b2"
+      },
+      {
+        "from": "argA:out",
+        "to": "ansT:ag"
+      },
+      {
+        "from": "ansT:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "img:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 26,
+      "max_attempts": 100
+    }
+  }
+}

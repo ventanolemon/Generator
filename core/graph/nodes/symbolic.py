@@ -124,6 +124,38 @@ class ExprConstNode(Node):
         return {"out": substitute_values(expr, inputs.get("values"))}
 
 
+class ParseExprNode(Node):
+    """
+    Разобрать СТРОКУ в символьное выражение в рантайме (STRING → EXPR).
+
+    Дополняет expr_const (там выражение — фиксированный параметр): здесь текст
+    приходит проводом, поэтому можно, выбрав строку случайно (random_choice),
+    и подставить её в текст/условие как есть, И разобрать в EXPR для символьной
+    математики ответа — без дублирования пулов. Имена трактуются как символы
+    (assumptions — общий режим).
+    """
+    type_id = "parse_expr"
+    category = "symbolic"
+    display_name = "Строка → выражение"
+    description = ("Разобрать строку в символьное выражение. Вход: text "
+                   "(STRING). Выход: EXPR.")
+    INPUTS = [Port("text", PortType.STRING)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "vars": {"type": "list", "default": [], "optional": True},
+        "assumptions": {"type": "enum", "values": _ASSUMPTIONS, "default": "complex"},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        names = self.params.get("vars") or []
+        syms = build_symbols([str(n) for n in names],
+                             self.params.get("assumptions", "complex"))
+        text = inputs.get("text")
+        if text is None or str(text).strip() == "":
+            raise RetryGeneration(f"parse_expr {self.node_id!r}: пустая строка.")
+        return {"out": parse_expr(str(text), syms)}
+
+
 class RandomPolynomialNode(Node):
     """
     Случайный многочлен заданной степени с целыми коэффициентами. Источник EXPR.
@@ -302,13 +334,17 @@ class SubstituteNode(Node):
     OUTPUTS = [Port("out", PortType.EXPR)]
 
     def compute(self, inputs, ctx: ExecContext):
+        from ..symbolic import _num
         sp = sympy()
         expr = as_expr(inputs["in"])
         values = inputs.get("values", {}) or {}
-        # Символы ищем в выражении по имени (предположения могут различаться).
+        # Символы ищем в выражении по имени (предположения могут различаться);
+        # значения — через _num, чтобы целые float (0.0, 2.0 из NUMBER-провода)
+        # стали точными Integer, а не «плыли» в 0.0 / 1.5*pi.
         free = {s.name: s for s in expr.free_symbols}
         mapping = {
-            free.get(str(k), sp.Symbol(str(k))): v for k, v in values.items()
+            free.get(str(k), sp.Symbol(str(k))): _num(sp, v)
+            for k, v in values.items()
         }
         try:
             result = expr.subs(mapping)

@@ -18,7 +18,9 @@ from .english import (
     SentenceFillNode, SentencesFileNode, WordsFileNode, WordsTrainerNode,
 )
 from .image import ImageBlockNode, ImageFileNode, LogicCircuitNode
-from .plot import ComplexPointsPlotNode, ComplexRegionPlotNode
+from .plot import (
+    ComplexPointsPlotNode, ComplexRegionPlotNode, ConformalMapPlotNode,
+)
 from .lists import (
     ListAppendNode, ListConcatNode, ListGetNode, ListJoinNode, ListLengthNode,
     ListNewNode, RandomChoiceNode,
@@ -52,7 +54,8 @@ from .symbolic import (
     DiffNode, EvaluateNode, ExpandComplexNode, ExpandNode, ExprBinaryNode,
     ExprBlockNode, ExprConstNode, FactorNode, FourierNode, ImNode,
     IntegrateNode, InverseFourierNode, InverseLaplaceNode, IsConvergentNode,
-    LaplaceNode, LimitNode, LimitDisplayNode, RandomPolynomialNode, ReNode, ResidueNode,
+    LaplaceNode, LimitNode, LimitDisplayNode, ParseExprNode,
+    RandomPolynomialNode, ReNode, ResidueNode,
     SeriesNode, SimplifyNode, SolveNode, SubsExprNode, SubstituteNode,
     SumDisplayNode, SummationNode, SymbolNode, TogetherNode, TrigsimpNode,
 )
@@ -72,7 +75,7 @@ _ALL_NODES = [
     OutputVarNode, CaseNode,
     ShiftGetNode, ShiftSetNode,
     # symbolic (символьная арифметика)
-    SymbolNode, ExprConstNode, RandomPolynomialNode,
+    SymbolNode, ExprConstNode, ParseExprNode, RandomPolynomialNode,
     ExpandNode, FactorNode, SimplifyNode, TogetherNode, CancelNode, TrigsimpNode,
     CollectNode, ApartNode, ExprBinaryNode, SubstituteNode, SubsExprNode,
     EvaluateNode,
@@ -102,7 +105,7 @@ _ALL_NODES = [
     # image (изображения / ОПВС)
     LogicCircuitNode, ImageFileNode, ImageBlockNode,
     # plot (графика на комплексной плоскости)
-    ComplexPointsPlotNode, ComplexRegionPlotNode,
+    ComplexPointsPlotNode, ComplexRegionPlotNode, ConformalMapPlotNode,
     # list (операции со списками)
     ListNewNode, ListAppendNode, ListConcatNode, ListLengthNode, ListGetNode,
     ListJoinNode,

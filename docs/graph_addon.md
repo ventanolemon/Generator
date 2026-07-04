@@ -739,3 +739,13 @@ exercises.opvs.png_generator, воспроизводимо через глоба
 matplotlib, AST-whitelist условий), `subs_expr` (EXPR в EXPR — шаблонные
 ответы с точными константами), `list_concat`; `as_expr` интифицирует целые
 float (z^4.0 → z^4). Тесты: `tests/test_graph_complex_exam.py` (18).
+
+**ТФКП: ещё 2 задачи (гармоническая f(z), отображение области) + узлы plot/parse.
+✅ СДЕЛАНО.** Контрольная по ТФКП доведена до 6 генераторов: №5 — восстановление
+аналитической f(z) по гармонической части (обратное конструирование из пула
+sin/cos/exp/sh/ch/z², Δh=0, f(z)=f₀+const из f(0)); №6 — образ сектора
+D₁={|z|≤R, α₁≤arg z≤α₂} под ω=a·zⁿ+b (узел conformal_map_plot рисует D₁ и её
+конформный образ D₂ двумя панелями, точное описание D₂ через parse_expr).
+Язык: conformal_map_plot (plot), parse_expr (STRING→EXPR в рантайме),
+expr_subs интифицирует целые float, _marker_str убирает '*' перед π/i/√.
+Тесты: test_graph_complex_exam расширен до 25.

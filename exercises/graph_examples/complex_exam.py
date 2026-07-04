@@ -493,6 +493,272 @@ _K4_EQUATIONS = {
 }
 
 
+# ---------- К5. Гармоническая функция: восстановить f(z) по u или v ----------
+# Обратное конструирование: берём аналитическую f₀(z) из пула, её Re/Im — это
+# ровно табличные гармонические части (sin(kx)ch(ky), e^{kx}cos(ky), …). Дана
+# одна часть + f(z₀); ответ — f(z) = f₀(z) + (мнимая или вещественная константа),
+# зафиксированная условием. Гармоничность показывается лапласианом Δh = 0.
+# z₀ = 0 (f₀(0) ∈ {0,1} у всех семейств — условие f(0)=… чистое).
+_FAM_CORE = [
+    ("sin(k*z)",  "sin(k*x)*cosh(k*y)",  "cos(k*x)*sinh(k*y)"),
+    ("cos(k*z)",  "cos(k*x)*cosh(k*y)",  "-sin(k*x)*sinh(k*y)"),
+    ("exp(k*z)",  "exp(k*x)*cos(k*y)",   "exp(k*x)*sin(k*y)"),
+    ("sinh(k*z)", "sinh(k*x)*cos(k*y)",  "cosh(k*x)*sin(k*y)"),
+    ("cosh(k*z)", "cosh(k*x)*cos(k*y)",  "sinh(k*x)*sin(k*y)"),
+    ("z**2",      "x**2 - y**2",         "2*x*y"),
+]
+
+
+def _fam_nodes(prefix: str, template_key: int, extra_vars: list) -> list:
+    """5 узлов expr_const по семействам (values подставит k) + pick по fam."""
+    nodes = []
+    for i, tpl in enumerate(_FAM_CORE):
+        nodes.append({"id": f"{prefix}{i}", "type": "expr_const",
+                      "params": {"expr": tpl[template_key],
+                                 "vars": ["k"] + extra_vars}})
+    nodes.append({"id": prefix, "type": "pick",
+                  "params": {"count": 6, "value_type": "expr"}})
+    return nodes
+
+
+def _fam_edges(prefix: str, values_src: str, fam_src: str) -> list:
+    edges = [{"from": f"{values_src}:out", "to": f"{prefix}{i}:values"}
+             for i in range(6)]
+    edges += [{"from": f"{prefix}{i}:out", "to": f"{prefix}:in{i}"}
+              for i in range(6)]
+    edges.append({"from": f"{fam_src}:out", "to": f"{prefix}:index"})
+    return edges
+
+
+_K5_HARMONIC = {
+    "nodes": [
+        {"id": "fam", "type": "random_natural", "params": {"min": 0, "max": 5}},
+        {"id": "k", "type": "random_natural", "params": {"min": 1, "max": 3}},
+        {"id": "part", "type": "random_natural", "params": {"min": 0, "max": 1}},
+        {"id": "cC", "type": "random_choice",
+         "params": {"elem_type": "number", "items": ["0", "1", "-1", "2"]}},
+        {"id": "vdk", "type": "var_dict", "params": {"names": ["k"]}},
+        {"id": "vdkxy", "type": "var_dict", "params": {"names": ["k"]}},
+        # f₀(z), Re-часть, Im-часть — по семействам (pick по fam).
+        *_fam_nodes("f0", 0, ["z"]),
+        *_fam_nodes("hre", 1, ["x", "y"]),
+        *_fam_nodes("him", 2, ["x", "y"]),
+        # Данная гармоническая часть h = pick(part) между Re и Im.
+        {"id": "h", "type": "pick", "params": {"count": 2, "value_type": "expr"}},
+        {"id": "letter", "type": "pick",
+         "params": {"count": 2, "value_type": "string"}},
+        {"id": "lu", "type": "constant_string", "params": {"value": "u"}},
+        {"id": "lv", "type": "constant_string", "params": {"value": "v"}},
+        {"id": "phrase", "type": "pick", "params": {"count": 2, "value_type": "block"}},
+        {"id": "pu", "type": "text",
+         "params": {"text": "по её действительной части u(x, y)"}},
+        {"id": "pv", "type": "text",
+         "params": {"text": "по её мнимой части v(x, y)"}},
+        # Лапласиан Δh = h_xx + h_yy (по построению 0).
+        {"id": "hxx", "type": "diff", "params": {"var": "x", "order": 2}},
+        {"id": "hyy", "type": "diff", "params": {"var": "y", "order": 2}},
+        {"id": "lap0", "type": "expr_binop", "params": {"op": "add"}},
+        {"id": "lap", "type": "simplify"},
+        # f₀(0): подстановка z=0 и упрощение.
+        {"id": "vdz", "type": "var_dict", "params": {"names": ["z"]}},
+        {"id": "z0v", "type": "constant_number", "params": {"value": 0}},
+        {"id": "f0z0", "type": "expr_subs"},
+        # iC (re-случай) и C (im-случай).
+        {"id": "iCe", "type": "expr_const",
+         "params": {"expr": "I*cC", "vars": ["cC"]}},
+        {"id": "vdC", "type": "var_dict", "params": {"names": ["cC"]}},
+        {"id": "Ce", "type": "expr_const",
+         "params": {"expr": "cC", "vars": ["cC"]}},
+        # W = f₀(0) + (iC | C) по part.
+        {"id": "WI", "type": "expr_binop", "params": {"op": "add"}},
+        {"id": "WR", "type": "expr_binop", "params": {"op": "add"}},
+        {"id": "W", "type": "pick", "params": {"count": 2, "value_type": "expr"}},
+        # f(z) = f₀(z) + (iC | C) по part.
+        {"id": "fI", "type": "expr_binop", "params": {"op": "add"}},
+        {"id": "fR", "type": "expr_binop", "params": {"op": "add"}},
+        {"id": "fz", "type": "pick", "params": {"count": 2, "value_type": "expr"}},
+        # Условие.
+        {"id": "intro", "type": "text", "params": {"text":
+            "Показать, что заданная функция является гармонической. "
+            "Восстановить аналитическую функцию f(z)"}},
+        {"id": "hblk", "type": "expr_block"},          # letter = u|v (динам. prefix)
+        {"id": "cond", "type": "expr_block", "params": {"prefix": "f(0)"}},
+        {"id": "stmt", "type": "block_list", "params": {"count": 4}},
+        # Ответ.
+        {"id": "harm", "type": "expr_block", "params": {"prefix": "Δ"}},
+        {"id": "harmT", "type": "text", "params": {"text":
+            "(лапласиан равен нулю — функция гармоническая)."}},
+        {"id": "fblk", "type": "expr_block", "params": {"prefix": "f(z)"}},
+        {"id": "constT", "type": "text", "params": {"text":
+            "Мнимая (соотв. вещественная) часть восстанавливается по условиям "
+            "Коши–Римана с точностью до аддитивной константы; она найдена из "
+            "условия f(0) = #W#."}},
+        {"id": "ansBl", "type": "block_list", "params": {"count": 4}},
+        {"id": "task", "type": "static_task"},
+    ],
+    "edges": [
+        {"from": "k:out", "to": "vdk:k"}, {"from": "k:out", "to": "vdkxy:k"},
+        *_fam_edges("f0", "vdk", "fam"),
+        *_fam_edges("hre", "vdkxy", "fam"),
+        *_fam_edges("him", "vdkxy", "fam"),
+        {"from": "part:out", "to": "h:index"},
+        {"from": "hre:out", "to": "h:in0"}, {"from": "him:out", "to": "h:in1"},
+        {"from": "part:out", "to": "letter:index"},
+        {"from": "lu:out", "to": "letter:in0"}, {"from": "lv:out", "to": "letter:in1"},
+        {"from": "part:out", "to": "phrase:index"},
+        {"from": "pu:out", "to": "phrase:in0"}, {"from": "pv:out", "to": "phrase:in1"},
+        {"from": "h:out", "to": "hxx:in"}, {"from": "h:out", "to": "hyy:in"},
+        {"from": "hxx:out", "to": "lap0:a"}, {"from": "hyy:out", "to": "lap0:b"},
+        {"from": "lap0:out", "to": "lap:in"},
+        {"from": "z0v:out", "to": "vdz:z"}, {"from": "vdz:out", "to": "f0z0:values"},
+        {"from": "f0:out", "to": "f0z0:in"},
+        {"from": "cC:out", "to": "vdC:cC"},
+        {"from": "vdC:out", "to": "iCe:values"}, {"from": "vdC:out", "to": "Ce:values"},
+        {"from": "f0z0:out", "to": "WI:a"}, {"from": "iCe:out", "to": "WI:b"},
+        {"from": "f0z0:out", "to": "WR:a"}, {"from": "Ce:out", "to": "WR:b"},
+        {"from": "part:out", "to": "W:index"},
+        {"from": "WI:out", "to": "W:in0"}, {"from": "WR:out", "to": "W:in1"},
+        {"from": "f0:out", "to": "fI:a"}, {"from": "iCe:out", "to": "fI:b"},
+        {"from": "f0:out", "to": "fR:a"}, {"from": "Ce:out", "to": "fR:b"},
+        {"from": "part:out", "to": "fz:index"},
+        {"from": "fI:out", "to": "fz:in0"}, {"from": "fR:out", "to": "fz:in1"},
+        {"from": "h:out", "to": "hblk:in"}, {"from": "letter:out", "to": "hblk:prefix"},
+        {"from": "W:out", "to": "cond:in"},
+        {"from": "intro:out", "to": "stmt:in0"},
+        {"from": "phrase:out", "to": "stmt:in1"},
+        {"from": "hblk:out", "to": "stmt:in2"},
+        {"from": "cond:out", "to": "stmt:in3"},
+        {"from": "lap:out", "to": "harm:in"},
+        {"from": "fz:out", "to": "fblk:in"},
+        {"from": "W:out", "to": "constT:W"},
+        {"from": "harm:out", "to": "ansBl:in0"},
+        {"from": "harmT:out", "to": "ansBl:in1"},
+        {"from": "fblk:out", "to": "ansBl:in2"},
+        {"from": "constT:out", "to": "ansBl:in3"},
+        {"from": "stmt:out", "to": "task:statement"},
+        {"from": "ansBl:out", "to": "task:answer"},
+    ],
+    "meta": {"seed": 25, "max_attempts": 100},
+}
+
+
+# ---------- К6. Отображение области ω = a·zⁿ + b ----------
+# D₁ = {|z| ≤ R, α₁ ≤ arg z ≤ α₂} → D₂ = a·D₁ⁿ + b (сектор с центром b,
+# радиусом |a|·Rⁿ, углы n·α + arg a). Строки условий/отображения строятся
+# шаблонами и идут в conformal_map_plot; те же строки parse_expr разбирает
+# в EXPR для точного описания D₂ в ответе.
+_NICE_A = ["sqrt(3) + I", "1 + I", "2*I", "sqrt(3) - I", "-1 + I", "2"]
+_NICE_B = ["1 + 5*I", "-1 - 2*I", "3*I", "2 + 2*I", "-2 + I"]
+_ANG_LO = ["0", "pi/6", "pi/4"]
+_ANG_HI = ["pi/3", "pi/2", "2*pi/3"]
+
+_K6_MAPPING = {
+    "nodes": [
+        {"id": "n", "type": "random_choice",
+         "params": {"elem_type": "number", "items": ["2", "3"]}},
+        {"id": "R", "type": "random_natural", "params": {"min": 1, "max": 2}},
+        {"id": "aStr", "type": "random_choice",
+         "params": {"elem_type": "string", "items": _NICE_A}},
+        {"id": "bStr", "type": "random_choice",
+         "params": {"elem_type": "string", "items": _NICE_B}},
+        {"id": "a1", "type": "random_choice",
+         "params": {"elem_type": "string", "items": _ANG_LO}},
+        {"id": "a2", "type": "random_choice",
+         "params": {"elem_type": "string", "items": _ANG_HI}},
+        # Условия D₁ (строки от z) и отображение w = f(z) (строка).
+        {"id": "c1", "type": "template", "params": {"text": "abs(z) <= #R#"}},
+        {"id": "c2", "type": "template", "params": {"text": "arg(z) >= #A1#"}},
+        {"id": "c3", "type": "template", "params": {"text": "arg(z) <= #A2#"}},
+        {"id": "conds", "type": "list_new",
+         "params": {"count": 3, "elem_type": "string"}},
+        {"id": "mapping", "type": "template",
+         "params": {"text": "(#a#)*z**#n# + (#b#)"}},
+        {"id": "plot", "type": "conformal_map_plot",
+         "params": {"span": 3, "title1": "D1 (плоскость z)",
+                    "title2": "D2 (плоскость w)"}},
+        {"id": "img", "type": "to_block"},
+        # Разбор строк в EXPR для описания D₂.
+        {"id": "aE", "type": "parse_expr"},
+        {"id": "bE", "type": "parse_expr"},
+        {"id": "a1E", "type": "parse_expr"},
+        {"id": "a2E", "type": "parse_expr"},
+        {"id": "argA", "type": "arg"},
+        {"id": "vdRn", "type": "var_dict", "params": {"names": ["R0", "N0"]}},
+        {"id": "radT", "type": "expr_const",
+         "params": {"expr": "Abs(AA)*R0**N0", "vars": ["AA", "R0", "N0"]}},
+        {"id": "radA", "type": "subs_expr", "params": {"name": "AA"}},
+        {"id": "rad", "type": "simplify"},
+        # β₁ = n·α₁ + arg a, β₂ = n·α₂ + arg a.
+        {"id": "b1T", "type": "expr_const",
+         "params": {"expr": "N0*A + AG", "vars": ["N0", "A", "AG"]}},
+        {"id": "b1n", "type": "expr_subs"},
+        {"id": "b1a", "type": "subs_expr", "params": {"name": "A"}},
+        {"id": "b1g", "type": "subs_expr", "params": {"name": "AG"}},
+        {"id": "b1", "type": "simplify"},
+        {"id": "b2T", "type": "expr_const",
+         "params": {"expr": "N0*A + AG", "vars": ["N0", "A", "AG"]}},
+        {"id": "b2n", "type": "expr_subs"},
+        {"id": "b2a", "type": "subs_expr", "params": {"name": "A"}},
+        {"id": "b2g", "type": "subs_expr", "params": {"name": "AG"}},
+        {"id": "b2", "type": "simplify"},
+        {"id": "vdN", "type": "var_dict", "params": {"names": ["N0"]}},
+        # Условие.
+        {"id": "intro", "type": "text", "params": {"text":
+            "Определить область D₂ плоскости W, на которую отобразится "
+            "область D₁ плоскости Z заданной функцией ω = f(z). Начертить "
+            "D₁ и D₂."}},
+        {"id": "condT", "type": "text", "params": {"text":
+            "ω = (#a#)·zⁿ + (#b#), n = #n#;  D₁: |z| ≤ #R#, #A1# ≤ arg z ≤ #A2#."}},
+        {"id": "stmt", "type": "block_list", "params": {"count": 2}},
+        # Ответ.
+        {"id": "ansT", "type": "text", "params": {"text":
+            "D₂ — круговой сектор с центром w₀ = #b#, радиусом ρ = |a|·Rⁿ = "
+            "#rad# и углами arg(w − w₀) ∈ [#b1#; #b2#] (аргументы умножаются "
+            "на n, затем поворот на arg a = #ag#, центр сдвигается в b)."}},
+        {"id": "ansBl", "type": "block_list", "params": {"count": 2}},
+        {"id": "task", "type": "static_task"},
+    ],
+    "edges": [
+        {"from": "R:out", "to": "c1:R"},
+        {"from": "a1:out", "to": "c2:A1"}, {"from": "a2:out", "to": "c3:A2"},
+        {"from": "c1:out", "to": "conds:in0"}, {"from": "c2:out", "to": "conds:in1"},
+        {"from": "c3:out", "to": "conds:in2"},
+        {"from": "aStr:out", "to": "mapping:a"}, {"from": "n:out", "to": "mapping:n"},
+        {"from": "bStr:out", "to": "mapping:b"},
+        {"from": "conds:out", "to": "plot:conds"},
+        {"from": "mapping:out", "to": "plot:mapping"},
+        {"from": "plot:out", "to": "img:in"},
+        {"from": "aStr:out", "to": "aE:text"}, {"from": "bStr:out", "to": "bE:text"},
+        {"from": "a1:out", "to": "a1E:text"}, {"from": "a2:out", "to": "a2E:text"},
+        {"from": "aE:out", "to": "argA:in"},
+        {"from": "R:out", "to": "vdRn:R0"}, {"from": "n:out", "to": "vdRn:N0"},
+        {"from": "vdRn:out", "to": "radT:values"},
+        {"from": "radT:out", "to": "radA:in"}, {"from": "aE:out", "to": "radA:value"},
+        {"from": "radA:out", "to": "rad:in"},
+        {"from": "n:out", "to": "vdN:N0"},
+        {"from": "vdN:out", "to": "b1n:values"}, {"from": "b1T:out", "to": "b1n:in"},
+        {"from": "b1n:out", "to": "b1a:in"}, {"from": "a1E:out", "to": "b1a:value"},
+        {"from": "b1a:out", "to": "b1g:in"}, {"from": "argA:out", "to": "b1g:value"},
+        {"from": "b1g:out", "to": "b1:in"},
+        {"from": "vdN:out", "to": "b2n:values"}, {"from": "b2T:out", "to": "b2n:in"},
+        {"from": "b2n:out", "to": "b2a:in"}, {"from": "a2E:out", "to": "b2a:value"},
+        {"from": "b2a:out", "to": "b2g:in"}, {"from": "argA:out", "to": "b2g:value"},
+        {"from": "b2g:out", "to": "b2:in"},
+        {"from": "aE:out", "to": "condT:a"}, {"from": "bE:out", "to": "condT:b"},
+        {"from": "n:out", "to": "condT:n"}, {"from": "R:out", "to": "condT:R"},
+        {"from": "a1E:out", "to": "condT:A1"}, {"from": "a2E:out", "to": "condT:A2"},
+        {"from": "intro:out", "to": "stmt:in0"}, {"from": "condT:out", "to": "stmt:in1"},
+        {"from": "bE:out", "to": "ansT:b"}, {"from": "rad:out", "to": "ansT:rad"},
+        {"from": "b1:out", "to": "ansT:b1"}, {"from": "b2:out", "to": "ansT:b2"},
+        {"from": "argA:out", "to": "ansT:ag"},
+        {"from": "ansT:out", "to": "ansBl:in0"}, {"from": "img:out", "to": "ansBl:in1"},
+        {"from": "stmt:out", "to": "task:statement"},
+        {"from": "ansBl:out", "to": "task:answer"},
+    ],
+    "meta": {"seed": 26, "max_attempts": 100},
+}
+
+
 COMPLEX_EXAM: dict[str, dict] = {
     "k1_forms": {
         "title": "№1. Формы комплексного числа",
@@ -517,6 +783,18 @@ COMPLEX_EXAM: dict[str, dict] = {
         "note": "e^z = w / cos z = a / sh z = b; корни по ветвям (K, S=±1) "
                 "одним циклом; решётка корней на картинке.",
         "graph": _K4_EQUATIONS,
+    },
+    "k5_harmonic": {
+        "title": "№5. Гармоническая функция, восстановление f(z)",
+        "note": "6 семейств (sin/cos/exp/sh/ch/z²) × Re|Im; Δh=0; "
+                "f(z)=f₀(z)+const из f(0).",
+        "graph": _K5_HARMONIC,
+    },
+    "k6_mapping": {
+        "title": "№6. Отображение области ω = a·zⁿ + b",
+        "note": "сектор D₁ → D₂ (conformal_map_plot, две панели); точное "
+                "описание D₂ через parse_expr.",
+        "graph": _K6_MAPPING,
     },
 }
 

@@ -143,8 +143,8 @@ class SymbolicAdditionsTests(unittest.TestCase):
 
 
 class ComplexExamStructureTests(unittest.TestCase):
-    def test_four_tasks(self):
-        self.assertEqual(len(complex_exam_names()), 4)
+    def test_six_tasks(self):
+        self.assertEqual(len(complex_exam_names()), 6)
 
     def test_all_assemble_with_final(self):
         for name in complex_exam_names():
@@ -213,9 +213,68 @@ class ComplexExamExecutionTests(unittest.TestCase):
 
     def test_variant_generation(self):
         v = generate_complex_variant(3)
-        self.assertEqual(len(v), 4)
+        self.assertEqual(len(v), 6)
         for title, task in v:
             self.assertTrue(title and task.statement and task.answer)
+
+    def test_k5_reconstruction_consistent(self):
+        import sympy as sp
+        z = sp.Symbol("z")
+        for seed in range(6):
+            outs = GraphExecutor(_spec("k5_harmonic", seed)).run_full()
+            fz, W, lap = outs["fz"]["out"], outs["W"]["out"], outs["lap"]["out"]
+            self.assertEqual(lap, 0)                       # Δh = 0 (гармоничность)
+            self.assertEqual(sp.simplify(fz.subs(z, 0) - W), 0)  # f(0) = W
+
+    def test_k6_answer_and_image(self):
+        import sympy as sp
+        for seed in range(4):
+            outs = GraphExecutor(_spec("k6_mapping", seed)).run_full()
+            task = GraphExecutor(_spec("k6_mapping", seed)).run()
+            self.assertTrue(_has_image(task))
+            # радиус D₂ = |a|·R^n — положительное точное число.
+            rad = outs["rad"]["out"]
+            self.assertGreater(float(rad.evalf()), 0)
+
+
+@unittest.skipUnless(HAS_MPL, "matplotlib не установлен")
+class ConformalPlotTests(unittest.TestCase):
+    def test_conformal_map_plot_two_panels(self):
+        from core.graph.nodes.plot import ConformalMapPlotNode
+        img = ConformalMapPlotNode("m", {"span": 3}).compute(
+            {"conds": ["abs(z) <= 2", "arg(z) >= 0", "arg(z) <= pi/4"],
+             "mapping": "(sqrt(3)+I)*z**2 + (1+5*I)"}, _ctx())["out"]
+        self.assertGreater(img.size[0], 300)   # две панели — шире
+
+    def test_conformal_map_rejects_dangerous_mapping(self):
+        from core.graph.nodes.plot import ConformalMapPlotNode
+        with self.assertRaises(GraphValidationError):
+            ConformalMapPlotNode("m", {}).compute(
+                {"conds": ["abs(z) <= 1"], "mapping": "z.__class__"}, _ctx())
+
+
+@unittest.skipUnless(HAS_SYMPY, "sympy не установлен")
+class ParseExprNodeTests(unittest.TestCase):
+    def test_parse_string_to_expr(self):
+        import sympy as sp
+        from core.graph.nodes.symbolic import ParseExprNode
+        out = ParseExprNode("p", {}).compute({"text": "sqrt(3) + I"}, _ctx())["out"]
+        self.assertEqual(out, sp.sqrt(3) + sp.I)
+
+    def test_parse_empty_retries(self):
+        from core.graph.nodes.symbolic import ParseExprNode
+        with self.assertRaises(RetryGeneration):
+            ParseExprNode("p", {}).compute({"text": ""}, _ctx())
+
+    def test_expr_subs_intifies_values(self):
+        # 0.0 / 2.0 из NUMBER-провода → точные Integer (не «плывут» в float).
+        import sympy as sp
+        from core.graph.nodes.symbolic import SubstituteNode
+        z, n = sp.Symbol("z"), sp.Symbol("n")
+        out = SubstituteNode("s", {}).compute(
+            {"in": z**2 + n, "values": {"z": 0.0, "n": 2.0}}, _ctx())["out"]
+        self.assertEqual(out, sp.Integer(2))
+        self.assertIsInstance(out, sp.Integer)
 
 
 if __name__ == "__main__":
