@@ -1,0 +1,277 @@
+{
+  "title": "№1. Сходимость: сравнение с p-рядом",
+  "note": "Случайная ветка структуры (select expr): сходится/расходится.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "d",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 1
+        }
+      },
+      {
+        "id": "a",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 7
+        }
+      },
+      {
+        "id": "b",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 7
+        }
+      },
+      {
+        "id": "e",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "f",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "p",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 5
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "a",
+            "b",
+            "e",
+            "f",
+            "p"
+          ]
+        }
+      },
+      {
+        "id": "conv",
+        "type": "expr_const",
+        "params": {
+          "expr": "((a*n**2 + e)/(b*n**3 + f))**p * atan(1/sqrt(n))",
+          "vars": [
+            "a",
+            "b",
+            "e",
+            "f",
+            "p",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "div",
+        "type": "expr_const",
+        "params": {
+          "expr": "((a*n + e)/(b*n + f))**p * atan(1/sqrt(n))",
+          "vars": [
+            "a",
+            "b",
+            "e",
+            "f",
+            "p",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "isconv",
+        "type": "compare",
+        "params": {
+          "op": "==",
+          "b": 1
+        }
+      },
+      {
+        "id": "term",
+        "type": "select",
+        "params": {
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "nsym",
+        "type": "symbol",
+        "params": {
+          "name": "n"
+        }
+      },
+      {
+        "id": "disp",
+        "type": "sum_display",
+        "params": {
+          "lower": "1",
+          "upper": "oo"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Исследовать на сходимость:"
+        }
+      },
+      {
+        "id": "fb",
+        "type": "expr_block"
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "s",
+        "type": "formula",
+        "params": {
+          "expr": "p + 0.5"
+        }
+      },
+      {
+        "id": "ansC",
+        "type": "text",
+        "params": {
+          "text": "Сходится: aₙ ~ C·n^(−#s#) (дробь ~ C·n^(−p), arctg(1/√n) ~ n^(−1/2)); сравнение с p-рядом, s = #s# > 1."
+        }
+      },
+      {
+        "id": "ansD",
+        "type": "text",
+        "params": {
+          "text": "Расходится: дробь стремится к C ≠ 0, поэтому aₙ ~ C·arctg(1/√n) ~ C·n^(−1/2); p-ряд с s = 1/2 ≤ 1."
+        }
+      },
+      {
+        "id": "ans",
+        "type": "select",
+        "params": {
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a:out",
+        "to": "vd:a"
+      },
+      {
+        "from": "b:out",
+        "to": "vd:b"
+      },
+      {
+        "from": "e:out",
+        "to": "vd:e"
+      },
+      {
+        "from": "f:out",
+        "to": "vd:f"
+      },
+      {
+        "from": "p:out",
+        "to": "vd:p"
+      },
+      {
+        "from": "vd:out",
+        "to": "conv:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "div:values"
+      },
+      {
+        "from": "d:out",
+        "to": "isconv:a"
+      },
+      {
+        "from": "isconv:out",
+        "to": "term:cond"
+      },
+      {
+        "from": "conv:out",
+        "to": "term:on_true"
+      },
+      {
+        "from": "div:out",
+        "to": "term:on_false"
+      },
+      {
+        "from": "term:out",
+        "to": "disp:term"
+      },
+      {
+        "from": "nsym:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "disp:out",
+        "to": "fb:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fb:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "p:out",
+        "to": "s:p"
+      },
+      {
+        "from": "s:out",
+        "to": "ansC:s"
+      },
+      {
+        "from": "isconv:out",
+        "to": "ans:cond"
+      },
+      {
+        "from": "ansC:out",
+        "to": "ans:on_true"
+      },
+      {
+        "from": "ansD:out",
+        "to": "ans:on_false"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ans:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 11,
+      "max_attempts": 100
+    }
+  }
+}

@@ -1,0 +1,258 @@
+{
+  "title": "№2. Сходимость: признак Даламбера (факториалы)",
+  "note": "L = a^b/c^c в замкнутой форме; guard отсекает L=1.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "c",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 3
+        }
+      },
+      {
+        "id": "a",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 9
+        }
+      },
+      {
+        "id": "b",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      },
+      {
+        "id": "term",
+        "type": "expr_const",
+        "params": {
+          "expr": "a**(b*n) * factorial(n)**c / factorial(c*n)",
+          "vars": [
+            "a",
+            "b",
+            "c",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "L",
+        "type": "formula",
+        "params": {
+          "expr": "u^v / w^w"
+        }
+      },
+      {
+        "id": "Lx",
+        "type": "expr_const",
+        "params": {
+          "expr": "a**b / c**c",
+          "vars": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      },
+      {
+        "id": "eq1",
+        "type": "compare",
+        "params": {
+          "op": "==",
+          "b": 1
+        }
+      },
+      {
+        "id": "g",
+        "type": "guard",
+        "params": {
+          "mode": "require_false"
+        }
+      },
+      {
+        "id": "verd",
+        "type": "compare",
+        "params": {
+          "op": "<",
+          "b": 1
+        }
+      },
+      {
+        "id": "nsym",
+        "type": "symbol",
+        "params": {
+          "name": "n"
+        }
+      },
+      {
+        "id": "disp",
+        "type": "sum_display",
+        "params": {
+          "lower": "1",
+          "upper": "oo"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Исследовать на сходимость:"
+        }
+      },
+      {
+        "id": "fb",
+        "type": "expr_block"
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "ansC",
+        "type": "text",
+        "params": {
+          "text": "Сходится (признак Даламбера): lim aₙ₊₁/aₙ = #L# < 1."
+        }
+      },
+      {
+        "id": "ansD",
+        "type": "text",
+        "params": {
+          "text": "Расходится (признак Даламбера): lim aₙ₊₁/aₙ = #L# > 1."
+        }
+      },
+      {
+        "id": "ans",
+        "type": "select",
+        "params": {
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a:out",
+        "to": "vd:a"
+      },
+      {
+        "from": "b:out",
+        "to": "vd:b"
+      },
+      {
+        "from": "c:out",
+        "to": "vd:c"
+      },
+      {
+        "from": "vd:out",
+        "to": "term:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "Lx:values"
+      },
+      {
+        "from": "a:out",
+        "to": "L:u"
+      },
+      {
+        "from": "b:out",
+        "to": "L:v"
+      },
+      {
+        "from": "c:out",
+        "to": "L:w"
+      },
+      {
+        "from": "L:out",
+        "to": "eq1:a"
+      },
+      {
+        "from": "eq1:out",
+        "to": "g:cond"
+      },
+      {
+        "from": "L:out",
+        "to": "g:value"
+      },
+      {
+        "from": "g:out",
+        "to": "verd:a"
+      },
+      {
+        "from": "term:out",
+        "to": "disp:term"
+      },
+      {
+        "from": "nsym:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "disp:out",
+        "to": "fb:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fb:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "Lx:out",
+        "to": "ansC:L"
+      },
+      {
+        "from": "Lx:out",
+        "to": "ansD:L"
+      },
+      {
+        "from": "verd:out",
+        "to": "ans:cond"
+      },
+      {
+        "from": "ansC:out",
+        "to": "ans:on_true"
+      },
+      {
+        "from": "ansD:out",
+        "to": "ans:on_false"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ans:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 12,
+      "max_attempts": 200
+    }
+  }
+}

@@ -1,0 +1,173 @@
+{
+  "title": "№8. Ряд Тейлора ln(x+a), почленное дифференцирование",
+  "note": "Тождества Eq(…, Sum(…)) одним выражением.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "a",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 9
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "a"
+          ]
+        }
+      },
+      {
+        "id": "fx",
+        "type": "expr_const",
+        "params": {
+          "expr": "log(x + a)",
+          "vars": [
+            "a",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "eq1",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(log(x + a), log(a) + Sum((-1)**(k+1) * x**k / (k * a**k), (k, 1, oo)))",
+          "vars": [
+            "a",
+            "x",
+            "k"
+          ]
+        }
+      },
+      {
+        "id": "eq2",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(1/(x + a), Sum((-1)**k * x**k / a**(k+1), (k, 0, oo)))",
+          "vars": [
+            "a",
+            "x",
+            "k"
+          ]
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Разложить f(x) в ряд Тейлора в точке x₀ = 0. Продифференцировать ряд почленно. Указать область сходимости."
+        }
+      },
+      {
+        "id": "fbF",
+        "type": "expr_block",
+        "params": {
+          "prefix": "f(x)"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "fb1",
+        "type": "expr_block"
+      },
+      {
+        "id": "fb2",
+        "type": "expr_block"
+      },
+      {
+        "id": "regT",
+        "type": "text",
+        "params": {
+          "text": "Область сходимости ряда: −#a# < x ≤ #a#; после почленного дифференцирования: |x| < #a#."
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 3
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a:out",
+        "to": "vd:a"
+      },
+      {
+        "from": "vd:out",
+        "to": "fx:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "eq1:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "eq2:values"
+      },
+      {
+        "from": "fx:out",
+        "to": "fbF:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fbF:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "eq1:out",
+        "to": "fb1:in"
+      },
+      {
+        "from": "eq2:out",
+        "to": "fb2:in"
+      },
+      {
+        "from": "a:out",
+        "to": "regT:a"
+      },
+      {
+        "from": "fb1:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "fb2:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "regT:out",
+        "to": "ansBl:in2"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 18,
+      "max_attempts": 100
+    }
+  }
+}
