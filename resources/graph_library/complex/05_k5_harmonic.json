@@ -1,0 +1,903 @@
+{
+  "title": "№5. Гармоническая функция, восстановление f(z)",
+  "note": "6 семейств (sin/cos/exp/sh/ch/z²) × Re|Im; Δh=0; f(z)=f₀(z)+const из f(0).",
+  "graph": {
+    "nodes": [
+      {
+        "id": "fam",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 5
+        }
+      },
+      {
+        "id": "k",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "part",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 1
+        }
+      },
+      {
+        "id": "cC",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "number",
+          "items": [
+            "0",
+            "1",
+            "-1",
+            "2"
+          ]
+        }
+      },
+      {
+        "id": "vdk",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "k"
+          ]
+        }
+      },
+      {
+        "id": "vdkxy",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "k"
+          ]
+        }
+      },
+      {
+        "id": "f00",
+        "type": "expr_const",
+        "params": {
+          "expr": "sin(k*z)",
+          "vars": [
+            "k",
+            "z"
+          ]
+        }
+      },
+      {
+        "id": "f01",
+        "type": "expr_const",
+        "params": {
+          "expr": "cos(k*z)",
+          "vars": [
+            "k",
+            "z"
+          ]
+        }
+      },
+      {
+        "id": "f02",
+        "type": "expr_const",
+        "params": {
+          "expr": "exp(k*z)",
+          "vars": [
+            "k",
+            "z"
+          ]
+        }
+      },
+      {
+        "id": "f03",
+        "type": "expr_const",
+        "params": {
+          "expr": "sinh(k*z)",
+          "vars": [
+            "k",
+            "z"
+          ]
+        }
+      },
+      {
+        "id": "f04",
+        "type": "expr_const",
+        "params": {
+          "expr": "cosh(k*z)",
+          "vars": [
+            "k",
+            "z"
+          ]
+        }
+      },
+      {
+        "id": "f05",
+        "type": "expr_const",
+        "params": {
+          "expr": "z**2",
+          "vars": [
+            "k",
+            "z"
+          ]
+        }
+      },
+      {
+        "id": "f0",
+        "type": "pick",
+        "params": {
+          "count": 6,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "hre0",
+        "type": "expr_const",
+        "params": {
+          "expr": "sin(k*x)*cosh(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "hre1",
+        "type": "expr_const",
+        "params": {
+          "expr": "cos(k*x)*cosh(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "hre2",
+        "type": "expr_const",
+        "params": {
+          "expr": "exp(k*x)*cos(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "hre3",
+        "type": "expr_const",
+        "params": {
+          "expr": "sinh(k*x)*cos(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "hre4",
+        "type": "expr_const",
+        "params": {
+          "expr": "cosh(k*x)*cos(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "hre5",
+        "type": "expr_const",
+        "params": {
+          "expr": "x**2 - y**2",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "hre",
+        "type": "pick",
+        "params": {
+          "count": 6,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "him0",
+        "type": "expr_const",
+        "params": {
+          "expr": "cos(k*x)*sinh(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "him1",
+        "type": "expr_const",
+        "params": {
+          "expr": "-sin(k*x)*sinh(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "him2",
+        "type": "expr_const",
+        "params": {
+          "expr": "exp(k*x)*sin(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "him3",
+        "type": "expr_const",
+        "params": {
+          "expr": "cosh(k*x)*sin(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "him4",
+        "type": "expr_const",
+        "params": {
+          "expr": "sinh(k*x)*sin(k*y)",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "him5",
+        "type": "expr_const",
+        "params": {
+          "expr": "2*x*y",
+          "vars": [
+            "k",
+            "x",
+            "y"
+          ]
+        }
+      },
+      {
+        "id": "him",
+        "type": "pick",
+        "params": {
+          "count": 6,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "h",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "letter",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "string"
+        }
+      },
+      {
+        "id": "lu",
+        "type": "constant_string",
+        "params": {
+          "value": "u"
+        }
+      },
+      {
+        "id": "lv",
+        "type": "constant_string",
+        "params": {
+          "value": "v"
+        }
+      },
+      {
+        "id": "phrase",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "pu",
+        "type": "text",
+        "params": {
+          "text": "по её действительной части u(x, y)"
+        }
+      },
+      {
+        "id": "pv",
+        "type": "text",
+        "params": {
+          "text": "по её мнимой части v(x, y)"
+        }
+      },
+      {
+        "id": "hxx",
+        "type": "diff",
+        "params": {
+          "var": "x",
+          "order": 2
+        }
+      },
+      {
+        "id": "hyy",
+        "type": "diff",
+        "params": {
+          "var": "y",
+          "order": 2
+        }
+      },
+      {
+        "id": "lap0",
+        "type": "expr_binop",
+        "params": {
+          "op": "add"
+        }
+      },
+      {
+        "id": "lap",
+        "type": "simplify"
+      },
+      {
+        "id": "vdz",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "z"
+          ]
+        }
+      },
+      {
+        "id": "z0v",
+        "type": "constant_number",
+        "params": {
+          "value": 0
+        }
+      },
+      {
+        "id": "f0z0",
+        "type": "expr_subs"
+      },
+      {
+        "id": "iCe",
+        "type": "expr_const",
+        "params": {
+          "expr": "I*cC",
+          "vars": [
+            "cC"
+          ]
+        }
+      },
+      {
+        "id": "vdC",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "cC"
+          ]
+        }
+      },
+      {
+        "id": "Ce",
+        "type": "expr_const",
+        "params": {
+          "expr": "cC",
+          "vars": [
+            "cC"
+          ]
+        }
+      },
+      {
+        "id": "WI",
+        "type": "expr_binop",
+        "params": {
+          "op": "add"
+        }
+      },
+      {
+        "id": "WR",
+        "type": "expr_binop",
+        "params": {
+          "op": "add"
+        }
+      },
+      {
+        "id": "W",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "fI",
+        "type": "expr_binop",
+        "params": {
+          "op": "add"
+        }
+      },
+      {
+        "id": "fR",
+        "type": "expr_binop",
+        "params": {
+          "op": "add"
+        }
+      },
+      {
+        "id": "fz",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Показать, что заданная функция является гармонической. Восстановить аналитическую функцию f(z)"
+        }
+      },
+      {
+        "id": "hblk",
+        "type": "expr_block"
+      },
+      {
+        "id": "cond",
+        "type": "expr_block",
+        "params": {
+          "prefix": "f(0)"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 4
+        }
+      },
+      {
+        "id": "harm",
+        "type": "expr_block",
+        "params": {
+          "prefix": "Δ"
+        }
+      },
+      {
+        "id": "harmT",
+        "type": "text",
+        "params": {
+          "text": "(лапласиан равен нулю — функция гармоническая)."
+        }
+      },
+      {
+        "id": "fblk",
+        "type": "expr_block",
+        "params": {
+          "prefix": "f(z)"
+        }
+      },
+      {
+        "id": "constT",
+        "type": "text",
+        "params": {
+          "text": "Мнимая (соотв. вещественная) часть восстанавливается по условиям Коши–Римана с точностью до аддитивной константы; она найдена из условия f(0) = #W#."
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 4
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "k:out",
+        "to": "vdk:k"
+      },
+      {
+        "from": "k:out",
+        "to": "vdkxy:k"
+      },
+      {
+        "from": "vdk:out",
+        "to": "f00:values"
+      },
+      {
+        "from": "vdk:out",
+        "to": "f01:values"
+      },
+      {
+        "from": "vdk:out",
+        "to": "f02:values"
+      },
+      {
+        "from": "vdk:out",
+        "to": "f03:values"
+      },
+      {
+        "from": "vdk:out",
+        "to": "f04:values"
+      },
+      {
+        "from": "vdk:out",
+        "to": "f05:values"
+      },
+      {
+        "from": "f00:out",
+        "to": "f0:in0"
+      },
+      {
+        "from": "f01:out",
+        "to": "f0:in1"
+      },
+      {
+        "from": "f02:out",
+        "to": "f0:in2"
+      },
+      {
+        "from": "f03:out",
+        "to": "f0:in3"
+      },
+      {
+        "from": "f04:out",
+        "to": "f0:in4"
+      },
+      {
+        "from": "f05:out",
+        "to": "f0:in5"
+      },
+      {
+        "from": "fam:out",
+        "to": "f0:index"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "hre0:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "hre1:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "hre2:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "hre3:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "hre4:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "hre5:values"
+      },
+      {
+        "from": "hre0:out",
+        "to": "hre:in0"
+      },
+      {
+        "from": "hre1:out",
+        "to": "hre:in1"
+      },
+      {
+        "from": "hre2:out",
+        "to": "hre:in2"
+      },
+      {
+        "from": "hre3:out",
+        "to": "hre:in3"
+      },
+      {
+        "from": "hre4:out",
+        "to": "hre:in4"
+      },
+      {
+        "from": "hre5:out",
+        "to": "hre:in5"
+      },
+      {
+        "from": "fam:out",
+        "to": "hre:index"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "him0:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "him1:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "him2:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "him3:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "him4:values"
+      },
+      {
+        "from": "vdkxy:out",
+        "to": "him5:values"
+      },
+      {
+        "from": "him0:out",
+        "to": "him:in0"
+      },
+      {
+        "from": "him1:out",
+        "to": "him:in1"
+      },
+      {
+        "from": "him2:out",
+        "to": "him:in2"
+      },
+      {
+        "from": "him3:out",
+        "to": "him:in3"
+      },
+      {
+        "from": "him4:out",
+        "to": "him:in4"
+      },
+      {
+        "from": "him5:out",
+        "to": "him:in5"
+      },
+      {
+        "from": "fam:out",
+        "to": "him:index"
+      },
+      {
+        "from": "part:out",
+        "to": "h:index"
+      },
+      {
+        "from": "hre:out",
+        "to": "h:in0"
+      },
+      {
+        "from": "him:out",
+        "to": "h:in1"
+      },
+      {
+        "from": "part:out",
+        "to": "letter:index"
+      },
+      {
+        "from": "lu:out",
+        "to": "letter:in0"
+      },
+      {
+        "from": "lv:out",
+        "to": "letter:in1"
+      },
+      {
+        "from": "part:out",
+        "to": "phrase:index"
+      },
+      {
+        "from": "pu:out",
+        "to": "phrase:in0"
+      },
+      {
+        "from": "pv:out",
+        "to": "phrase:in1"
+      },
+      {
+        "from": "h:out",
+        "to": "hxx:in"
+      },
+      {
+        "from": "h:out",
+        "to": "hyy:in"
+      },
+      {
+        "from": "hxx:out",
+        "to": "lap0:a"
+      },
+      {
+        "from": "hyy:out",
+        "to": "lap0:b"
+      },
+      {
+        "from": "lap0:out",
+        "to": "lap:in"
+      },
+      {
+        "from": "z0v:out",
+        "to": "vdz:z"
+      },
+      {
+        "from": "vdz:out",
+        "to": "f0z0:values"
+      },
+      {
+        "from": "f0:out",
+        "to": "f0z0:in"
+      },
+      {
+        "from": "cC:out",
+        "to": "vdC:cC"
+      },
+      {
+        "from": "vdC:out",
+        "to": "iCe:values"
+      },
+      {
+        "from": "vdC:out",
+        "to": "Ce:values"
+      },
+      {
+        "from": "f0z0:out",
+        "to": "WI:a"
+      },
+      {
+        "from": "iCe:out",
+        "to": "WI:b"
+      },
+      {
+        "from": "f0z0:out",
+        "to": "WR:a"
+      },
+      {
+        "from": "Ce:out",
+        "to": "WR:b"
+      },
+      {
+        "from": "part:out",
+        "to": "W:index"
+      },
+      {
+        "from": "WI:out",
+        "to": "W:in0"
+      },
+      {
+        "from": "WR:out",
+        "to": "W:in1"
+      },
+      {
+        "from": "f0:out",
+        "to": "fI:a"
+      },
+      {
+        "from": "iCe:out",
+        "to": "fI:b"
+      },
+      {
+        "from": "f0:out",
+        "to": "fR:a"
+      },
+      {
+        "from": "Ce:out",
+        "to": "fR:b"
+      },
+      {
+        "from": "part:out",
+        "to": "fz:index"
+      },
+      {
+        "from": "fI:out",
+        "to": "fz:in0"
+      },
+      {
+        "from": "fR:out",
+        "to": "fz:in1"
+      },
+      {
+        "from": "h:out",
+        "to": "hblk:in"
+      },
+      {
+        "from": "letter:out",
+        "to": "hblk:prefix"
+      },
+      {
+        "from": "W:out",
+        "to": "cond:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "phrase:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "hblk:out",
+        "to": "stmt:in2"
+      },
+      {
+        "from": "cond:out",
+        "to": "stmt:in3"
+      },
+      {
+        "from": "lap:out",
+        "to": "harm:in"
+      },
+      {
+        "from": "fz:out",
+        "to": "fblk:in"
+      },
+      {
+        "from": "W:out",
+        "to": "constT:W"
+      },
+      {
+        "from": "harm:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "harmT:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "fblk:out",
+        "to": "ansBl:in2"
+      },
+      {
+        "from": "constT:out",
+        "to": "ansBl:in3"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 25,
+      "max_attempts": 100
+    }
+  }
+}

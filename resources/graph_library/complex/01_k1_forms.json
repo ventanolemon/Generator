@@ -1,0 +1,492 @@
+{
+  "title": "№1. Формы комплексного числа",
+  "note": "Пул «красивых» множителей; произведение/частное^N; точные r и φ; условие неупрощённым (UnevaluatedExpr + subs_expr).",
+  "graph": {
+    "nodes": [
+      {
+        "id": "w1",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "expr",
+          "items": [
+            "1 + I",
+            "1 - I",
+            "-1 + I",
+            "-1 - I",
+            "sqrt(3) + I",
+            "sqrt(3) - I",
+            "-1 + sqrt(3)*I",
+            "1 + sqrt(3)*I",
+            "-3 + sqrt(3)*I",
+            "2 - 2*sqrt(3)*I",
+            "2 + 2*I",
+            "-2 - 2*I"
+          ]
+        }
+      },
+      {
+        "id": "w2",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "expr",
+          "items": [
+            "1 + I",
+            "1 - I",
+            "-1 + I",
+            "-1 - I",
+            "sqrt(3) + I",
+            "sqrt(3) - I",
+            "-1 + sqrt(3)*I",
+            "1 + sqrt(3)*I",
+            "-3 + sqrt(3)*I",
+            "2 - 2*sqrt(3)*I",
+            "2 + 2*I",
+            "-2 - 2*I"
+          ]
+        }
+      },
+      {
+        "id": "d",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 1
+        }
+      },
+      {
+        "id": "N",
+        "type": "random_natural",
+        "params": {
+          "min": 3,
+          "max": 9
+        }
+      },
+      {
+        "id": "isprod",
+        "type": "compare",
+        "params": {
+          "op": "==",
+          "b": 1
+        }
+      },
+      {
+        "id": "zp",
+        "type": "expr_binop",
+        "params": {
+          "op": "mul"
+        }
+      },
+      {
+        "id": "zq",
+        "type": "expr_binop",
+        "params": {
+          "op": "div"
+        }
+      },
+      {
+        "id": "z0",
+        "type": "select",
+        "params": {
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "zN",
+        "type": "expr_binop",
+        "params": {
+          "op": "pow"
+        }
+      },
+      {
+        "id": "alg0",
+        "type": "expand_complex"
+      },
+      {
+        "id": "algS",
+        "type": "simplify"
+      },
+      {
+        "id": "alg",
+        "type": "expand"
+      },
+      {
+        "id": "r0",
+        "type": "abs"
+      },
+      {
+        "id": "r",
+        "type": "simplify"
+      },
+      {
+        "id": "ph1",
+        "type": "arg"
+      },
+      {
+        "id": "ph2",
+        "type": "arg"
+      },
+      {
+        "id": "sgn",
+        "type": "select",
+        "params": {
+          "value_type": "number"
+        }
+      },
+      {
+        "id": "sp1",
+        "type": "constant_number",
+        "params": {
+          "value": 1
+        }
+      },
+      {
+        "id": "sm1",
+        "type": "constant_number",
+        "params": {
+          "value": -1
+        }
+      },
+      {
+        "id": "pht",
+        "type": "expr_const",
+        "params": {
+          "expr": "Mod(N0*(P1 + S0*P2) + pi, 2*pi) - pi",
+          "vars": [
+            "N0",
+            "P1",
+            "P2",
+            "S0"
+          ]
+        }
+      },
+      {
+        "id": "phs1",
+        "type": "subs_expr",
+        "params": {
+          "name": "P1"
+        }
+      },
+      {
+        "id": "phs2",
+        "type": "subs_expr",
+        "params": {
+          "name": "P2"
+        }
+      },
+      {
+        "id": "phsN",
+        "type": "subs_expr",
+        "params": {
+          "name": "N0"
+        }
+      },
+      {
+        "id": "phsS",
+        "type": "subs_expr",
+        "params": {
+          "name": "S0"
+        }
+      },
+      {
+        "id": "ph",
+        "type": "simplify"
+      },
+      {
+        "id": "dtp",
+        "type": "expr_const",
+        "params": {
+          "expr": "(UnevaluatedExpr(u)*UnevaluatedExpr(v))**N0",
+          "vars": [
+            "u",
+            "v",
+            "N0"
+          ]
+        }
+      },
+      {
+        "id": "dtq",
+        "type": "expr_const",
+        "params": {
+          "expr": "(UnevaluatedExpr(u)/UnevaluatedExpr(v))**N0",
+          "vars": [
+            "u",
+            "v",
+            "N0"
+          ]
+        }
+      },
+      {
+        "id": "dt",
+        "type": "select",
+        "params": {
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "su",
+        "type": "subs_expr",
+        "params": {
+          "name": "u"
+        }
+      },
+      {
+        "id": "sv",
+        "type": "subs_expr",
+        "params": {
+          "name": "v"
+        }
+      },
+      {
+        "id": "sN",
+        "type": "subs_expr",
+        "params": {
+          "name": "N0"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Представить данное комплексное число в алгебраической, тригонометрической и показательной форме."
+        }
+      },
+      {
+        "id": "fbZ",
+        "type": "expr_block",
+        "params": {
+          "prefix": "z"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "fbAlg",
+        "type": "expr_block",
+        "params": {
+          "prefix": "z"
+        }
+      },
+      {
+        "id": "forms",
+        "type": "text",
+        "params": {
+          "text": "Тригонометрическая форма: z = #r#·(cos(#phi#) + i·sin(#phi#)); показательная: z = #r#·e^(i·#phi#)."
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "d:out",
+        "to": "isprod:a"
+      },
+      {
+        "from": "w1:out",
+        "to": "zp:a"
+      },
+      {
+        "from": "w2:out",
+        "to": "zp:b"
+      },
+      {
+        "from": "w1:out",
+        "to": "zq:a"
+      },
+      {
+        "from": "w2:out",
+        "to": "zq:b"
+      },
+      {
+        "from": "isprod:out",
+        "to": "z0:cond"
+      },
+      {
+        "from": "zp:out",
+        "to": "z0:on_true"
+      },
+      {
+        "from": "zq:out",
+        "to": "z0:on_false"
+      },
+      {
+        "from": "z0:out",
+        "to": "zN:a"
+      },
+      {
+        "from": "N:out",
+        "to": "zN:b"
+      },
+      {
+        "from": "zN:out",
+        "to": "alg0:in"
+      },
+      {
+        "from": "alg0:out",
+        "to": "algS:in"
+      },
+      {
+        "from": "algS:out",
+        "to": "alg:in"
+      },
+      {
+        "from": "alg:out",
+        "to": "r0:in"
+      },
+      {
+        "from": "r0:out",
+        "to": "r:in"
+      },
+      {
+        "from": "w1:out",
+        "to": "ph1:in"
+      },
+      {
+        "from": "w2:out",
+        "to": "ph2:in"
+      },
+      {
+        "from": "isprod:out",
+        "to": "sgn:cond"
+      },
+      {
+        "from": "sp1:out",
+        "to": "sgn:on_true"
+      },
+      {
+        "from": "sm1:out",
+        "to": "sgn:on_false"
+      },
+      {
+        "from": "pht:out",
+        "to": "phs1:in"
+      },
+      {
+        "from": "ph1:out",
+        "to": "phs1:value"
+      },
+      {
+        "from": "phs1:out",
+        "to": "phs2:in"
+      },
+      {
+        "from": "ph2:out",
+        "to": "phs2:value"
+      },
+      {
+        "from": "phs2:out",
+        "to": "phsN:in"
+      },
+      {
+        "from": "N:out",
+        "to": "phsN:value"
+      },
+      {
+        "from": "phsN:out",
+        "to": "phsS:in"
+      },
+      {
+        "from": "sgn:out",
+        "to": "phsS:value"
+      },
+      {
+        "from": "phsS:out",
+        "to": "ph:in"
+      },
+      {
+        "from": "isprod:out",
+        "to": "dt:cond"
+      },
+      {
+        "from": "dtp:out",
+        "to": "dt:on_true"
+      },
+      {
+        "from": "dtq:out",
+        "to": "dt:on_false"
+      },
+      {
+        "from": "dt:out",
+        "to": "su:in"
+      },
+      {
+        "from": "w1:out",
+        "to": "su:value"
+      },
+      {
+        "from": "su:out",
+        "to": "sv:in"
+      },
+      {
+        "from": "w2:out",
+        "to": "sv:value"
+      },
+      {
+        "from": "sv:out",
+        "to": "sN:in"
+      },
+      {
+        "from": "N:out",
+        "to": "sN:value"
+      },
+      {
+        "from": "sN:out",
+        "to": "fbZ:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fbZ:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "alg:out",
+        "to": "fbAlg:in"
+      },
+      {
+        "from": "r:out",
+        "to": "forms:r"
+      },
+      {
+        "from": "ph:out",
+        "to": "forms:phi"
+      },
+      {
+        "from": "fbAlg:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "forms:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 21,
+      "max_attempts": 100
+    }
+  }
+}

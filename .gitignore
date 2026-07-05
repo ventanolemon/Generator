@@ -1,3 +1,6 @@
 __pycache__/
 *.py[cod]
 sim_results/
+
+# Локальные резервные копии БД (создаются seed-скриптом перед записью)
+resources/*.db.bak-*

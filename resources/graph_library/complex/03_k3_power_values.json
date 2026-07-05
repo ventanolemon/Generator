@@ -1,0 +1,465 @@
+{
+  "title": "№3. Все значения многозначной степени",
+  "note": "m^i (луч) и (−m)^√p (окружность); точки по ветвям k через цикл с expr-туннелем; complex_points_plot.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "fam",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 1
+        }
+      },
+      {
+        "id": "m",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 9
+        }
+      },
+      {
+        "id": "p",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "number",
+          "items": [
+            "2",
+            "3"
+          ]
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "m",
+            "p"
+          ]
+        }
+      },
+      {
+        "id": "d0",
+        "type": "expr_const",
+        "params": {
+          "expr": "m**I",
+          "vars": [
+            "m"
+          ]
+        }
+      },
+      {
+        "id": "d1",
+        "type": "expr_const",
+        "params": {
+          "expr": "(-m)**sqrt(p)",
+          "vars": [
+            "m",
+            "p"
+          ]
+        }
+      },
+      {
+        "id": "disp",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "t0",
+        "type": "expr_const",
+        "params": {
+          "expr": "exp(-2*pi*K) * (cos(log(m)) + I*sin(log(m)))",
+          "vars": [
+            "K",
+            "m"
+          ]
+        }
+      },
+      {
+        "id": "t1",
+        "type": "expr_const",
+        "params": {
+          "expr": "m**sqrt(p) * (cos(sqrt(p)*pi*(2*K + 1)) + I*sin(sqrt(p)*pi*(2*K + 1)))",
+          "vars": [
+            "K",
+            "m",
+            "p"
+          ]
+        }
+      },
+      {
+        "id": "term",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "cnt",
+        "type": "select",
+        "params": {
+          "value_type": "number"
+        }
+      },
+      {
+        "id": "c3",
+        "type": "constant_number",
+        "params": {
+          "value": 3
+        }
+      },
+      {
+        "id": "c5",
+        "type": "constant_number",
+        "params": {
+          "value": 5
+        }
+      },
+      {
+        "id": "off",
+        "type": "select",
+        "params": {
+          "value_type": "number"
+        }
+      },
+      {
+        "id": "o1",
+        "type": "constant_number",
+        "params": {
+          "value": 1
+        }
+      },
+      {
+        "id": "o2",
+        "type": "constant_number",
+        "params": {
+          "value": 2
+        }
+      },
+      {
+        "id": "isf0",
+        "type": "compare",
+        "params": {
+          "op": "==",
+          "b": 0
+        }
+      },
+      {
+        "id": "loop",
+        "type": "repeat",
+        "params": {
+          "imports": [
+            "term:expr",
+            "off:number"
+          ],
+          "outputs": [
+            "pts:expr:list"
+          ],
+          "body": {
+            "nodes": [
+              {
+                "id": "tv",
+                "type": "input_var",
+                "params": {
+                  "name": "term",
+                  "type": "expr"
+                }
+              },
+              {
+                "id": "ov",
+                "type": "input_var",
+                "params": {
+                  "name": "off",
+                  "type": "number"
+                }
+              },
+              {
+                "id": "li",
+                "type": "loop_index"
+              },
+              {
+                "id": "kf",
+                "type": "formula",
+                "params": {
+                  "expr": "i - off"
+                }
+              },
+              {
+                "id": "vk",
+                "type": "var_dict",
+                "params": {
+                  "names": [
+                    "K"
+                  ]
+                }
+              },
+              {
+                "id": "sub",
+                "type": "expr_subs"
+              },
+              {
+                "id": "pt",
+                "type": "output_var",
+                "params": {
+                  "name": "pts",
+                  "type": "expr"
+                }
+              }
+            ],
+            "edges": [
+              {
+                "from": "li:out",
+                "to": "kf:i"
+              },
+              {
+                "from": "ov:out",
+                "to": "kf:off"
+              },
+              {
+                "from": "kf:out",
+                "to": "vk:K"
+              },
+              {
+                "from": "tv:out",
+                "to": "sub:in"
+              },
+              {
+                "from": "vk:out",
+                "to": "sub:values"
+              },
+              {
+                "from": "sub:out",
+                "to": "pt:value"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "plot",
+        "type": "complex_points_plot",
+        "params": {
+          "title": "значения (k = −1..)"
+        }
+      },
+      {
+        "id": "img",
+        "type": "to_block"
+      },
+      {
+        "id": "an0",
+        "type": "text",
+        "params": {
+          "text": "#m#^i = e^(i(ln #m# + 2πk)) = e^(−2πk)·(cos(ln #m#) + i·sin(ln #m#)), k ∈ ℤ — все значения лежат на луче arg w = ln #m#; на рисунке k = −1, 0, 1."
+        }
+      },
+      {
+        "id": "an1",
+        "type": "text",
+        "params": {
+          "text": "(−#m#)^√#p# = e^(√#p#·(ln #m# + iπ(2k+1))) = #m#^√#p#·(cos(√#p#·π(2k+1)) + i·sin(√#p#·π(2k+1))), k ∈ ℤ — все значения лежат на окружности радиуса #m#^√#p#; на рисунке k = −2..2."
+        }
+      },
+      {
+        "id": "anx",
+        "type": "pick",
+        "params": {
+          "count": 2,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Вычислить все значения заданного выражения и изобразить эти значения на комплексной плоскости."
+        }
+      },
+      {
+        "id": "fbW",
+        "type": "expr_block",
+        "params": {
+          "prefix": "w"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "m:out",
+        "to": "vd:m"
+      },
+      {
+        "from": "p:out",
+        "to": "vd:p"
+      },
+      {
+        "from": "vd:out",
+        "to": "d0:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "d1:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "t0:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "t1:values"
+      },
+      {
+        "from": "fam:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "d0:out",
+        "to": "disp:in0"
+      },
+      {
+        "from": "d1:out",
+        "to": "disp:in1"
+      },
+      {
+        "from": "fam:out",
+        "to": "term:index"
+      },
+      {
+        "from": "t0:out",
+        "to": "term:in0"
+      },
+      {
+        "from": "t1:out",
+        "to": "term:in1"
+      },
+      {
+        "from": "fam:out",
+        "to": "isf0:a"
+      },
+      {
+        "from": "isf0:out",
+        "to": "cnt:cond"
+      },
+      {
+        "from": "c3:out",
+        "to": "cnt:on_true"
+      },
+      {
+        "from": "c5:out",
+        "to": "cnt:on_false"
+      },
+      {
+        "from": "isf0:out",
+        "to": "off:cond"
+      },
+      {
+        "from": "o1:out",
+        "to": "off:on_true"
+      },
+      {
+        "from": "o2:out",
+        "to": "off:on_false"
+      },
+      {
+        "from": "cnt:out",
+        "to": "loop:count"
+      },
+      {
+        "from": "term:out",
+        "to": "loop:term"
+      },
+      {
+        "from": "off:out",
+        "to": "loop:off"
+      },
+      {
+        "from": "loop:pts",
+        "to": "plot:points"
+      },
+      {
+        "from": "plot:out",
+        "to": "img:in"
+      },
+      {
+        "from": "m:out",
+        "to": "an0:m"
+      },
+      {
+        "from": "m:out",
+        "to": "an1:m"
+      },
+      {
+        "from": "p:out",
+        "to": "an1:p"
+      },
+      {
+        "from": "fam:out",
+        "to": "anx:index"
+      },
+      {
+        "from": "an0:out",
+        "to": "anx:in0"
+      },
+      {
+        "from": "an1:out",
+        "to": "anx:in1"
+      },
+      {
+        "from": "disp:out",
+        "to": "fbW:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fbW:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "anx:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "img:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 23,
+      "max_attempts": 100
+    }
+  }
+}

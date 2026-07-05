@@ -1,0 +1,203 @@
+{
+  "title": "№3. Абсолютная/условная сходимость",
+  "note": "Категория ответа разыгрывается, q подбирается под неё.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "k",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 2
+        }
+      },
+      {
+        "id": "p",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "cc",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 6
+        }
+      },
+      {
+        "id": "q",
+        "type": "formula",
+        "params": {
+          "expr": "p + 2 - k"
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "p",
+            "q",
+            "c"
+          ]
+        }
+      },
+      {
+        "id": "term",
+        "type": "expr_const",
+        "params": {
+          "expr": "(-1)**(n+1) * n**p / (n**q + c)",
+          "vars": [
+            "p",
+            "q",
+            "c",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "nsym",
+        "type": "symbol",
+        "params": {
+          "name": "n"
+        }
+      },
+      {
+        "id": "disp",
+        "type": "sum_display",
+        "params": {
+          "lower": "1",
+          "upper": "oo"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Исследовать на абсолютную и условную сходимость:"
+        }
+      },
+      {
+        "id": "fb",
+        "type": "expr_block"
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "ansAbs",
+        "type": "text",
+        "params": {
+          "text": "Сходится абсолютно: |aₙ| ~ n^(−2) — p-ряд с s = 2 > 1."
+        }
+      },
+      {
+        "id": "ansCond",
+        "type": "text",
+        "params": {
+          "text": "Сходится условно: по Лейбницу (|aₙ| ↓ 0), но |aₙ| ~ 1/n — ряд из модулей расходится."
+        }
+      },
+      {
+        "id": "ansDiv",
+        "type": "text",
+        "params": {
+          "text": "Расходится: aₙ ↛ 0 — нарушено необходимое условие сходимости."
+        }
+      },
+      {
+        "id": "ans",
+        "type": "pick",
+        "params": {
+          "count": 3,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "p:out",
+        "to": "q:p"
+      },
+      {
+        "from": "k:out",
+        "to": "q:k"
+      },
+      {
+        "from": "p:out",
+        "to": "vd:p"
+      },
+      {
+        "from": "q:out",
+        "to": "vd:q"
+      },
+      {
+        "from": "cc:out",
+        "to": "vd:c"
+      },
+      {
+        "from": "vd:out",
+        "to": "term:values"
+      },
+      {
+        "from": "term:out",
+        "to": "disp:term"
+      },
+      {
+        "from": "nsym:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "disp:out",
+        "to": "fb:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fb:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "k:out",
+        "to": "ans:index"
+      },
+      {
+        "from": "ansAbs:out",
+        "to": "ans:in0"
+      },
+      {
+        "from": "ansCond:out",
+        "to": "ans:in1"
+      },
+      {
+        "from": "ansDiv:out",
+        "to": "ans:in2"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ans:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 13,
+      "max_attempts": 100
+    }
+  }
+}

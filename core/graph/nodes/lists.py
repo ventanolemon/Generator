@@ -112,6 +112,21 @@ class ListAppendNode(Node):
         return {"out": base}
 
 
+class ListConcatNode(Node):
+    """Склеить два списка в один (LIST + LIST → LIST). Например, две ветви
+    корней уравнения перед изображением на плоскости."""
+    type_id = "list_concat"
+    category = "list"
+    display_name = "Объединить списки"
+    description = ("Соединить списки a и b в один (a затем b). "
+                   "Вход: LIST, LIST. Выход: LIST.")
+    INPUTS = [Port("a", PortType.LIST), Port("b", PortType.LIST)]
+    OUTPUTS = [Port("out", PortType.LIST)]
+
+    def compute(self, inputs, ctx: ExecContext):
+        return {"out": _as_list(inputs.get("a")) + _as_list(inputs.get("b"))}
+
+
 class ListLengthNode(Node):
     """Длина списка (LIST → NUMBER)."""
     type_id = "list_length"

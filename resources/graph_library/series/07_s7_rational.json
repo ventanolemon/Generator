@@ -1,0 +1,521 @@
+{
+  "title": "№7. Рациональная дробь → степенной ряд, f^(m)(x)",
+  "note": "Обратное конструирование от простейших дробей; apart в ответе.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "A",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 4
+        }
+      },
+      {
+        "id": "B",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 4
+        }
+      },
+      {
+        "id": "pp",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 5
+        }
+      },
+      {
+        "id": "qq",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 5
+        }
+      },
+      {
+        "id": "neq",
+        "type": "compare",
+        "params": {
+          "op": "=="
+        }
+      },
+      {
+        "id": "g",
+        "type": "guard",
+        "params": {
+          "mode": "require_false"
+        }
+      },
+      {
+        "id": "x0",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "id": "m",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "number",
+          "items": [
+            "50",
+            "100",
+            "200"
+          ]
+        }
+      },
+      {
+        "id": "na",
+        "type": "formula",
+        "params": {
+          "expr": "A + B"
+        }
+      },
+      {
+        "id": "nb",
+        "type": "formula",
+        "params": {
+          "expr": "A*q + B*p"
+        }
+      },
+      {
+        "id": "dp",
+        "type": "formula",
+        "params": {
+          "expr": "x0 + p"
+        }
+      },
+      {
+        "id": "dq",
+        "type": "formula",
+        "params": {
+          "expr": "x0 + q"
+        }
+      },
+      {
+        "id": "less",
+        "type": "compare",
+        "params": {
+          "op": "<"
+        }
+      },
+      {
+        "id": "R",
+        "type": "select",
+        "params": {
+          "value_type": "number"
+        }
+      },
+      {
+        "id": "rlo",
+        "type": "formula",
+        "params": {
+          "expr": "x0 - R"
+        }
+      },
+      {
+        "id": "rhi",
+        "type": "formula",
+        "params": {
+          "expr": "x0 + R"
+        }
+      },
+      {
+        "id": "mp",
+        "type": "formula",
+        "params": {
+          "expr": "m + 1"
+        }
+      },
+      {
+        "id": "vdf",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "na",
+            "nb",
+            "p",
+            "q"
+          ]
+        }
+      },
+      {
+        "id": "fx",
+        "type": "expr_const",
+        "params": {
+          "expr": "(na*x + nb)/((x + p)*(x + q))",
+          "vars": [
+            "na",
+            "nb",
+            "p",
+            "q",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "ap",
+        "type": "apart"
+      },
+      {
+        "id": "vdt",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "A",
+            "B",
+            "dp",
+            "dq",
+            "x0"
+          ]
+        }
+      },
+      {
+        "id": "gterm",
+        "type": "expr_const",
+        "params": {
+          "expr": "(-1)**n * (A/dp**(n+1) + B/dq**(n+1)) * (x - x0)**n",
+          "vars": [
+            "A",
+            "B",
+            "dp",
+            "dq",
+            "x0",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "nsym",
+        "type": "symbol",
+        "params": {
+          "name": "n"
+        }
+      },
+      {
+        "id": "disp",
+        "type": "sum_display",
+        "params": {
+          "lower": "0",
+          "upper": "oo"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Представить f(x) в виде степенного ряда по степеням (x − x₀), x₀ = #x0#. Указать область сходимости. Найти f^(#m#)(x)."
+        }
+      },
+      {
+        "id": "fbF",
+        "type": "expr_block",
+        "params": {
+          "prefix": "f(x)"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "fbAp",
+        "type": "expr_block",
+        "params": {
+          "prefix": "f(x)"
+        }
+      },
+      {
+        "id": "fbSer",
+        "type": "expr_block",
+        "params": {
+          "prefix": "f(x)"
+        }
+      },
+      {
+        "id": "regT",
+        "type": "text",
+        "params": {
+          "text": "Область сходимости: |x − #x0#| < #R#, т.е. (#rlo#; #rhi#) (до ближайшего полюса)."
+        }
+      },
+      {
+        "id": "derT",
+        "type": "text",
+        "params": {
+          "text": "f^(#m#)(x) = #m#!·(#A#/(x + #p#)^#mp# + #B#/(x + #q#)^#mp#) — производные простейших дробей; знак «+», т.к. #m# чётно."
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 4
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "pp:out",
+        "to": "neq:a"
+      },
+      {
+        "from": "qq:out",
+        "to": "neq:b"
+      },
+      {
+        "from": "neq:out",
+        "to": "g:cond"
+      },
+      {
+        "from": "pp:out",
+        "to": "g:value"
+      },
+      {
+        "from": "A:out",
+        "to": "na:A"
+      },
+      {
+        "from": "B:out",
+        "to": "na:B"
+      },
+      {
+        "from": "A:out",
+        "to": "nb:A"
+      },
+      {
+        "from": "B:out",
+        "to": "nb:B"
+      },
+      {
+        "from": "pp:out",
+        "to": "nb:p"
+      },
+      {
+        "from": "qq:out",
+        "to": "nb:q"
+      },
+      {
+        "from": "x0:out",
+        "to": "dp:x0"
+      },
+      {
+        "from": "pp:out",
+        "to": "dp:p"
+      },
+      {
+        "from": "x0:out",
+        "to": "dq:x0"
+      },
+      {
+        "from": "qq:out",
+        "to": "dq:q"
+      },
+      {
+        "from": "dp:out",
+        "to": "less:a"
+      },
+      {
+        "from": "dq:out",
+        "to": "less:b"
+      },
+      {
+        "from": "less:out",
+        "to": "R:cond"
+      },
+      {
+        "from": "dp:out",
+        "to": "R:on_true"
+      },
+      {
+        "from": "dq:out",
+        "to": "R:on_false"
+      },
+      {
+        "from": "x0:out",
+        "to": "rlo:x0"
+      },
+      {
+        "from": "R:out",
+        "to": "rlo:R"
+      },
+      {
+        "from": "x0:out",
+        "to": "rhi:x0"
+      },
+      {
+        "from": "R:out",
+        "to": "rhi:R"
+      },
+      {
+        "from": "m:out",
+        "to": "mp:m"
+      },
+      {
+        "from": "na:out",
+        "to": "vdf:na"
+      },
+      {
+        "from": "nb:out",
+        "to": "vdf:nb"
+      },
+      {
+        "from": "pp:out",
+        "to": "vdf:p"
+      },
+      {
+        "from": "qq:out",
+        "to": "vdf:q"
+      },
+      {
+        "from": "vdf:out",
+        "to": "fx:values"
+      },
+      {
+        "from": "fx:out",
+        "to": "ap:in"
+      },
+      {
+        "from": "A:out",
+        "to": "vdt:A"
+      },
+      {
+        "from": "B:out",
+        "to": "vdt:B"
+      },
+      {
+        "from": "dp:out",
+        "to": "vdt:dp"
+      },
+      {
+        "from": "dq:out",
+        "to": "vdt:dq"
+      },
+      {
+        "from": "x0:out",
+        "to": "vdt:x0"
+      },
+      {
+        "from": "vdt:out",
+        "to": "gterm:values"
+      },
+      {
+        "from": "gterm:out",
+        "to": "disp:term"
+      },
+      {
+        "from": "nsym:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "x0:out",
+        "to": "intro:x0"
+      },
+      {
+        "from": "m:out",
+        "to": "intro:m"
+      },
+      {
+        "from": "fx:out",
+        "to": "fbF:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fbF:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "ap:out",
+        "to": "fbAp:in"
+      },
+      {
+        "from": "disp:out",
+        "to": "fbSer:in"
+      },
+      {
+        "from": "x0:out",
+        "to": "regT:x0"
+      },
+      {
+        "from": "R:out",
+        "to": "regT:R"
+      },
+      {
+        "from": "rlo:out",
+        "to": "regT:rlo"
+      },
+      {
+        "from": "rhi:out",
+        "to": "regT:rhi"
+      },
+      {
+        "from": "m:out",
+        "to": "derT:m"
+      },
+      {
+        "from": "mp:out",
+        "to": "derT:mp"
+      },
+      {
+        "from": "A:out",
+        "to": "derT:A"
+      },
+      {
+        "from": "B:out",
+        "to": "derT:B"
+      },
+      {
+        "from": "pp:out",
+        "to": "derT:p"
+      },
+      {
+        "from": "qq:out",
+        "to": "derT:q"
+      },
+      {
+        "from": "fbAp:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "fbSer:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "regT:out",
+        "to": "ansBl:in2"
+      },
+      {
+        "from": "derT:out",
+        "to": "ansBl:in3"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 17,
+      "max_attempts": 300
+    }
+  }
+}

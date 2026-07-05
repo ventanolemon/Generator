@@ -1,0 +1,407 @@
+{
+  "title": "№4. Радиус и интервал сходимости степенного ряда",
+  "note": "4 семейства коэффициентов (банк 2.2) с разными концами; pick.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "fam",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "id": "R",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "x0",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "id": "a",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 4
+        }
+      },
+      {
+        "id": "b",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "a",
+            "b",
+            "R",
+            "x0"
+          ]
+        }
+      },
+      {
+        "id": "t0",
+        "type": "expr_const",
+        "params": {
+          "expr": "(-1)**n * (x - x0)**n / ((a*n + b) * R**n)",
+          "vars": [
+            "a",
+            "b",
+            "R",
+            "x0",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "t1",
+        "type": "expr_const",
+        "params": {
+          "expr": "(x - x0)**n / ((a*n + b) * R**n)",
+          "vars": [
+            "a",
+            "b",
+            "R",
+            "x0",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "t2",
+        "type": "expr_const",
+        "params": {
+          "expr": "(x - x0)**n / ((a*n**2 + b) * R**n)",
+          "vars": [
+            "a",
+            "b",
+            "R",
+            "x0",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "t3",
+        "type": "expr_const",
+        "params": {
+          "expr": "n * (x - x0)**n / R**n",
+          "vars": [
+            "R",
+            "x0",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "term",
+        "type": "pick",
+        "params": {
+          "count": 4,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "lo",
+        "type": "formula",
+        "params": {
+          "expr": "x0 - R"
+        }
+      },
+      {
+        "id": "hi",
+        "type": "formula",
+        "params": {
+          "expr": "x0 + R"
+        }
+      },
+      {
+        "id": "nsym",
+        "type": "symbol",
+        "params": {
+          "name": "n"
+        }
+      },
+      {
+        "id": "disp",
+        "type": "sum_display",
+        "params": {
+          "lower": "1",
+          "upper": "oo"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Найти радиус и интервал сходимости степенного ряда. Исследовать сходимость на концах интервала. Указать область равномерной сходимости."
+        }
+      },
+      {
+        "id": "fb",
+        "type": "expr_block"
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "a0",
+        "type": "text",
+        "params": {
+          "text": "R = #R#. Интервал: (#lo#; #hi#]. При x = #hi#: Σ(−1)ⁿ/(#a#n+#b#) — сходится условно (Лейбниц); при x = #lo#: Σ1/(#a#n+#b#) — расходится (гармонический). Равномерно: на [c; #hi#] при любом c > #lo# (Абель)."
+        }
+      },
+      {
+        "id": "a1",
+        "type": "text",
+        "params": {
+          "text": "R = #R#. Интервал: [#lo#; #hi#). При x = #lo#: Σ(−1)ⁿ/(#a#n+#b#) — сходится условно (Лейбниц); при x = #hi#: Σ1/(#a#n+#b#) — расходится. Равномерно: на [#lo#; c] при любом c < #hi# (Абель)."
+        }
+      },
+      {
+        "id": "a2",
+        "type": "text",
+        "params": {
+          "text": "R = #R#. Сходится на всём отрезке [#lo#; #hi#]: на концах Σ(±1)ⁿ/(#a#n²+#b#) сходится абсолютно (p-ряд, s = 2). Равномерно на всём [#lo#; #hi#] (Вейерштрасс, Mₙ = 1/(#a#n²+#b#))."
+        }
+      },
+      {
+        "id": "a3",
+        "type": "text",
+        "params": {
+          "text": "R = #R#. Интервал: (#lo#; #hi#) — на обоих концах aₙ = ±n ↛ 0, ряд расходится. Равномерно на любом [α; β] ⊂ (#lo#; #hi#); на всём интервале — нет."
+        }
+      },
+      {
+        "id": "ans",
+        "type": "pick",
+        "params": {
+          "count": 4,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "a:out",
+        "to": "vd:a"
+      },
+      {
+        "from": "b:out",
+        "to": "vd:b"
+      },
+      {
+        "from": "R:out",
+        "to": "vd:R"
+      },
+      {
+        "from": "x0:out",
+        "to": "vd:x0"
+      },
+      {
+        "from": "vd:out",
+        "to": "t0:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "t1:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "t2:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "t3:values"
+      },
+      {
+        "from": "fam:out",
+        "to": "term:index"
+      },
+      {
+        "from": "t0:out",
+        "to": "term:in0"
+      },
+      {
+        "from": "t1:out",
+        "to": "term:in1"
+      },
+      {
+        "from": "t2:out",
+        "to": "term:in2"
+      },
+      {
+        "from": "t3:out",
+        "to": "term:in3"
+      },
+      {
+        "from": "x0:out",
+        "to": "lo:x0"
+      },
+      {
+        "from": "R:out",
+        "to": "lo:R"
+      },
+      {
+        "from": "x0:out",
+        "to": "hi:x0"
+      },
+      {
+        "from": "R:out",
+        "to": "hi:R"
+      },
+      {
+        "from": "term:out",
+        "to": "disp:term"
+      },
+      {
+        "from": "nsym:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "disp:out",
+        "to": "fb:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fb:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "R:out",
+        "to": "a0:R"
+      },
+      {
+        "from": "lo:out",
+        "to": "a0:lo"
+      },
+      {
+        "from": "hi:out",
+        "to": "a0:hi"
+      },
+      {
+        "from": "a:out",
+        "to": "a0:a"
+      },
+      {
+        "from": "b:out",
+        "to": "a0:b"
+      },
+      {
+        "from": "R:out",
+        "to": "a1:R"
+      },
+      {
+        "from": "lo:out",
+        "to": "a1:lo"
+      },
+      {
+        "from": "hi:out",
+        "to": "a1:hi"
+      },
+      {
+        "from": "a:out",
+        "to": "a1:a"
+      },
+      {
+        "from": "b:out",
+        "to": "a1:b"
+      },
+      {
+        "from": "R:out",
+        "to": "a2:R"
+      },
+      {
+        "from": "lo:out",
+        "to": "a2:lo"
+      },
+      {
+        "from": "hi:out",
+        "to": "a2:hi"
+      },
+      {
+        "from": "a:out",
+        "to": "a2:a"
+      },
+      {
+        "from": "b:out",
+        "to": "a2:b"
+      },
+      {
+        "from": "R:out",
+        "to": "a3:R"
+      },
+      {
+        "from": "lo:out",
+        "to": "a3:lo"
+      },
+      {
+        "from": "hi:out",
+        "to": "a3:hi"
+      },
+      {
+        "from": "fam:out",
+        "to": "ans:index"
+      },
+      {
+        "from": "a0:out",
+        "to": "ans:in0"
+      },
+      {
+        "from": "a1:out",
+        "to": "ans:in1"
+      },
+      {
+        "from": "a2:out",
+        "to": "ans:in2"
+      },
+      {
+        "from": "a3:out",
+        "to": "ans:in3"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ans:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 14,
+      "max_attempts": 100
+    }
+  }
+}

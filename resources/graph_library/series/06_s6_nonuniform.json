@@ -1,0 +1,231 @@
+{
+  "title": "№6. Неравномерная сходимость",
+  "note": "Геометрический ряд по t=(x−x0)^k; сумма и остаток точно.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "x0",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 2
+        }
+      },
+      {
+        "id": "k",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "number",
+          "items": [
+            "2",
+            "4"
+          ]
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "x0",
+            "k"
+          ]
+        }
+      },
+      {
+        "id": "term",
+        "type": "expr_const",
+        "params": {
+          "expr": "(x - x0)**(k*n)",
+          "vars": [
+            "x0",
+            "k",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "S",
+        "type": "expr_const",
+        "params": {
+          "expr": "(x - x0)**k / (1 - (x - x0)**k)",
+          "vars": [
+            "x0",
+            "k",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "lo",
+        "type": "formula",
+        "params": {
+          "expr": "x0 - 1"
+        }
+      },
+      {
+        "id": "hi",
+        "type": "formula",
+        "params": {
+          "expr": "x0 + 1"
+        }
+      },
+      {
+        "id": "nsym",
+        "type": "symbol",
+        "params": {
+          "name": "n"
+        }
+      },
+      {
+        "id": "disp",
+        "type": "sum_display",
+        "params": {
+          "lower": "1",
+          "upper": "oo"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Доказать, что ряд сходится неравномерно на интервале:"
+        }
+      },
+      {
+        "id": "fb",
+        "type": "expr_block"
+      },
+      {
+        "id": "rng",
+        "type": "text",
+        "params": {
+          "text": "#lo# < x < #hi#"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 3
+        }
+      },
+      {
+        "id": "ansT",
+        "type": "text",
+        "params": {
+          "text": "Замена t = (x − #x0#)^#k# ∈ [0; 1) на данном интервале — геометрический ряд: сумма S(x) ниже, остаток rₙ(x) = t^(n+1)/(1 − t). При x → концам интервала t → 1 и sup rₙ(x) = +∞ при каждом n ⇒ остаток не мал равномерно, сходимость неравномерная."
+        }
+      },
+      {
+        "id": "fbS",
+        "type": "expr_block",
+        "params": {
+          "prefix": "S(x)"
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "x0:out",
+        "to": "vd:x0"
+      },
+      {
+        "from": "k:out",
+        "to": "vd:k"
+      },
+      {
+        "from": "vd:out",
+        "to": "term:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "S:values"
+      },
+      {
+        "from": "x0:out",
+        "to": "lo:x0"
+      },
+      {
+        "from": "x0:out",
+        "to": "hi:x0"
+      },
+      {
+        "from": "term:out",
+        "to": "disp:term"
+      },
+      {
+        "from": "nsym:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "disp:out",
+        "to": "fb:in"
+      },
+      {
+        "from": "lo:out",
+        "to": "rng:lo"
+      },
+      {
+        "from": "hi:out",
+        "to": "rng:hi"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fb:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "rng:out",
+        "to": "stmt:in2"
+      },
+      {
+        "from": "x0:out",
+        "to": "ansT:x0"
+      },
+      {
+        "from": "k:out",
+        "to": "ansT:k"
+      },
+      {
+        "from": "S:out",
+        "to": "fbS:in"
+      },
+      {
+        "from": "ansT:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "fbS:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 16,
+      "max_attempts": 100
+    }
+  }
+}

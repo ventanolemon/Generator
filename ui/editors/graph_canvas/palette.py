@@ -3,6 +3,13 @@ NodePalette — список доступных узлов, сгруппиров
 Строится целиком из NodeRegistry.palette(); о конкретных классах не знает.
 Двойной клик по типу добавляет узел в центр сцены.
 
+Модули (core.graph.modules) группируют категории в «основу языка» (всегда
+видна) и предметные модули (символьная математика, линал, ОДУ, английский,
+изображения, графика) — кнопка «Модули…» включает/выключает их видимость в
+дереве. Это ТОЛЬКО фильтр отображения: скрытый модуль не убирает узлы из
+движка/реестра, граф с «чужим» узлом по-прежнему исполняется и открывается —
+скрытые узлы просто не показываются в списке для добавления новых.
+
 Отдельный раздел «Словари» перечисляет JSON-файлы со словами/предложениями из
 resources/words: двойной клик добавляет уже настроенный на этот файл узел
 (тип определяется по содержимому), плюс кнопка «Обзор…» для файла из любого места.
@@ -12,13 +19,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QWidget, QVBoxLayout, QPushButton, QFileDialog,
-    QMessageBox,
+    QMessageBox, QMenu,
 )
 
-from core.graph import DEFAULT_REGISTRY
+from core.graph import DEFAULT_REGISTRY, MODULE_ORDER, MODULES, category_module
 from core.graph.registry import NodeRegistry
 
 
@@ -32,12 +40,14 @@ _CATEGORY_LABELS = {
     "ode":      "Дифф. уравнения",
     "english":  "Английский язык",
     "image":    "Изображения / ОПВС",
+    "plot":     "Графика (ℂ-плоскость)",
     "list":     "Списки",
     "content":  "Блоки контента",
     "assembly": "Сборка задания",
 }
 _CATEGORY_ORDER = ["task", "source", "compute", "control", "list", "symbolic",
-                   "linalg", "ode", "english", "image", "content", "assembly"]
+                   "linalg", "ode", "english", "image", "plot", "content",
+                   "assembly"]
 
 
 def _words_dir() -> Path | None:
@@ -77,9 +87,20 @@ class NodePalette(QWidget):
         super().__init__(parent)
         self.registry = registry or DEFAULT_REGISTRY
         self.setMaximumWidth(240)
+        # Видимость предметных модулей в дереве (core скрыть нельзя).
+        # По умолчанию всё видно — поведение без изменений, пока не тронуть меню.
+        self._visible_modules = {name for name in MODULE_ORDER}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+
+        self.modules_btn = QPushButton("Модули…", self)
+        self.modules_btn.setToolTip(
+            "Показать/скрыть предметные модули в списке узлов ниже. Это только "
+            "фильтр отображения — скрытые узлы никуда не пропадают из графа."
+        )
+        self.modules_btn.clicked.connect(self._show_modules_menu)
+        layout.addWidget(self.modules_btn)
 
         self.tree = QTreeWidget(self)
         self.tree.setHeaderHidden(True)
@@ -97,6 +118,7 @@ class NodePalette(QWidget):
         self._populate()
 
     def _populate(self) -> None:
+        self.tree.clear()
         by_cat: dict[str, list[dict]] = {}
         for entry in self.registry.palette():
             by_cat.setdefault(entry["category"], []).append(entry)
@@ -105,6 +127,8 @@ class NodePalette(QWidget):
             c for c in by_cat if c not in _CATEGORY_ORDER
         ]
         for cat in ordered:
+            if category_module(cat) not in self._visible_modules:
+                continue
             entries = by_cat.get(cat)
             if not entries:
                 continue
@@ -120,6 +144,30 @@ class NodePalette(QWidget):
             head.setExpanded(True)
 
         self._populate_files()
+
+    def _show_modules_menu(self) -> None:
+        """Меню с чекбоксами предметных модулей («Основа языка» — не в списке,
+        скрыть её нельзя). Клик по пункту сразу перестраивает дерево."""
+        menu = QMenu(self)
+        for name in MODULE_ORDER:
+            mod = MODULES[name]
+            if mod.get("core"):
+                continue
+            action = QAction(mod["title"], menu)
+            action.setCheckable(True)
+            action.setChecked(name in self._visible_modules)
+            action.setToolTip(mod.get("description", ""))
+            action.toggled.connect(lambda checked, n=name: self._toggle_module(n, checked))
+            menu.addAction(action)
+        menu.exec(self.modules_btn.mapToGlobal(
+            self.modules_btn.rect().bottomLeft()))
+
+    def _toggle_module(self, name: str, visible: bool) -> None:
+        if visible:
+            self._visible_modules.add(name)
+        else:
+            self._visible_modules.discard(name)
+        self._populate()
 
     def _populate_files(self) -> None:
         """Раздел «Словари»: файлы из resources/words с авто-определением типа."""

@@ -1,0 +1,425 @@
+{
+  "title": "№9. Тейлор элементарной функции (банк 2.5)",
+  "note": "y = A(x−x₀)^j·F(k(x−x₀)), F ∈ {exp, sin, cos, sh, ch}; pick.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "fam",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 4
+        }
+      },
+      {
+        "id": "A",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 6
+        }
+      },
+      {
+        "id": "j",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "kf",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 5
+        }
+      },
+      {
+        "id": "x0s",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 6
+        }
+      },
+      {
+        "id": "x0",
+        "type": "formula",
+        "params": {
+          "expr": "x0s - 3"
+        }
+      },
+      {
+        "id": "vd",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "A",
+            "j",
+            "k",
+            "x0"
+          ]
+        }
+      },
+      {
+        "id": "d0",
+        "type": "expr_const",
+        "params": {
+          "expr": "A * (x - x0)**j * exp(k*(x - x0))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "d1",
+        "type": "expr_const",
+        "params": {
+          "expr": "A * (x - x0)**j * sin(k*(x - x0))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "d2",
+        "type": "expr_const",
+        "params": {
+          "expr": "A * (x - x0)**j * cos(k*(x - x0))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "d3",
+        "type": "expr_const",
+        "params": {
+          "expr": "A * (x - x0)**j * sinh(k*(x - x0))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "d4",
+        "type": "expr_const",
+        "params": {
+          "expr": "A * (x - x0)**j * cosh(k*(x - x0))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x"
+          ]
+        }
+      },
+      {
+        "id": "fdisp",
+        "type": "pick",
+        "params": {
+          "count": 5,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "e0",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(A*(x - x0)**j * exp(k*(x - x0)), A*Sum(k**m * (x - x0)**(m + j) / factorial(m), (m, 0, oo)))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x",
+            "m"
+          ]
+        }
+      },
+      {
+        "id": "e1",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(A*(x - x0)**j * sin(k*(x - x0)), A*Sum((-1)**m * k**(2*m+1) * (x - x0)**(2*m + 1 + j) / factorial(2*m + 1), (m, 0, oo)))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x",
+            "m"
+          ]
+        }
+      },
+      {
+        "id": "e2",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(A*(x - x0)**j * cos(k*(x - x0)), A*Sum((-1)**m * k**(2*m) * (x - x0)**(2*m + j) / factorial(2*m), (m, 0, oo)))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x",
+            "m"
+          ]
+        }
+      },
+      {
+        "id": "e3",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(A*(x - x0)**j * sinh(k*(x - x0)), A*Sum(k**(2*m+1) * (x - x0)**(2*m + 1 + j) / factorial(2*m + 1), (m, 0, oo)))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x",
+            "m"
+          ]
+        }
+      },
+      {
+        "id": "e4",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(A*(x - x0)**j * cosh(k*(x - x0)), A*Sum(k**(2*m) * (x - x0)**(2*m + j) / factorial(2*m), (m, 0, oo)))",
+          "vars": [
+            "A",
+            "j",
+            "k",
+            "x0",
+            "x",
+            "m"
+          ]
+        }
+      },
+      {
+        "id": "eq",
+        "type": "pick",
+        "params": {
+          "count": 5,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Разложить функцию f(x) в ряд Тейлора в окрестности точки x₀ = #x0#. Указать область сходимости полученного степенного ряда. Использовать разложения элементарных функций."
+        }
+      },
+      {
+        "id": "fbF",
+        "type": "expr_block",
+        "params": {
+          "prefix": "y"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "fbEq",
+        "type": "expr_block"
+      },
+      {
+        "id": "regT",
+        "type": "text",
+        "params": {
+          "text": "Область сходимости: −∞ < x < +∞ (разложение целой функции; сдвиг t = x − #x0#)."
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "x0s:out",
+        "to": "x0:x0s"
+      },
+      {
+        "from": "A:out",
+        "to": "vd:A"
+      },
+      {
+        "from": "j:out",
+        "to": "vd:j"
+      },
+      {
+        "from": "kf:out",
+        "to": "vd:k"
+      },
+      {
+        "from": "x0:out",
+        "to": "vd:x0"
+      },
+      {
+        "from": "vd:out",
+        "to": "d0:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "d1:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "d2:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "d3:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "d4:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "e0:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "e1:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "e2:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "e3:values"
+      },
+      {
+        "from": "vd:out",
+        "to": "e4:values"
+      },
+      {
+        "from": "fam:out",
+        "to": "fdisp:index"
+      },
+      {
+        "from": "d0:out",
+        "to": "fdisp:in0"
+      },
+      {
+        "from": "d1:out",
+        "to": "fdisp:in1"
+      },
+      {
+        "from": "d2:out",
+        "to": "fdisp:in2"
+      },
+      {
+        "from": "d3:out",
+        "to": "fdisp:in3"
+      },
+      {
+        "from": "d4:out",
+        "to": "fdisp:in4"
+      },
+      {
+        "from": "fam:out",
+        "to": "eq:index"
+      },
+      {
+        "from": "e0:out",
+        "to": "eq:in0"
+      },
+      {
+        "from": "e1:out",
+        "to": "eq:in1"
+      },
+      {
+        "from": "e2:out",
+        "to": "eq:in2"
+      },
+      {
+        "from": "e3:out",
+        "to": "eq:in3"
+      },
+      {
+        "from": "e4:out",
+        "to": "eq:in4"
+      },
+      {
+        "from": "x0:out",
+        "to": "intro:x0"
+      },
+      {
+        "from": "fdisp:out",
+        "to": "fbF:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fbF:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "eq:out",
+        "to": "fbEq:in"
+      },
+      {
+        "from": "x0:out",
+        "to": "regT:x0"
+      },
+      {
+        "from": "fbEq:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "regT:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 19,
+      "max_attempts": 100
+    }
+  }
+}

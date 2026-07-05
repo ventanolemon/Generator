@@ -1,0 +1,586 @@
+{
+  "title": "№2. Область на комплексной плоскости",
+  "note": "4 семейства (кольцо/круг+полуплоскость/прямоугольник/сектор); complex_region_plot рисует область в ответ.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "fam",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 3
+        }
+      },
+      {
+        "id": "A0",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "r1",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "id": "dr",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "id": "r2",
+        "type": "formula",
+        "params": {
+          "expr": "r1 + dr"
+        }
+      },
+      {
+        "id": "c0a",
+        "type": "template",
+        "params": {
+          "text": "abs(z - #A#) > #r1#"
+        }
+      },
+      {
+        "id": "c0b",
+        "type": "template",
+        "params": {
+          "text": "abs(z - #A#) < #r2#"
+        }
+      },
+      {
+        "id": "l0",
+        "type": "list_new",
+        "params": {
+          "count": 2,
+          "elem_type": "string"
+        }
+      },
+      {
+        "id": "st0",
+        "type": "text",
+        "params": {
+          "text": "#r1# < |z − #A#| < #r2#"
+        }
+      },
+      {
+        "id": "an0",
+        "type": "text",
+        "params": {
+          "text": "Открытое кольцо с центром #A# и радиусами #r1# и #r2# (окружности-границы не входят)."
+        }
+      },
+      {
+        "id": "A1",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "id": "rr",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "c1a",
+        "type": "template",
+        "params": {
+          "text": "abs(z + #A#*i) < #r#"
+        }
+      },
+      {
+        "id": "c1b",
+        "type": "template",
+        "params": {
+          "text": "re(z) < 0"
+        }
+      },
+      {
+        "id": "l1",
+        "type": "list_new",
+        "params": {
+          "count": 2,
+          "elem_type": "string"
+        }
+      },
+      {
+        "id": "st1",
+        "type": "text",
+        "params": {
+          "text": "|z + #A#i| < #r#,  Re z < 0"
+        }
+      },
+      {
+        "id": "an1",
+        "type": "text",
+        "params": {
+          "text": "Часть открытого круга радиуса #r# с центром −#A#i, лежащая левее мнимой оси (Re z < 0); границы не входят."
+        }
+      },
+      {
+        "id": "a2",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 4
+        }
+      },
+      {
+        "id": "b2",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 4
+        }
+      },
+      {
+        "id": "c2a",
+        "type": "template",
+        "params": {
+          "text": "re(z) > 0"
+        }
+      },
+      {
+        "id": "c2b",
+        "type": "template",
+        "params": {
+          "text": "re(z) < #a#"
+        }
+      },
+      {
+        "id": "c2c",
+        "type": "template",
+        "params": {
+          "text": "im(z) > -#b#"
+        }
+      },
+      {
+        "id": "c2d",
+        "type": "template",
+        "params": {
+          "text": "im(z) < 0"
+        }
+      },
+      {
+        "id": "l2",
+        "type": "list_new",
+        "params": {
+          "count": 4,
+          "elem_type": "string"
+        }
+      },
+      {
+        "id": "st2",
+        "type": "text",
+        "params": {
+          "text": "0 < Re z < #a#,  −#b# < Im z < 0"
+        }
+      },
+      {
+        "id": "an2",
+        "type": "text",
+        "params": {
+          "text": "Открытый прямоугольник (0; #a#) × (−#b#; 0) (стороны не входят)."
+        }
+      },
+      {
+        "id": "r3",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 4
+        }
+      },
+      {
+        "id": "k3",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 4
+        }
+      },
+      {
+        "id": "c3a",
+        "type": "template",
+        "params": {
+          "text": "abs(z) < #r#"
+        }
+      },
+      {
+        "id": "c3b",
+        "type": "template",
+        "params": {
+          "text": "arg(z) > 0"
+        }
+      },
+      {
+        "id": "c3c",
+        "type": "template",
+        "params": {
+          "text": "arg(z) < pi/#k#"
+        }
+      },
+      {
+        "id": "l3",
+        "type": "list_new",
+        "params": {
+          "count": 3,
+          "elem_type": "string"
+        }
+      },
+      {
+        "id": "st3",
+        "type": "text",
+        "params": {
+          "text": "|z| < #r#,  0 < arg z < π/#k#"
+        }
+      },
+      {
+        "id": "an3",
+        "type": "text",
+        "params": {
+          "text": "Открытый круговой сектор радиуса #r# с раствором π/#k# от положительной вещественной полуоси (границы не входят)."
+        }
+      },
+      {
+        "id": "conds",
+        "type": "pick",
+        "params": {
+          "count": 4,
+          "value_type": "list"
+        }
+      },
+      {
+        "id": "stx",
+        "type": "pick",
+        "params": {
+          "count": 4,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "anx",
+        "type": "pick",
+        "params": {
+          "count": 4,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "plot",
+        "type": "complex_region_plot",
+        "params": {
+          "span": 6,
+          "title": "область"
+        }
+      },
+      {
+        "id": "img",
+        "type": "to_block",
+        "params": {
+          "caption": ""
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Изобразить на комплексной плоскости область, заданную неравенством или системой неравенств:"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "r1:out",
+        "to": "r2:r1"
+      },
+      {
+        "from": "dr:out",
+        "to": "r2:dr"
+      },
+      {
+        "from": "A0:out",
+        "to": "c0a:A"
+      },
+      {
+        "from": "r1:out",
+        "to": "c0a:r1"
+      },
+      {
+        "from": "A0:out",
+        "to": "c0b:A"
+      },
+      {
+        "from": "r2:out",
+        "to": "c0b:r2"
+      },
+      {
+        "from": "c0a:out",
+        "to": "l0:in0"
+      },
+      {
+        "from": "c0b:out",
+        "to": "l0:in1"
+      },
+      {
+        "from": "r1:out",
+        "to": "st0:r1"
+      },
+      {
+        "from": "A0:out",
+        "to": "st0:A"
+      },
+      {
+        "from": "r2:out",
+        "to": "st0:r2"
+      },
+      {
+        "from": "A0:out",
+        "to": "an0:A"
+      },
+      {
+        "from": "r1:out",
+        "to": "an0:r1"
+      },
+      {
+        "from": "r2:out",
+        "to": "an0:r2"
+      },
+      {
+        "from": "A1:out",
+        "to": "c1a:A"
+      },
+      {
+        "from": "rr:out",
+        "to": "c1a:r"
+      },
+      {
+        "from": "c1a:out",
+        "to": "l1:in0"
+      },
+      {
+        "from": "c1b:out",
+        "to": "l1:in1"
+      },
+      {
+        "from": "A1:out",
+        "to": "st1:A"
+      },
+      {
+        "from": "rr:out",
+        "to": "st1:r"
+      },
+      {
+        "from": "rr:out",
+        "to": "an1:r"
+      },
+      {
+        "from": "A1:out",
+        "to": "an1:A"
+      },
+      {
+        "from": "a2:out",
+        "to": "c2b:a"
+      },
+      {
+        "from": "b2:out",
+        "to": "c2c:b"
+      },
+      {
+        "from": "c2a:out",
+        "to": "l2:in0"
+      },
+      {
+        "from": "c2b:out",
+        "to": "l2:in1"
+      },
+      {
+        "from": "c2c:out",
+        "to": "l2:in2"
+      },
+      {
+        "from": "c2d:out",
+        "to": "l2:in3"
+      },
+      {
+        "from": "a2:out",
+        "to": "st2:a"
+      },
+      {
+        "from": "b2:out",
+        "to": "st2:b"
+      },
+      {
+        "from": "a2:out",
+        "to": "an2:a"
+      },
+      {
+        "from": "b2:out",
+        "to": "an2:b"
+      },
+      {
+        "from": "r3:out",
+        "to": "c3a:r"
+      },
+      {
+        "from": "k3:out",
+        "to": "c3c:k"
+      },
+      {
+        "from": "c3a:out",
+        "to": "l3:in0"
+      },
+      {
+        "from": "c3b:out",
+        "to": "l3:in1"
+      },
+      {
+        "from": "c3c:out",
+        "to": "l3:in2"
+      },
+      {
+        "from": "r3:out",
+        "to": "st3:r"
+      },
+      {
+        "from": "k3:out",
+        "to": "st3:k"
+      },
+      {
+        "from": "r3:out",
+        "to": "an3:r"
+      },
+      {
+        "from": "k3:out",
+        "to": "an3:k"
+      },
+      {
+        "from": "fam:out",
+        "to": "conds:index"
+      },
+      {
+        "from": "l0:out",
+        "to": "conds:in0"
+      },
+      {
+        "from": "l1:out",
+        "to": "conds:in1"
+      },
+      {
+        "from": "l2:out",
+        "to": "conds:in2"
+      },
+      {
+        "from": "l3:out",
+        "to": "conds:in3"
+      },
+      {
+        "from": "fam:out",
+        "to": "stx:index"
+      },
+      {
+        "from": "st0:out",
+        "to": "stx:in0"
+      },
+      {
+        "from": "st1:out",
+        "to": "stx:in1"
+      },
+      {
+        "from": "st2:out",
+        "to": "stx:in2"
+      },
+      {
+        "from": "st3:out",
+        "to": "stx:in3"
+      },
+      {
+        "from": "fam:out",
+        "to": "anx:index"
+      },
+      {
+        "from": "an0:out",
+        "to": "anx:in0"
+      },
+      {
+        "from": "an1:out",
+        "to": "anx:in1"
+      },
+      {
+        "from": "an2:out",
+        "to": "anx:in2"
+      },
+      {
+        "from": "an3:out",
+        "to": "anx:in3"
+      },
+      {
+        "from": "conds:out",
+        "to": "plot:conds"
+      },
+      {
+        "from": "plot:out",
+        "to": "img:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "stx:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "anx:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "img:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 22,
+      "max_attempts": 100
+    }
+  }
+}

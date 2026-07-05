@@ -124,6 +124,38 @@ class ExprConstNode(Node):
         return {"out": substitute_values(expr, inputs.get("values"))}
 
 
+class ParseExprNode(Node):
+    """
+    Разобрать СТРОКУ в символьное выражение в рантайме (STRING → EXPR).
+
+    Дополняет expr_const (там выражение — фиксированный параметр): здесь текст
+    приходит проводом, поэтому можно, выбрав строку случайно (random_choice),
+    и подставить её в текст/условие как есть, И разобрать в EXPR для символьной
+    математики ответа — без дублирования пулов. Имена трактуются как символы
+    (assumptions — общий режим).
+    """
+    type_id = "parse_expr"
+    category = "symbolic"
+    display_name = "Строка → выражение"
+    description = ("Разобрать строку в символьное выражение. Вход: text "
+                   "(STRING). Выход: EXPR.")
+    INPUTS = [Port("text", PortType.STRING)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "vars": {"type": "list", "default": [], "optional": True},
+        "assumptions": {"type": "enum", "values": _ASSUMPTIONS, "default": "complex"},
+    }
+
+    def compute(self, inputs, ctx: ExecContext):
+        names = self.params.get("vars") or []
+        syms = build_symbols([str(n) for n in names],
+                             self.params.get("assumptions", "complex"))
+        text = inputs.get("text")
+        if text is None or str(text).strip() == "":
+            raise RetryGeneration(f"parse_expr {self.node_id!r}: пустая строка.")
+        return {"out": parse_expr(str(text), syms)}
+
+
 class RandomPolynomialNode(Node):
     """
     Случайный многочлен заданной степени с целыми коэффициентами. Источник EXPR.
@@ -302,14 +334,61 @@ class SubstituteNode(Node):
     OUTPUTS = [Port("out", PortType.EXPR)]
 
     def compute(self, inputs, ctx: ExecContext):
+        from ..symbolic import _num
         sp = sympy()
         expr = as_expr(inputs["in"])
         values = inputs.get("values", {}) or {}
-        mapping = {sp.Symbol(str(k)): v for k, v in values.items()}
+        # Символы ищем в выражении по имени (предположения могут различаться);
+        # значения — через _num, чтобы целые float (0.0, 2.0 из NUMBER-провода)
+        # стали точными Integer, а не «плыли» в 0.0 / 1.5*pi.
+        free = {s.name: s for s in expr.free_symbols}
+        mapping = {
+            free.get(str(k), sp.Symbol(str(k))): _num(sp, v)
+            for k, v in values.items()
+        }
         try:
             result = expr.subs(mapping)
         except Exception as e:
             raise RetryGeneration(f"expr_subs {self.node_id!r}: {e}")
+        return {"out": result}
+
+
+class SubsExprNode(Node):
+    """
+    Подстановка ВЫРАЖЕНИЯ вместо символа: in[name := value] → EXPR.
+
+    Дополняет expr_subs (тот подставляет только числа из NUMBER_DICT): здесь
+    значением служит любой EXPR — так собираются шаблонные ответы с точными
+    величинами («z = r·(cos φ + i·sin φ)» c r = 576, φ = π/3). Символ ищется
+    в выражении по имени.
+    """
+    type_id = "subs_expr"
+    category = "symbolic"
+    display_name = "Подстановка выражения"
+    description = ("Заменить символ name выражением value (EXPR в EXPR) — "
+                   "шаблонные формулы с точными значениями. Вход: in, value "
+                   "(EXPR). Выход: EXPR.")
+    INPUTS = [Port("in", PortType.EXPR), Port("value", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"name": {"type": "string", "default": "w"}}
+
+    def validate_params(self) -> None:
+        if not str(self.params.get("name", "")).strip():
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: пустое имя подставляемого символа."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        expr = as_expr(inputs["in"])
+        value = as_expr(inputs["value"])
+        name = str(self.params.get("name", "w")).strip()
+        free = {s.name: s for s in expr.free_symbols}
+        sym = free.get(name, sp.Symbol(name))
+        try:
+            result = expr.subs(sym, value)
+        except Exception as e:
+            raise RetryGeneration(f"subs_expr {self.node_id!r}: {e}")
         return {"out": result}
 
 
@@ -821,7 +900,8 @@ class ExprBlockNode(Node):
     type_id = "expr_block"
     category = "symbolic"
     display_name = "Формульный блок"
-    INPUTS = [Port("in", PortType.EXPR)]
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("prefix", PortType.STRING, required=False)]
     OUTPUTS = [Port("out", PortType.BLOCK)]
     PARAMS_SCHEMA = {
         "prefix": {"type": "string", "default": "", "optional": True},
@@ -832,6 +912,10 @@ class ExprBlockNode(Node):
         from core.blocks import FormulaBlock          # ленивый: тянет Qt
         from .compute import _join_prefix
         expr = as_expr(inputs["in"])
-        latex = _join_prefix(self.params.get("prefix", ""), to_latex(expr),
+        # Префикс — вход (значение из графа) либо статический параметр.
+        prefix = inputs.get("prefix")
+        if prefix is None:
+            prefix = self.params.get("prefix", "")
+        latex = _join_prefix(prefix, to_latex(expr),
                              self.params.get("relation", "="))
         return {"out": FormulaBlock(latex)}

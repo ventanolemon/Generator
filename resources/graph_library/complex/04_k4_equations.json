@@ -1,0 +1,676 @@
+{
+  "title": "№4. Трансцендентные уравнения",
+  "note": "e^z = w / cos z = a / sh z = b; корни по ветвям (K, S=±1) одним циклом; решётка корней на картинке.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "fam",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 2
+        }
+      },
+      {
+        "id": "W",
+        "type": "random_choice",
+        "params": {
+          "elem_type": "expr",
+          "items": [
+            "3*I",
+            "-2*I",
+            "-4",
+            "2 + 2*I",
+            "-3 + 3*I"
+          ]
+        }
+      },
+      {
+        "id": "rW0",
+        "type": "abs"
+      },
+      {
+        "id": "rW",
+        "type": "simplify"
+      },
+      {
+        "id": "phW",
+        "type": "arg"
+      },
+      {
+        "id": "a4",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 5
+        }
+      },
+      {
+        "id": "b4",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 5
+        }
+      },
+      {
+        "id": "vd1",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "A0"
+          ]
+        }
+      },
+      {
+        "id": "vd2",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "B0"
+          ]
+        }
+      },
+      {
+        "id": "L1",
+        "type": "expr_const",
+        "params": {
+          "expr": "log(A0 + sqrt(A0**2 - 1))",
+          "vars": [
+            "A0"
+          ]
+        }
+      },
+      {
+        "id": "E2",
+        "type": "expr_const",
+        "params": {
+          "expr": "log(B0 + sqrt(B0**2 + 1))",
+          "vars": [
+            "B0"
+          ]
+        }
+      },
+      {
+        "id": "dd0",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(exp(z), W0)",
+          "vars": [
+            "z",
+            "W0"
+          ]
+        }
+      },
+      {
+        "id": "sd0",
+        "type": "subs_expr",
+        "params": {
+          "name": "W0"
+        }
+      },
+      {
+        "id": "dd1",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(cos(z), A0)",
+          "vars": [
+            "z",
+            "A0"
+          ]
+        }
+      },
+      {
+        "id": "dd2",
+        "type": "expr_const",
+        "params": {
+          "expr": "Eq(sinh(z), B0)",
+          "vars": [
+            "z",
+            "B0"
+          ]
+        }
+      },
+      {
+        "id": "disp",
+        "type": "pick",
+        "params": {
+          "count": 3,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "tt0",
+        "type": "expr_const",
+        "params": {
+          "expr": "log(R0) + I*(F0 + 2*pi*K)",
+          "vars": [
+            "R0",
+            "F0",
+            "K"
+          ]
+        }
+      },
+      {
+        "id": "s0r",
+        "type": "subs_expr",
+        "params": {
+          "name": "R0"
+        }
+      },
+      {
+        "id": "s0f",
+        "type": "subs_expr",
+        "params": {
+          "name": "F0"
+        }
+      },
+      {
+        "id": "tt1",
+        "type": "expr_const",
+        "params": {
+          "expr": "2*pi*K + I*S*L0",
+          "vars": [
+            "K",
+            "S",
+            "L0"
+          ]
+        }
+      },
+      {
+        "id": "s1l",
+        "type": "subs_expr",
+        "params": {
+          "name": "L0"
+        }
+      },
+      {
+        "id": "tt2",
+        "type": "expr_const",
+        "params": {
+          "expr": "S*E0 + I*(pi*(1 - S)/2 + 2*pi*K)",
+          "vars": [
+            "K",
+            "S",
+            "E0"
+          ]
+        }
+      },
+      {
+        "id": "s2e",
+        "type": "subs_expr",
+        "params": {
+          "name": "E0"
+        }
+      },
+      {
+        "id": "term",
+        "type": "pick",
+        "params": {
+          "count": 3,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "isf0",
+        "type": "compare",
+        "params": {
+          "op": "==",
+          "b": 0
+        }
+      },
+      {
+        "id": "cnt",
+        "type": "select",
+        "params": {
+          "value_type": "number"
+        }
+      },
+      {
+        "id": "c3",
+        "type": "constant_number",
+        "params": {
+          "value": 3
+        }
+      },
+      {
+        "id": "c6",
+        "type": "constant_number",
+        "params": {
+          "value": 6
+        }
+      },
+      {
+        "id": "stp",
+        "type": "select",
+        "params": {
+          "value_type": "number"
+        }
+      },
+      {
+        "id": "p1",
+        "type": "constant_number",
+        "params": {
+          "value": 1
+        }
+      },
+      {
+        "id": "p2",
+        "type": "constant_number",
+        "params": {
+          "value": 2
+        }
+      },
+      {
+        "id": "loop",
+        "type": "repeat",
+        "params": {
+          "imports": [
+            "term:expr",
+            "step:number"
+          ],
+          "outputs": [
+            "pts:expr:list"
+          ],
+          "body": {
+            "nodes": [
+              {
+                "id": "tv",
+                "type": "input_var",
+                "params": {
+                  "name": "term",
+                  "type": "expr"
+                }
+              },
+              {
+                "id": "sv",
+                "type": "input_var",
+                "params": {
+                  "name": "step",
+                  "type": "number"
+                }
+              },
+              {
+                "id": "li",
+                "type": "loop_index"
+              },
+              {
+                "id": "kf",
+                "type": "formula",
+                "params": {
+                  "expr": "floor(i/step) - 1"
+                }
+              },
+              {
+                "id": "sf",
+                "type": "formula",
+                "params": {
+                  "expr": "2*(i - step*floor(i/step)) - 1"
+                }
+              },
+              {
+                "id": "vk",
+                "type": "var_dict",
+                "params": {
+                  "names": [
+                    "K",
+                    "S"
+                  ]
+                }
+              },
+              {
+                "id": "sub",
+                "type": "expr_subs"
+              },
+              {
+                "id": "pt",
+                "type": "output_var",
+                "params": {
+                  "name": "pts",
+                  "type": "expr"
+                }
+              }
+            ],
+            "edges": [
+              {
+                "from": "li:out",
+                "to": "kf:i"
+              },
+              {
+                "from": "sv:out",
+                "to": "kf:step"
+              },
+              {
+                "from": "li:out",
+                "to": "sf:i"
+              },
+              {
+                "from": "sv:out",
+                "to": "sf:step"
+              },
+              {
+                "from": "kf:out",
+                "to": "vk:K"
+              },
+              {
+                "from": "sf:out",
+                "to": "vk:S"
+              },
+              {
+                "from": "tv:out",
+                "to": "sub:in"
+              },
+              {
+                "from": "vk:out",
+                "to": "sub:values"
+              },
+              {
+                "from": "sub:out",
+                "to": "pt:value"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "plot",
+        "type": "complex_points_plot",
+        "params": {
+          "title": "корни (k = −1, 0, 1)"
+        }
+      },
+      {
+        "id": "img",
+        "type": "to_block"
+      },
+      {
+        "id": "an0",
+        "type": "text",
+        "params": {
+          "text": "e^z = w: z = ln|w| + i(arg w + 2πk) = ln(#r#) + i(#phi# + 2πk), k ∈ ℤ — вертикальная решётка корней с шагом 2π."
+        }
+      },
+      {
+        "id": "an1",
+        "type": "text",
+        "params": {
+          "text": "cos z = #a#: z = 2πk ± i·ln(#a# + √(#a#² − 1)) = 2πk ± i·#L#, k ∈ ℤ (пары корней на мнимых прямых)."
+        }
+      },
+      {
+        "id": "an2",
+        "type": "text",
+        "params": {
+          "text": "sh z = #b#: z = #E# + 2πik и z = −#E# + iπ(2k + 1), где #E# = ln(#b# + √(#b#² + 1)), k ∈ ℤ."
+        }
+      },
+      {
+        "id": "anx",
+        "type": "pick",
+        "params": {
+          "count": 3,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Решить уравнение. Корни уравнения изобразить на комплексной плоскости (показаны ветви k = −1, 0, 1)."
+        }
+      },
+      {
+        "id": "fbE",
+        "type": "expr_block"
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "ansBl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "W:out",
+        "to": "rW0:in"
+      },
+      {
+        "from": "rW0:out",
+        "to": "rW:in"
+      },
+      {
+        "from": "W:out",
+        "to": "phW:in"
+      },
+      {
+        "from": "a4:out",
+        "to": "vd1:A0"
+      },
+      {
+        "from": "b4:out",
+        "to": "vd2:B0"
+      },
+      {
+        "from": "vd1:out",
+        "to": "L1:values"
+      },
+      {
+        "from": "vd2:out",
+        "to": "E2:values"
+      },
+      {
+        "from": "dd0:out",
+        "to": "sd0:in"
+      },
+      {
+        "from": "W:out",
+        "to": "sd0:value"
+      },
+      {
+        "from": "vd1:out",
+        "to": "dd1:values"
+      },
+      {
+        "from": "vd2:out",
+        "to": "dd2:values"
+      },
+      {
+        "from": "fam:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "sd0:out",
+        "to": "disp:in0"
+      },
+      {
+        "from": "dd1:out",
+        "to": "disp:in1"
+      },
+      {
+        "from": "dd2:out",
+        "to": "disp:in2"
+      },
+      {
+        "from": "tt0:out",
+        "to": "s0r:in"
+      },
+      {
+        "from": "rW:out",
+        "to": "s0r:value"
+      },
+      {
+        "from": "s0r:out",
+        "to": "s0f:in"
+      },
+      {
+        "from": "phW:out",
+        "to": "s0f:value"
+      },
+      {
+        "from": "tt1:out",
+        "to": "s1l:in"
+      },
+      {
+        "from": "L1:out",
+        "to": "s1l:value"
+      },
+      {
+        "from": "tt2:out",
+        "to": "s2e:in"
+      },
+      {
+        "from": "E2:out",
+        "to": "s2e:value"
+      },
+      {
+        "from": "fam:out",
+        "to": "term:index"
+      },
+      {
+        "from": "s0f:out",
+        "to": "term:in0"
+      },
+      {
+        "from": "s1l:out",
+        "to": "term:in1"
+      },
+      {
+        "from": "s2e:out",
+        "to": "term:in2"
+      },
+      {
+        "from": "fam:out",
+        "to": "isf0:a"
+      },
+      {
+        "from": "isf0:out",
+        "to": "cnt:cond"
+      },
+      {
+        "from": "c3:out",
+        "to": "cnt:on_true"
+      },
+      {
+        "from": "c6:out",
+        "to": "cnt:on_false"
+      },
+      {
+        "from": "isf0:out",
+        "to": "stp:cond"
+      },
+      {
+        "from": "p1:out",
+        "to": "stp:on_true"
+      },
+      {
+        "from": "p2:out",
+        "to": "stp:on_false"
+      },
+      {
+        "from": "cnt:out",
+        "to": "loop:count"
+      },
+      {
+        "from": "term:out",
+        "to": "loop:term"
+      },
+      {
+        "from": "stp:out",
+        "to": "loop:step"
+      },
+      {
+        "from": "loop:pts",
+        "to": "plot:points"
+      },
+      {
+        "from": "plot:out",
+        "to": "img:in"
+      },
+      {
+        "from": "rW:out",
+        "to": "an0:r"
+      },
+      {
+        "from": "phW:out",
+        "to": "an0:phi"
+      },
+      {
+        "from": "a4:out",
+        "to": "an1:a"
+      },
+      {
+        "from": "L1:out",
+        "to": "an1:L"
+      },
+      {
+        "from": "b4:out",
+        "to": "an2:b"
+      },
+      {
+        "from": "E2:out",
+        "to": "an2:E"
+      },
+      {
+        "from": "fam:out",
+        "to": "anx:index"
+      },
+      {
+        "from": "an0:out",
+        "to": "anx:in0"
+      },
+      {
+        "from": "an1:out",
+        "to": "anx:in1"
+      },
+      {
+        "from": "an2:out",
+        "to": "anx:in2"
+      },
+      {
+        "from": "disp:out",
+        "to": "fbE:in"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fbE:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "anx:out",
+        "to": "ansBl:in0"
+      },
+      {
+        "from": "img:out",
+        "to": "ansBl:in1"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansBl:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 24,
+      "max_attempts": 100
+    }
+  }
+}

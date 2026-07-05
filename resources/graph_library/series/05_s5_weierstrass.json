@@ -1,0 +1,496 @@
+{
+  "title": "№5. Признак Вейерштрасса",
+  "note": "3 структурных типа (банк 2.4): AM–GM / sin-числитель / отрезок.",
+  "graph": {
+    "nodes": [
+      {
+        "id": "fam",
+        "type": "random_natural",
+        "params": {
+          "min": 0,
+          "max": 2
+        }
+      },
+      {
+        "id": "p",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 2
+        }
+      },
+      {
+        "id": "m",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 3
+        }
+      },
+      {
+        "id": "k",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 5
+        }
+      },
+      {
+        "id": "q",
+        "type": "formula",
+        "params": {
+          "expr": "2*p + 2 + m"
+        }
+      },
+      {
+        "id": "cc",
+        "type": "formula",
+        "params": {
+          "expr": "k^2"
+        }
+      },
+      {
+        "id": "kk",
+        "type": "formula",
+        "params": {
+          "expr": "2*k"
+        }
+      },
+      {
+        "id": "qh",
+        "type": "formula",
+        "params": {
+          "expr": "(2*p + 2 + m)/2"
+        }
+      },
+      {
+        "id": "s",
+        "type": "formula",
+        "params": {
+          "expr": "1 + m/2"
+        }
+      },
+      {
+        "id": "vd0",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "p",
+            "q",
+            "c"
+          ]
+        }
+      },
+      {
+        "id": "t0",
+        "type": "expr_const",
+        "params": {
+          "expr": "n**p * x / (1 + c * n**q * x**2)",
+          "vars": [
+            "p",
+            "q",
+            "c",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "aa",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 5
+        }
+      },
+      {
+        "id": "bb",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 5
+        }
+      },
+      {
+        "id": "s1",
+        "type": "formula",
+        "params": {
+          "expr": "p + 0.5"
+        }
+      },
+      {
+        "id": "vd1",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "a",
+            "p",
+            "b"
+          ]
+        }
+      },
+      {
+        "id": "t1",
+        "type": "expr_const",
+        "params": {
+          "expr": "sin(a*n*x) / (n**p * sqrt(n + b))",
+          "vars": [
+            "a",
+            "p",
+            "b",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "w",
+        "type": "random_natural",
+        "params": {
+          "min": 1,
+          "max": 5
+        }
+      },
+      {
+        "id": "vd2",
+        "type": "var_dict",
+        "params": {
+          "names": [
+            "k",
+            "w"
+          ]
+        }
+      },
+      {
+        "id": "t2",
+        "type": "expr_const",
+        "params": {
+          "expr": "x**n / (k**n * (n**2 + w))",
+          "vars": [
+            "k",
+            "w",
+            "x",
+            "n"
+          ]
+        }
+      },
+      {
+        "id": "term",
+        "type": "pick",
+        "params": {
+          "count": 3,
+          "value_type": "expr"
+        }
+      },
+      {
+        "id": "nsym",
+        "type": "symbol",
+        "params": {
+          "name": "n"
+        }
+      },
+      {
+        "id": "disp",
+        "type": "sum_display",
+        "params": {
+          "lower": "1",
+          "upper": "oo"
+        }
+      },
+      {
+        "id": "intro",
+        "type": "text",
+        "params": {
+          "text": "Пользуясь признаком Вейерштрасса, доказать равномерную сходимость функционального ряда на указанном промежутке:"
+        }
+      },
+      {
+        "id": "fb",
+        "type": "expr_block"
+      },
+      {
+        "id": "r0",
+        "type": "text",
+        "params": {
+          "text": "−∞ < x < +∞"
+        }
+      },
+      {
+        "id": "r1",
+        "type": "text",
+        "params": {
+          "text": "−∞ < x < +∞"
+        }
+      },
+      {
+        "id": "r2",
+        "type": "text",
+        "params": {
+          "text": "−#k# ≤ x ≤ #k#"
+        }
+      },
+      {
+        "id": "rng",
+        "type": "pick",
+        "params": {
+          "count": 3,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "stmt",
+        "type": "block_list",
+        "params": {
+          "count": 3
+        }
+      },
+      {
+        "id": "an0",
+        "type": "text",
+        "params": {
+          "text": "По AM–GM: 1 + #c#·n^#q#·x² ≥ #kk#·n^#qh#·|x|, поэтому |uₙ(x)| ≤ n^#p#/(#kk#·n^#qh#) = (1/#kk#)·n^(−#s#) = Mₙ для всех x. Ряд Σ Mₙ сходится (p-ряд, s = #s# > 1) ⇒ по Вейерштрассу ряд сходится равномерно на всей оси."
+        }
+      },
+      {
+        "id": "an1",
+        "type": "text",
+        "params": {
+          "text": "|sin(#aa#·n·x)| ≤ 1 и √(n+#bb#) ≥ √n, поэтому |uₙ(x)| ≤ 1/(n^#p#·√n) = n^(−#s1#) = Mₙ для всех x. Ряд Σ Mₙ сходится (p-ряд, s = #s1# > 1) ⇒ равномерная сходимость на всей оси."
+        }
+      },
+      {
+        "id": "an2",
+        "type": "text",
+        "params": {
+          "text": "На отрезке |x| ≤ #k#: |x/#k#|ⁿ ≤ 1, поэтому |uₙ(x)| ≤ 1/(n² + #w#) ≤ 1/n² = Mₙ. Ряд Σ Mₙ сходится (p-ряд, s = 2 > 1) ⇒ равномерная сходимость на [−#k#; #k#]."
+        }
+      },
+      {
+        "id": "ans",
+        "type": "pick",
+        "params": {
+          "count": 3,
+          "value_type": "block"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "p:out",
+        "to": "q:p"
+      },
+      {
+        "from": "m:out",
+        "to": "q:m"
+      },
+      {
+        "from": "k:out",
+        "to": "cc:k"
+      },
+      {
+        "from": "k:out",
+        "to": "kk:k"
+      },
+      {
+        "from": "p:out",
+        "to": "qh:p"
+      },
+      {
+        "from": "m:out",
+        "to": "qh:m"
+      },
+      {
+        "from": "m:out",
+        "to": "s:m"
+      },
+      {
+        "from": "p:out",
+        "to": "vd0:p"
+      },
+      {
+        "from": "q:out",
+        "to": "vd0:q"
+      },
+      {
+        "from": "cc:out",
+        "to": "vd0:c"
+      },
+      {
+        "from": "vd0:out",
+        "to": "t0:values"
+      },
+      {
+        "from": "aa:out",
+        "to": "vd1:a"
+      },
+      {
+        "from": "p:out",
+        "to": "vd1:p"
+      },
+      {
+        "from": "bb:out",
+        "to": "vd1:b"
+      },
+      {
+        "from": "p:out",
+        "to": "s1:p"
+      },
+      {
+        "from": "vd1:out",
+        "to": "t1:values"
+      },
+      {
+        "from": "k:out",
+        "to": "vd2:k"
+      },
+      {
+        "from": "w:out",
+        "to": "vd2:w"
+      },
+      {
+        "from": "vd2:out",
+        "to": "t2:values"
+      },
+      {
+        "from": "fam:out",
+        "to": "term:index"
+      },
+      {
+        "from": "t0:out",
+        "to": "term:in0"
+      },
+      {
+        "from": "t1:out",
+        "to": "term:in1"
+      },
+      {
+        "from": "t2:out",
+        "to": "term:in2"
+      },
+      {
+        "from": "term:out",
+        "to": "disp:term"
+      },
+      {
+        "from": "nsym:out",
+        "to": "disp:index"
+      },
+      {
+        "from": "disp:out",
+        "to": "fb:in"
+      },
+      {
+        "from": "k:out",
+        "to": "r2:k"
+      },
+      {
+        "from": "fam:out",
+        "to": "rng:index"
+      },
+      {
+        "from": "r0:out",
+        "to": "rng:in0"
+      },
+      {
+        "from": "r1:out",
+        "to": "rng:in1"
+      },
+      {
+        "from": "r2:out",
+        "to": "rng:in2"
+      },
+      {
+        "from": "intro:out",
+        "to": "stmt:in0"
+      },
+      {
+        "from": "fb:out",
+        "to": "stmt:in1"
+      },
+      {
+        "from": "rng:out",
+        "to": "stmt:in2"
+      },
+      {
+        "from": "cc:out",
+        "to": "an0:c"
+      },
+      {
+        "from": "q:out",
+        "to": "an0:q"
+      },
+      {
+        "from": "kk:out",
+        "to": "an0:kk"
+      },
+      {
+        "from": "qh:out",
+        "to": "an0:qh"
+      },
+      {
+        "from": "p:out",
+        "to": "an0:p"
+      },
+      {
+        "from": "s:out",
+        "to": "an0:s"
+      },
+      {
+        "from": "aa:out",
+        "to": "an1:aa"
+      },
+      {
+        "from": "bb:out",
+        "to": "an1:bb"
+      },
+      {
+        "from": "p:out",
+        "to": "an1:p"
+      },
+      {
+        "from": "s1:out",
+        "to": "an1:s1"
+      },
+      {
+        "from": "k:out",
+        "to": "an2:k"
+      },
+      {
+        "from": "w:out",
+        "to": "an2:w"
+      },
+      {
+        "from": "fam:out",
+        "to": "ans:index"
+      },
+      {
+        "from": "an0:out",
+        "to": "ans:in0"
+      },
+      {
+        "from": "an1:out",
+        "to": "ans:in1"
+      },
+      {
+        "from": "an2:out",
+        "to": "ans:in2"
+      },
+      {
+        "from": "stmt:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ans:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "seed": 15,
+      "max_attempts": 100
+    }
+  }
+}
