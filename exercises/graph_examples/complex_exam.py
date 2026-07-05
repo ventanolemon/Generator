@@ -118,7 +118,7 @@ _K1_FORMS = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 21, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -235,7 +235,7 @@ _K2_REGION = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 22, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -344,7 +344,7 @@ _K3_POWER_VALUES = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 23, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -489,7 +489,7 @@ _K4_EQUATIONS = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 24, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -638,7 +638,7 @@ _K5_HARMONIC = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 25, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -755,7 +755,7 @@ _K6_MAPPING = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 26, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 

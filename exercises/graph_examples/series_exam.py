@@ -74,7 +74,7 @@ _S1_COMPARISON = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ans:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 11, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -132,7 +132,7 @@ _S2_DALAMBERT = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ans:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 12, "max_attempts": 200},
+    "meta": {"max_attempts": 200},
 }
 
 
@@ -183,7 +183,7 @@ _S3_LEIBNIZ = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ans:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 13, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -281,7 +281,7 @@ _S4_POWER = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ans:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 14, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -390,7 +390,7 @@ _S5_WEIERSTRASS = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ans:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 15, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -445,7 +445,7 @@ _S6_NONUNIFORM = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 16, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -544,7 +544,7 @@ _S7_RATIONAL = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 17, "max_attempts": 300},
+    "meta": {"max_attempts": 300},
 }
 
 
@@ -593,7 +593,7 @@ _S8_TAYLOR_LN = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 18, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
@@ -699,7 +699,7 @@ _S9_TAYLOR_ELEM = {
         {"from": "stmt:out", "to": "task:statement"},
         {"from": "ansBl:out", "to": "task:answer"},
     ],
-    "meta": {"seed": 19, "max_attempts": 100},
+    "meta": {"max_attempts": 100},
 }
 
 
