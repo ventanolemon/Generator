@@ -1,0 +1,145 @@
+{
+  "id": "seed-gen-004",
+  "schema_version": 1,
+  "kind": "generate",
+  "input": {
+    "description": "Устный счёт: столбик из четырёх примеров на умножение однозначных чисел (от 2 до 9). В условии — примеры со знаком вопроса, в ответе — произведения одним списком через запятую, в том же порядке."
+  },
+  "target_graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "rep",
+        "type": "repeat",
+        "params": {
+          "count": 4,
+          "outputs": [
+            "ps:number:list"
+          ],
+          "body": {
+            "nodes": [
+              {
+                "id": "a",
+                "type": "random_natural",
+                "params": {
+                  "min": 2,
+                  "max": 9
+                }
+              },
+              {
+                "id": "b",
+                "type": "random_natural",
+                "params": {
+                  "min": 2,
+                  "max": 9
+                }
+              },
+              {
+                "id": "p",
+                "type": "formula",
+                "params": {
+                  "expr": "a * b"
+                }
+              },
+              {
+                "id": "row",
+                "type": "text",
+                "params": {
+                  "text": "#a# · #b# = ?"
+                }
+              },
+              {
+                "id": "ov",
+                "type": "output_var",
+                "params": {
+                  "name": "ps",
+                  "type": "number"
+                }
+              }
+            ],
+            "edges": [
+              {
+                "from": "a:out",
+                "to": "p:a"
+              },
+              {
+                "from": "b:out",
+                "to": "p:b"
+              },
+              {
+                "from": "a:out",
+                "to": "row:a"
+              },
+              {
+                "from": "b:out",
+                "to": "row:b"
+              },
+              {
+                "from": "p:out",
+                "to": "ov:value"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "lj",
+        "type": "list_join",
+        "params": {
+          "sep": ", "
+        }
+      },
+      {
+        "id": "ansb",
+        "type": "to_block",
+        "params": {
+          "prefix": "Ответы",
+          "relation": ":"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "rep:ps",
+        "to": "lj:in"
+      },
+      {
+        "from": "lj:out",
+        "to": "ansb:in"
+      },
+      {
+        "from": "rep:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansb:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {}
+  },
+  "provenance": {
+    "source": "fable",
+    "created_at": "2026-07-05T00:00:00Z",
+    "catalog_version": "165616006ce6e373",
+    "engine_commit": "34f1799",
+    "validator": {
+      "passed": true,
+      "seeds": [
+        0,
+        1,
+        2
+      ]
+    }
+  },
+  "tags": [
+    "loop",
+    "tunnel",
+    "lists",
+    "school"
+  ]
+}

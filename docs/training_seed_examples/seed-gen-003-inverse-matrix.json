@@ -1,0 +1,111 @@
+{
+  "id": "seed-gen-003",
+  "schema_version": 1,
+  "kind": "generate",
+  "input": {
+    "description": "Задание по линейной алгебре: дана обратимая матрица 2×2 с небольшими целыми элементами, найти обратную. Матрица обязана быть невырожденной в каждом варианте."
+  },
+  "target_graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "A",
+        "type": "random_matrix",
+        "params": {
+          "rows": 2,
+          "cols": 2,
+          "min": -4,
+          "max": 4,
+          "invertible": "yes",
+          "max_det": 6
+        }
+      },
+      {
+        "id": "inv",
+        "type": "matrix_inv"
+      },
+      {
+        "id": "t",
+        "type": "text",
+        "params": {
+          "text": "Найдите матрицу, обратную данной:"
+        }
+      },
+      {
+        "id": "mb",
+        "type": "matrix_block",
+        "params": {
+          "prefix": "A"
+        }
+      },
+      {
+        "id": "bl",
+        "type": "block_list",
+        "params": {
+          "count": 2
+        }
+      },
+      {
+        "id": "ansb",
+        "type": "matrix_block",
+        "params": {
+          "prefix": "A^{-1}"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "A:out",
+        "to": "inv:in"
+      },
+      {
+        "from": "A:out",
+        "to": "mb:in"
+      },
+      {
+        "from": "t:out",
+        "to": "bl:in0"
+      },
+      {
+        "from": "mb:out",
+        "to": "bl:in1"
+      },
+      {
+        "from": "inv:out",
+        "to": "ansb:in"
+      },
+      {
+        "from": "bl:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ansb:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {}
+  },
+  "provenance": {
+    "source": "fable",
+    "created_at": "2026-07-05T00:00:00Z",
+    "catalog_version": "165616006ce6e373",
+    "engine_commit": "34f1799",
+    "validator": {
+      "passed": true,
+      "seeds": [
+        0,
+        1,
+        2
+      ]
+    }
+  },
+  "tags": [
+    "linalg",
+    "rejection",
+    "vtuz"
+  ]
+}
