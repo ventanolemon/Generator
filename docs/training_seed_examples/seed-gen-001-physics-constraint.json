@@ -1,0 +1,119 @@
+{
+  "id": "seed-gen-001",
+  "schema_version": 1,
+  "kind": "generate",
+  "input": {
+    "description": "Нужны задачи по кинематике: тело движется равномерно со скоростью от 2 до 15 м/с в течение 3–20 секунд. Спрашиваем пройденный путь; ответ должен получаться целым числом в разумных пределах (до 200 м)."
+  },
+  "target_graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "v",
+        "type": "random_natural",
+        "params": {
+          "min": 2,
+          "max": 15
+        }
+      },
+      {
+        "id": "t",
+        "type": "random_natural",
+        "params": {
+          "min": 3,
+          "max": 20
+        }
+      },
+      {
+        "id": "s",
+        "type": "formula",
+        "params": {
+          "expr": "v * t"
+        }
+      },
+      {
+        "id": "chk",
+        "type": "constraint",
+        "params": {
+          "kind": "natural",
+          "min": 1,
+          "max": 200
+        }
+      },
+      {
+        "id": "cond",
+        "type": "text",
+        "params": {
+          "text": "Тело движется равномерно со скоростью #v# м/с в течение #t# с. Найдите пройденный путь."
+        }
+      },
+      {
+        "id": "ans",
+        "type": "text",
+        "params": {
+          "text": "S = #S# м"
+        }
+      },
+      {
+        "id": "task",
+        "type": "static_task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "v:out",
+        "to": "s:v"
+      },
+      {
+        "from": "t:out",
+        "to": "s:t"
+      },
+      {
+        "from": "s:out",
+        "to": "chk:in"
+      },
+      {
+        "from": "v:out",
+        "to": "cond:v"
+      },
+      {
+        "from": "t:out",
+        "to": "cond:t"
+      },
+      {
+        "from": "chk:out",
+        "to": "ans:S"
+      },
+      {
+        "from": "cond:out",
+        "to": "task:statement"
+      },
+      {
+        "from": "ans:out",
+        "to": "task:answer"
+      }
+    ],
+    "meta": {
+      "max_attempts": 100
+    }
+  },
+  "provenance": {
+    "source": "fable",
+    "created_at": "2026-07-05T00:00:00Z",
+    "catalog_version": "165616006ce6e373",
+    "engine_commit": "34f1799",
+    "validator": {
+      "passed": true,
+      "seeds": [
+        0,
+        1,
+        2
+      ]
+    }
+  },
+  "tags": [
+    "numeric",
+    "constraint",
+    "school"
+  ]
+}

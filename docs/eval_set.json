@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "readme": "Золотой/состязательный eval-набор контура «описание → GraphSpec». РЕШЕНИЕ (вместо эталонного графа на каждый кейс): у описания много валидных графов, сравнение с единственным эталоном штрафует правильные решения; вместо этого каждый кейс несёт machine-checkable критерии приёмки (checks, закрытый словарь ниже — реализуется поверх GraphSpec + probe из critic_taxonomy.md §3 без изменений движка) плюс manual_criteria для LLM-судьи/человека. reference — необязательная подсказка правильного решения: ссылка на seed-пример, на exercises/graph_examples или inline-граф (все inline проверены исполнением). Скоринг кейса: 1.0 если прошли все checks И manual_criteria подтверждены; частичный зачёт — доля пройденных checks. adversarial_focus — коды таксономии, по которым кейс специально бьёт.",
+  "check_dsl": {
+    "must_build": "GraphSpec.parse + GraphExecutor(spec) без GraphValidationError",
+    "must_execute_seeds": "probe на N seed без ошибок и исчерпания попыток",
+    "final_task": "static | interactive — тип финального задания",
+    "must_use_any": "список групп; из каждой группы в графе присутствует хотя бы один тип узла",
+    "must_not_use": "ни один из перечисленных типов узлов не присутствует",
+    "node_count_max": "число узлов верхнего уровня не больше N",
+    "answer_all_integer": "все числовые ответы probe — целые",
+    "answer_abs_max": "все числовые ответы probe по модулю не больше N",
+    "answer_distinct_min": "различимых текстов ответа на 8 seed не меньше N",
+    "statement_distinct_min": "различимых текстов условия на 8 seed не меньше N",
+    "statement_template_count_max": "шаблонов условия (тексты с заменой чисел/формул на •) не больше N",
+    "statement_must_not_contain": "подстроки, запрещённые в plain-тексте условия/ответа",
+    "no_flags": "перечисленные SYM-флаги probe отсутствуют"
+  },
+  "cases": [
+    {
+      "id": "e001",
+      "description": "Нужны задачи по кинематике: тело движется равномерно, скорость 2–15 м/с, время 3–20 с. Найти пройденный путь; ответ — целое число не больше 200 м.",
+      "tags": ["numeric", "constraint", "school"],
+      "adversarial_focus": [],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "final_task": "static", "must_use_any": [["constraint", "guard"]], "answer_all_integer": true, "answer_abs_max": 200, "no_flags": ["D2"]},
+      "manual_criteria": ["условие и ответ используют одни и те же значения v и t"],
+      "reference": {"kind": "seed", "id": "seed-gen-001"}
+    },
+    {
+      "id": "e002",
+      "description": "Задание на первый замечательный предел и его друзей: функция выбирается случайно из набора sin(x), tan(x), arcsin(x), x*cos(x); спрашиваем предел f(x)/x при x→0. Внимание: у x*cos(x)/x предел тоже 1, а вот если добавите x**2 — предел 0; ответ обязан вычисляться по выбранной функции, а не быть написан текстом.",
+      "tags": ["symbolic", "choice-pool", "vtuz"],
+      "adversarial_focus": ["A1"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["limit"], ["random_choice"]], "statement_distinct_min": 3},
+      "manual_criteria": ["ответ на каждом seed соответствует именно выбранной функции", "в ответе нет жёстко зашитого текста со значением предела"],
+      "reference": null
+    },
+    {
+      "id": "e003",
+      "description": "Производная многочлена третьей степени в целой точке x0 от -3 до 3; значение производной в точке должно получаться целым (перегенерируйте неудачные варианты).",
+      "tags": ["symbolic", "rejection", "vtuz"],
+      "adversarial_focus": ["B5"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["diff"], ["guard", "constraint"]], "answer_all_integer": true},
+      "manual_criteria": ["в условии видны и многочлен, и точка x0"],
+      "reference": null
+    },
+    {
+      "id": "e004",
+      "description": "Квадратное уравнение с двумя РАЗЛИЧНЫМИ целыми корнями от 1 до 11. В ответе — оба корня.",
+      "tags": ["symbolic", "solve", "school"],
+      "adversarial_focus": ["B1", "A5"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["solve"]], "statement_distinct_min": 4},
+      "manual_criteria": ["корни различны на каждом seed", "показаны оба корня, а не один"],
+      "reference": {"kind": "inline", "graph": {
+        "version": 1,
+        "nodes": [
+          {"id": "a", "type": "random_natural", "params": {"min": 1, "max": 6}},
+          {"id": "d", "type": "random_natural", "params": {"min": 1, "max": 5}},
+          {"id": "b", "type": "formula", "params": {"expr": "a + d"}},
+          {"id": "vd", "type": "var_dict", "params": {"names": ["a", "b"]}},
+          {"id": "eq", "type": "expr_const", "params": {"expr": "Eq(expand((x - a)*(x - b)), 0)", "vars": ["a", "b"]}},
+          {"id": "cond", "type": "expr_block", "params": {"prefix": "Решите уравнение:", "relation": ""}},
+          {"id": "ans", "type": "solve", "params": {"prefix": "x"}},
+          {"id": "task", "type": "static_task"}
+        ],
+        "edges": [
+          {"from": "a:out", "to": "b:a"}, {"from": "d:out", "to": "b:d"},
+          {"from": "a:out", "to": "vd:a"}, {"from": "b:out", "to": "vd:b"},
+          {"from": "vd:out", "to": "eq:values"},
+          {"from": "eq:out", "to": "cond:in"}, {"from": "eq:out", "to": "ans:in"},
+          {"from": "cond:out", "to": "task:statement"},
+          {"from": "ans:out", "to": "task:answer"}
+        ],
+        "meta": {}
+      }}
+    },
+    {
+      "id": "e005",
+      "description": "Матрица 3×3 с ненулевым определителем и небольшими целыми элементами; найти определитель. Вырожденные матрицы недопустимы.",
+      "tags": ["linalg", "rejection", "vtuz"],
+      "adversarial_focus": ["B1"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["random_matrix"], ["matrix_det"]], "statement_distinct_min": 5},
+      "manual_criteria": ["определитель отличен от нуля на всех seed"],
+      "reference": {"kind": "seed", "id": "seed-gen-003"}
+    },
+    {
+      "id": "e006",
+      "description": "Интерактивный тренажёр английских слов со встроенным словарём из 8–10 слов; пользователь вводит перевод, допускаются мелкие опечатки.",
+      "tags": ["english", "interactive"],
+      "adversarial_focus": ["C2"],
+      "checks": {"must_build": true, "must_execute_seeds": 4, "final_task": "interactive", "must_use_any": [["words_trainer"]]},
+      "manual_criteria": ["словарь встроен в граф, а не ссылается на несуществующий файл"],
+      "reference": {"kind": "seed", "id": "seed-gen-006"}
+    },
+    {
+      "id": "e007",
+      "description": "Статическое задание «вставьте пропущенное слово» по предложениям на IT-тематику из файла resources/words/term_4_z_sentences_it.json.",
+      "tags": ["english", "static"],
+      "adversarial_focus": ["C2"],
+      "checks": {"must_build": true, "must_execute_seeds": 4, "final_task": "static", "must_use_any": [["sentences_file"], ["sentence_fill"]]},
+      "manual_criteria": ["путь к файлу взят из описания дословно"],
+      "reference": null
+    },
+    {
+      "id": "e008",
+      "description": "Устный счёт: столбик из четырёх примеров на умножение однозначных чисел, в условии — примеры с вопросом, в ответе — все произведения списком в том же порядке.",
+      "tags": ["loop", "tunnel", "school"],
+      "adversarial_focus": ["A3"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["repeat"]], "statement_distinct_min": 5},
+      "manual_criteria": ["ответы соответствуют примерам условия попарно (одни и те же случайные числа)"],
+      "reference": {"kind": "seed", "id": "seed-gen-004"}
+    },
+    {
+      "id": "e009",
+      "description": "Матрица 2×3 собирается из шести случайных чисел 1–9, найти её ранг.",
+      "tags": ["loop", "linalg"],
+      "adversarial_focus": [],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["repeat"], ["list_to_matrix"], ["matrix_rank"]]},
+      "manual_criteria": [],
+      "reference": {"kind": "example", "name": "matrix_in_loop"}
+    },
+    {
+      "id": "e010",
+      "description": "Партиция с тремя типами заданий на пределы, тип выбирается случайно: при x→0, при x→∞ и односторонний. Ровно три типа, внутри типа меняются только числа/функции.",
+      "tags": ["control", "case", "vtuz"],
+      "adversarial_focus": ["E4"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["case"]], "statement_template_count_max": 3, "statement_distinct_min": 4},
+      "manual_criteria": ["каждая ветвь — осмысленное задание своего типа"],
+      "reference": {"kind": "example", "name": "case_variant"}
+    },
+    {
+      "id": "e011",
+      "description": "Задача Коши для ОДУ первого порядка с разделяющимися переменными, начальное условие y(0)=1; в ответе — частное решение.",
+      "tags": ["ode", "vtuz"],
+      "adversarial_focus": [],
+      "checks": {"must_build": true, "must_execute_seeds": 4, "must_use_any": [["ode_solve"]]},
+      "manual_criteria": ["в ответе нет констант C1/C2 (решение частное, не общее)"],
+      "reference": null
+    },
+    {
+      "id": "e012",
+      "description": "Ряд Σ 1/n^p, показатель p случайный из 2..4. В ответе — точное значение суммы ряда, а не «сходится/расходится».",
+      "tags": ["symbolic", "series", "vtuz"],
+      "adversarial_focus": ["E2"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["summation"]], "answer_distinct_min": 2},
+      "manual_criteria": ["ответ — значение суммы (π²/6 и т.п.), не булево «да/нет»"],
+      "reference": null
+    },
+    {
+      "id": "e013",
+      "description": "ТФКП: найти вычет функции 1/(z² + a²) в точке z = i·a, коэффициент a случайный 1..4.",
+      "tags": ["symbolic", "complex", "vtuz"],
+      "adversarial_focus": [],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["residue"]]},
+      "manual_criteria": ["точка вычета согласована со случайным a"],
+      "reference": null
+    },
+    {
+      "id": "e014",
+      "description": "Операционное исчисление: найти изображение по Лапласу функции sin(a·t), множитель a случайный 2..5.",
+      "tags": ["symbolic", "transforms", "vtuz"],
+      "adversarial_focus": [],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["laplace"]], "answer_distinct_min": 2},
+      "manual_criteria": [],
+      "reference": null
+    },
+    {
+      "id": "e015",
+      "description": "Задание ОПВС: случайная логическая схема по ГОСТ, в условии картинка схемы, в ответе — булева формула.",
+      "tags": ["image", "opvs"],
+      "adversarial_focus": ["F2"],
+      "checks": {"must_build": true, "must_execute_seeds": 4, "must_use_any": [["logic_circuit"], ["image_block"]]},
+      "manual_criteria": ["ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: logic_circuit использует глобальный random — флаг F2 ожидаем и не штрафуется, пока узел не переведён на ctx.rng"],
+      "reference": null
+    },
+    {
+      "id": "e016",
+      "description": "Векторы: даны два вектора в R³ с целыми координатами, найти И скалярное произведение, И угол между ними.",
+      "tags": ["linalg", "geometry", "vtuz"],
+      "adversarial_focus": ["C4"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["vec_dot"], ["vec_angle"]]},
+      "manual_criteria": ["в ответе присутствуют ОБЕ величины"],
+      "reference": null
+    },
+    {
+      "id": "e017",
+      "description": "Система трёх линейных уравнений с тремя неизвестными и единственным решением; в ответе — решение.",
+      "tags": ["linalg", "systems", "vtuz"],
+      "adversarial_focus": ["B1"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["matrix_linsolve"]]},
+      "manual_criteria": ["матрица системы невырождена на всех seed (единственность решения)"],
+      "reference": null
+    },
+    {
+      "id": "e018",
+      "description": "Первообразная функции, выбранной случайно из набора sin(x), cos(x), exp(x), x²; в условии — выбранная функция, ответ вычисляется по ней.",
+      "tags": ["symbolic", "choice-pool"],
+      "adversarial_focus": ["A1"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["integrate"], ["random_choice"]], "answer_distinct_min": 3},
+      "manual_criteria": [],
+      "reference": {"kind": "seed", "id": "seed-gen-005"}
+    },
+    {
+      "id": "e019",
+      "description": "Свободное падение: тело падает t секунд (t целое, 1..5), g = 9.8. Найти путь; ответ округлить до одного знака после запятой и сказать об этом в условии.",
+      "tags": ["numeric", "school"],
+      "adversarial_focus": ["D6", "E1"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "answer_abs_max": 130},
+      "manual_criteria": ["точность ответа оговорена в условии", "ответ действительно округлён, а не хвост десятичных"],
+      "reference": null
+    },
+    {
+      "id": "e020",
+      "description": "Таблица умножения на одно и то же случайное число n (3..9): пять строк «n · k = ?» для k = 1..5; в ответе — произведения.",
+      "tags": ["loop", "imports", "school"],
+      "adversarial_focus": ["A3"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["repeat"]], "statement_template_count_max": 1},
+      "manual_criteria": ["множимое ОДНО на все строки одного варианта (общий источник, не пять независимых)"],
+      "reference": null
+    },
+    {
+      "id": "e021",
+      "description": "Разложение функции exp(x)·случайный множитель по формуле Тейлора в нуле до 4-го порядка.",
+      "tags": ["symbolic", "series", "vtuz"],
+      "adversarial_focus": [],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["series"]]},
+      "manual_criteria": [],
+      "reference": null
+    },
+    {
+      "id": "e022",
+      "description": "Найти длину вектора с целыми координатами в R³. Ответ оставить в виде корня (точное значение), не десятичной дробью.",
+      "tags": ["linalg", "geometry"],
+      "adversarial_focus": ["E3", "D6"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["vec_norm"]]},
+      "manual_criteria": ["ответ в точной форме (√14), не 3.7416"],
+      "reference": null
+    },
+    {
+      "id": "e023",
+      "description": "Для случайной матрицы 3×3 найти И определитель, И след.",
+      "tags": ["linalg", "vtuz"],
+      "adversarial_focus": ["C4"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "must_use_any": [["matrix_det"], ["matrix_trace"]]},
+      "manual_criteria": ["в ответе обе величины"],
+      "reference": null
+    },
+    {
+      "id": "e024",
+      "description": "Простая задача на проценты для 6 класса: цена товара 100..900 руб (кратно 100), скидка 10/20/25/50 процентов, найти цену со скидкой. Ответ целый.",
+      "tags": ["numeric", "school", "simplicity"],
+      "adversarial_focus": ["C3", "C5"],
+      "checks": {"must_build": true, "must_execute_seeds": 8, "node_count_max": 9, "must_not_use": ["diff", "integrate", "solve", "laplace", "ode_solve"], "answer_all_integer": true},
+      "manual_criteria": ["формулировка уровня 6 класса, без матана"],
+      "reference": null
+    }
+  ]
+}

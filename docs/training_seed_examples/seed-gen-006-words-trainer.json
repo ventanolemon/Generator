@@ -1,0 +1,64 @@
+{
+  "id": "seed-gen-006",
+  "schema_version": 1,
+  "kind": "generate",
+  "input": {
+    "description": "Интерактивный тренажёр английских слов: небольшой встроенный словарь, пользователь вводит перевод по русскому слову, мелкие опечатки допускаются.",
+    "constraints": {
+      "task_type": "interactive"
+    }
+  },
+  "target_graph": {
+    "version": 1,
+    "nodes": [
+      {
+        "id": "wf",
+        "type": "words_file",
+        "params": {
+          "file": "",
+          "inline": {
+            "cat": "кот",
+            "dog": "собака",
+            "sun": "солнце",
+            "book": "книга",
+            "water": "вода",
+            "tree": "дерево"
+          }
+        }
+      },
+      {
+        "id": "tr",
+        "type": "words_trainer",
+        "params": {
+          "tolerant": "yes"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "wf:out",
+        "to": "tr:words"
+      }
+    ],
+    "meta": {}
+  },
+  "provenance": {
+    "source": "fable",
+    "created_at": "2026-07-05T00:00:00Z",
+    "catalog_version": "165616006ce6e373",
+    "engine_commit": "34f1799",
+    "validator": {
+      "passed": true,
+      "seeds": [
+        0,
+        1,
+        2
+      ]
+    }
+  },
+  "tags": [
+    "english",
+    "interactive",
+    "school"
+  ]
+}

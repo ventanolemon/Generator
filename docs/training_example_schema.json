@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "generator:training_example:v1",
+  "title": "Запись корпуса обучения (одна строка JSONL)",
+  "description": "Один пример для обучения/оценки модели «описание → GraphSpec». Инвариант: target_graph — ДОСЛОВНО рантайм-формат core/graph/spec.py (GraphSpec.to_dict), исполняемый движком без преобразований. Версия схемы меняется только добавлением необязательных полей.",
+  "type": "object",
+  "required": ["id", "schema_version", "kind", "input", "target_graph", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Стабильный уникальный id записи, напр. 'gen-000123' / 'rep-000045'."
+    },
+    "schema_version": { "const": 1 },
+    "kind": {
+      "enum": ["generate", "repair"],
+      "description": "generate: описание → граф. repair: описание + битый граф + ошибки → граф."
+    },
+    "input": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Запрос пользователя человеческим языком (RU). Без упоминания имён узлов."
+        },
+        "constraints": {
+          "type": "object",
+          "description": "Формализованные требования, если были (тип задания и т.п.).",
+          "properties": {
+            "task_type": { "enum": ["static", "interactive", null] }
+          }
+        },
+        "prior_graph": {
+          "$ref": "#/definitions/graph_spec",
+          "description": "Только kind=repair: предыдущая (битая) попытка, полный граф."
+        },
+        "errors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Только kind=repair: ДОСЛОВНЫЕ тексты ошибок валидатора/probe/fix_hint критика."
+        },
+        "fewshot_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "id примеров, которые были в few-shot при генерации (для воспроизводимости промпта)."
+        }
+      }
+    },
+    "target_graph": {
+      "$ref": "#/definitions/graph_spec",
+      "description": "Эталонный выход: принятый граф. Дословно GraphSpec.to_dict()."
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source", "created_at", "catalog_version", "engine_commit", "validator"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": ["fable", "cheap_model", "human", "loop_log"],
+          "description": "Происхождение target_graph."
+        },
+        "model": { "type": "string", "description": "Идентификатор модели-автора, если применимо." },
+        "created_at": { "type": "string", "format": "date-time" },
+        "catalog_version": { "type": "string", "description": "Хэш выгрузки NodeRegistry на момент создания." },
+        "engine_commit": { "type": "string", "description": "Коммит движка, которым валидировано." },
+        "validator": {
+          "type": "object",
+          "required": ["passed", "seeds"],
+          "properties": {
+            "passed": { "type": "boolean" },
+            "seeds": { "type": "array", "items": { "type": "integer" }, "description": "Seed'ы, на которых граф исполнен." },
+            "attempts_max": { "type": "integer", "description": "Максимум retry-попыток по всем seed." }
+          }
+        },
+        "probe_flags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Коды SYM-флагов probe (warn-уровня), напр. ['B4']. Пусто = чисто."
+        },
+        "critic": {
+          "type": "object",
+          "properties": {
+            "verdict": { "enum": ["accept", "revise", "reject"] },
+            "failures": { "type": "array", "items": { "type": "string" }, "description": "Коды таксономии." },
+            "confidence": { "type": "number" },
+            "model": { "type": "string" }
+          }
+        },
+        "human": {
+          "type": "object",
+          "properties": {
+            "approved": { "type": "boolean" },
+            "note": { "type": "string" }
+          },
+          "description": "Присутствует, если пример проходил человеческую проверку."
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Клетка матрицы квот: категория/форма/сложность, напр. ['symbolic','guard','vtuz']."
+    }
+  },
+  "definitions": {
+    "graph_spec": {
+      "type": "object",
+      "description": "Зеркало core/graph/spec.py::GraphSpec.to_dict(). НЕ менять независимо от кода.",
+      "required": ["version", "nodes", "edges"],
+      "properties": {
+        "version": { "type": "integer" },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type"],
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string" },
+              "params": { "type": "object" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "pattern": "^[^:]+:.+$" },
+              "to": { "type": "string", "pattern": "^[^:]+:.+$" }
+            }
+          }
+        },
+        "meta": { "type": "object" }
+      }
+    }
+  }
+}
