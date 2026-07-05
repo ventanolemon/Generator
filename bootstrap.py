@@ -14,6 +14,7 @@ Bootstrap — единственное место, где соединяются
 
 from __future__ import annotations
 import json
+import warnings
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -141,6 +142,20 @@ def build_registry(
     for subj in repo.list_subjects():
         for part in repo.list_partitions_for_subject(subj.id):
             if registry.has(part.id):
+                # Раздел с этим id уже занят генератором из шагов 1-2 (обычно
+                # словарём английского — его id = 1000 + номер файла в
+                # отсортированном списке, растёт вместе с числом словарей и
+                # ничем не согласован с id остальных разделов). Раздел ниже
+                # молча терялся бы — предупреждаем явно, вместо тихого
+                # открытия не того задания при клике (см. историю бага).
+                warnings.warn(
+                    f"partition_id={part.id} раздела {part.name!r} "
+                    f"(предмет {subj.name!r}) уже занят другим генератором в "
+                    f"реестре — раздел не будет открываться. Дайте ему id вне "
+                    f"диапазона 1000+<число словарей> "
+                    f"(Repository.upsert_partition(partition_id=...)).",
+                    stacklevel=2,
+                )
                 continue
             if part.constracted == 1:
                 _register_fisic(registry, part)

@@ -224,7 +224,6 @@
       }
     ],
     "meta": {
-      "seed": 16,
       "max_attempts": 100
     }
   }

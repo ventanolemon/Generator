@@ -270,7 +270,6 @@
       }
     ],
     "meta": {
-      "seed": 11,
       "max_attempts": 100
     }
   }

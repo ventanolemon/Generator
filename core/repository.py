@@ -215,12 +215,23 @@ class Repository:
         name: str,
         constracted: int,
         generation_params: dict | list | str,
+        partition_id: int | None = None,
     ) -> int:
         """
-        Создать новый раздел или обновить существующий (по паре subject_id + name).
-        Возвращает id раздела.
+        Создать новый раздел или обновить существующий. Возвращает id раздела.
 
         generation_params: dict/list сериализуется в JSON; str записывается как есть.
+
+        partition_id — явный id для НОВОЙ записи (игнорируется, если раздел с
+        такой парой subject_id+name уже существует — тогда правится он, его id
+        не меняется). Без явного id новая запись получает следующий свободный
+        rowid SQLite — этого достаточно для разделов, создаваемых через UI
+        (constracted 1/2/3/4 editors), но НЕ годится для сидов, которые нужно
+        держать вне динамических диапазонов id (см. ensure_code_partition:
+        английские словари получают id = 1000 + номер файла в отсортированном
+        списке ЗАНОВО при каждом запуске — свободный id, подобранный сегодня,
+        завтра может достаться словарю, если пользователь добавит файлов).
+        Такие сиды обязаны запрашивать id явно, вне зарезервированных диапазонов.
         """
         if isinstance(generation_params, (dict, list)):
             raw = json.dumps(generation_params, ensure_ascii=False)
@@ -240,6 +251,14 @@ class Repository:
                     "WHERE id = ?",
                     (constracted, raw, pid),
                 )
+            elif partition_id is not None:
+                conn.execute(
+                    "INSERT INTO Partitions "
+                    "(id, subject_id, partition_name, constracted, generation_parametrs) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (partition_id, subject_id, name, constracted, raw),
+                )
+                pid = partition_id
             else:
                 cur = conn.execute(
                     "INSERT INTO Partitions "
