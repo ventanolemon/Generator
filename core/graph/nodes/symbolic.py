@@ -322,35 +322,149 @@ class ExprBinaryNode(Node):
 
 class SubstituteNode(Node):
     """
-    Подстановка значений в выражение: subs из NUMBER_DICT (имя→число).
+    Полиморфная подстановка в выражение. Каждый символ, названный в параметре
+    `vars`, получает отдельный вход (ANY) и заменяется поданным значением —
+    числом ИЛИ другим выражением (EXPR). Запасной вход values (NUMBER_DICT)
+    подставляет числа пачкой (совместимость и динамические наборы); именованные
+    входы приоритетнее values.
 
-    Выход — EXPR (символьный результат). Для финального числа используйте
-    evaluate (EXPR → NUMBER).
+    Так одно выражение подставляется в другое «в качестве переменной» — например
+    композиция f∘g: in='sin(u)', vars=['u'], на вход u подан EXPR выражения g.
+    Выход — EXPR; для финального числа используйте expr_eval.
     """
     type_id = "expr_subs"
     category = "symbolic"
     display_name = "Подстановка"
-    INPUTS = [Port("in", PortType.EXPR), Port("values", PortType.NUMBER_DICT)]
+    description = ("Заменить переменные значениями: именованные входы (число ИЛИ "
+                   "EXPR) по списку vars + запасной values (NUMBER_DICT). "
+                   "Выход: EXPR.")
+    # Статический фолбэк для safe_ports при некорректных params (см. document).
+    INPUTS = [Port("in", PortType.EXPR),
+              Port("values", PortType.NUMBER_DICT, required=False)]
     OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"vars": {"type": "list", "default": [], "optional": True}}
+
+    def _names(self) -> list[str]:
+        seen, out = set(), []
+        for n in (self.params.get("vars") or []):
+            s = str(n).strip()
+            if s and s not in seen:
+                seen.add(s); out.append(s)
+        return out
+
+    def input_ports(self):
+        ports = [Port("in", PortType.EXPR)]
+        ports += [Port(n, PortType.ANY, required=False) for n in self._names()]
+        ports.append(Port("values", PortType.NUMBER_DICT, required=False))
+        return ports
 
     def compute(self, inputs, ctx: ExecContext):
-        from ..symbolic import _num
+        from ..symbolic import _num, subs_value
         sp = sympy()
         expr = as_expr(inputs["in"])
-        values = inputs.get("values", {}) or {}
-        # Символы ищем в выражении по имени (предположения могут различаться);
-        # значения — через _num, чтобы целые float (0.0, 2.0 из NUMBER-провода)
-        # стали точными Integer, а не «плыли» в 0.0 / 1.5*pi.
+        # Символы ищем в выражении ПО ИМЕНИ (предположения могут различаться).
         free = {s.name: s for s in expr.free_symbols}
-        mapping = {
-            free.get(str(k), sp.Symbol(str(k))): _num(sp, v)
-            for k, v in values.items()
-        }
+
+        def sym(name):
+            return free.get(name, sp.Symbol(name))
+
+        mapping = {}
+        # 1) числовой словарь-пачка (запасной путь) — целые float → Integer.
+        for k, v in (inputs.get("values") or {}).items():
+            mapping[sym(str(k))] = _num(sp, v)
+        # 2) именованные входы: число или выражение, приоритетнее values.
+        for name in self._names():
+            v = inputs.get(name)
+            if v is not None:
+                mapping[sym(name)] = subs_value(v)
         try:
             result = expr.subs(mapping)
         except Exception as e:
             raise RetryGeneration(f"expr_subs {self.node_id!r}: {e}")
         return {"out": result}
+
+
+class ExprLambdaNode(Node):
+    """
+    Определение символьной функции: тело-выражение + список формальных
+    параметров. Выход — FUNC, который зовётся узлом expr_call. Одну функцию можно
+    подать в несколько вызовов (переиспользование), не пересобирая тело.
+
+    Тело строится любыми символьными узлами (или задаётся expr_const) и подаётся
+    на вход body; параметры (params) — имена символов тела, которые вызов будет
+    заменять. Символы, не входящие в params, остаются свободными (константы/
+    коэффициенты формы).
+    """
+    type_id = "expr_lambda"
+    category = "symbolic"
+    display_name = "Функция (определение)"
+    description = ("Функция из тела-выражения и параметров (params). "
+                   "Вход: body (EXPR). Выход: FUNC — зовётся expr_call.")
+    INPUTS = [Port("body", PortType.EXPR)]
+    OUTPUTS = [Port("out", PortType.FUNC)]
+    PARAMS_SCHEMA = {"params": {"type": "list", "default": []}}
+
+    def validate_params(self) -> None:
+        names = self.params.get("params")
+        if not isinstance(names, list) or not names:
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: 'params' должен быть непустым списком "
+                f"имён параметров функции."
+            )
+        if len(set(map(str, names))) != len(names):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: имена параметров не уникальны."
+            )
+
+    def compute(self, inputs, ctx: ExecContext):
+        from ..symbolic import GraphFunction
+        body = as_expr(inputs["body"])
+        params = tuple(str(n).strip() for n in (self.params.get("params") or []))
+        return {"out": GraphFunction(params=params, body=body)}
+
+
+class ExprCallNode(Node):
+    """
+    Вызов символьной функции (FUNC): подставляет аргументы в тело по имени
+    параметра. Каждое имя, названное в параметре `args`, получает вход (ANY) и
+    может быть числом ИЛИ выражением. Имена аргументов совпадают с параметрами
+    функции. Выход — EXPR.
+    """
+    type_id = "expr_call"
+    category = "symbolic"
+    display_name = "Функция (вызов)"
+    description = ("Вызвать функцию: аргументы (число ИЛИ EXPR) по списку args "
+                   "подставляются в тело. Вход: func (FUNC). Выход: EXPR.")
+    INPUTS = [Port("func", PortType.FUNC)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {"args": {"type": "list", "default": []}}
+
+    def _names(self) -> list[str]:
+        seen, out = set(), []
+        for n in (self.params.get("args") or []):
+            s = str(n).strip()
+            if s and s not in seen:
+                seen.add(s); out.append(s)
+        return out
+
+    def input_ports(self):
+        ports = [Port("func", PortType.FUNC)]
+        ports += [Port(n, PortType.ANY, required=False) for n in self._names()]
+        return ports
+
+    def compute(self, inputs, ctx: ExecContext):
+        from ..symbolic import GraphFunction
+        func = inputs.get("func")
+        if not isinstance(func, GraphFunction):
+            raise RetryGeneration(
+                f"expr_call {self.node_id!r}: на вход func подана не функция."
+            )
+        args = {name: inputs.get(name) for name in self._names()}
+        try:
+            result = func.call(args)
+        except Exception as e:
+            raise RetryGeneration(f"expr_call {self.node_id!r}: {e}")
+        return {"out": guard_numeric(result)}
 
 
 class SubsExprNode(Node):
