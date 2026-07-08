@@ -98,6 +98,24 @@ class GraphEditor(PartitionEditor):
         tools.addWidget(preview_btn)
         tools.addWidget(export_btn)
         tools.addWidget(legend_btn)
+
+        # Инструменты холста: раскладка / форма проводов / комментарии.
+        tools.addSpacing(16)
+        layout_btn = QPushButton("Слои", self)
+        layout_btn.setToolTip(
+            "Разложить узлы по слоям: источники слева, результат справа")
+        comment_btn = QPushButton("Комментарий", self)
+        comment_btn.setToolTip("Добавить рамку-комментарий на холст")
+        self.ortho_btn = QPushButton("Ортогональные связи", self)
+        self.ortho_btn.setToolTip("Провода прямыми углами вместо кривых")
+        self.ortho_btn.setCheckable(True)
+        layout_btn.clicked.connect(self._on_auto_layout)
+        comment_btn.clicked.connect(self._on_add_comment)
+        self.ortho_btn.toggled.connect(self._on_toggle_orthogonal)
+        tools.addWidget(layout_btn)
+        tools.addWidget(comment_btn)
+        tools.addWidget(self.ortho_btn)
+
         tools.addStretch()
         root.addLayout(tools)
 
@@ -164,7 +182,8 @@ class GraphEditor(PartitionEditor):
             "Двойной клик в палитре — добавить узел (в тело цикла, если "
             "выделена его рамка). Тяните от порта к порту — провод (только "
             "совместимые типы). Двойной клик по узлу цикла — развернуть тело "
-            "рамкой на холсте. Del — удалить, Ctrl+A — выделить всё, "
+            "рамкой на холсте. Правый клик по пустому холсту — комментарий или "
+            "раскладка по слоям. Del — удалить, Ctrl+A — выделить всё, "
             "Ctrl+C/V — копировать/вставить, Ctrl+Z/Ctrl+Shift+Z — "
             "отменить/повторить.",
             wrap,
@@ -207,6 +226,7 @@ class GraphEditor(PartitionEditor):
         self.scene.registry = doc.registry
         self.inspector.doc = doc
         self.scene.rebuild()
+        self._sync_edge_style_button()
         self._sync_json_from_doc()
         # Новый граф (или смена уровня подграфа) — история начинается заново.
         if not self._restoring:
@@ -470,6 +490,27 @@ class GraphEditor(PartitionEditor):
     def _on_show_legend(self) -> None:
         from .graph_canvas.legend import TypeLegendDialog
         TypeLegendDialog(self).exec()
+
+    # ---- Инструменты холста (раскладка / провода / комментарии) ----
+
+    def _on_auto_layout(self) -> None:
+        """Разложить узлы текущего холста по слоям."""
+        self.scene.auto_layout_layers()
+
+    def _on_add_comment(self) -> None:
+        """Добавить рамку-комментарий в видимый центр холста."""
+        center = self.view.mapToScene(self.view.viewport().rect().center())
+        self.scene.add_comment(QPointF(center.x(), center.y()))
+
+    def _on_toggle_orthogonal(self, checked: bool) -> None:
+        self.scene.set_orthogonal(checked)
+
+    def _sync_edge_style_button(self) -> None:
+        """Отразить сохранённую форму проводов на кнопке-переключателе."""
+        if hasattr(self, "ortho_btn"):
+            self.ortho_btn.blockSignals(True)
+            self.ortho_btn.setChecked(self.scene.orthogonal_edges)
+            self.ortho_btn.blockSignals(False)
 
     def _on_export_python(self) -> None:
         """Скомпилировать текущий (корневой) граф в .py и сохранить файлом."""

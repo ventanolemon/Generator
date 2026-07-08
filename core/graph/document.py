@@ -204,6 +204,113 @@ class GraphDocument:
         row, col = divmod(index, cols)
         return (x0 + col * dx, y0 + row * dy)
 
+    # ---------- Раскладка по слоям (иерархическая) ----------
+
+    def layer_of_nodes(self) -> dict[str, int]:
+        """
+        Слой каждого узла = длина самого длинного пути от источника (узла без
+        входящих рёбер). Провода идут слева направо: источник — слой 0, его
+        потребители — 1 и т.д. Циклы (движок их не допускает) обрываются на 0,
+        раскладка остаётся определённой.
+        """
+        pred: dict[str, list[str]] = {n: [] for n in self.nodes}
+        for e in self.edges:
+            if e.from_node in self.nodes and e.to_node in self.nodes:
+                pred[e.to_node].append(e.from_node)
+
+        layer: dict[str, int] = {}
+        visiting: set[str] = set()
+
+        def depth(n: str) -> int:
+            if n in layer:
+                return layer[n]
+            if n in visiting:            # ребро цикла — не углубляемся
+                return 0
+            visiting.add(n)
+            ps = pred[n]
+            d = 1 + max((depth(p) for p in ps), default=-1)
+            visiting.discard(n)
+            layer[n] = d
+            return d
+
+        for n in self.nodes:
+            depth(n)
+        return layer
+
+    def layered_positions(self, x_gap: float = 260.0, y_gap: float = 150.0,
+                          x0: float = 40.0, y0: float = 40.0) -> dict[str, tuple]:
+        """
+        Позиции узлов раскладкой «по слоям»: столбец = слой (см. layer_of_nodes),
+        внутри столбца узлы идут сверху вниз в порядке добавления. Возвращает
+        {node_id: (x, y)}; исполнение графа не затрагивает (только meta.layout).
+        """
+        layer = self.layer_of_nodes()
+        by_layer: dict[int, list[str]] = {}
+        for nid in self.nodes:                # порядок добавления — стабильность
+            by_layer.setdefault(layer.get(nid, 0), []).append(nid)
+        pos: dict[str, tuple] = {}
+        for col, nids in sorted(by_layer.items()):
+            for row, nid in enumerate(nids):
+                pos[nid] = (x0 + col * x_gap, y0 + row * y_gap)
+        return pos
+
+    def apply_layered_layout(self, **kwargs) -> dict[str, tuple]:
+        """Расставить узлы по слоям и записать позиции в модель."""
+        pos = self.layered_positions(**kwargs)
+        for nid, (x, y) in pos.items():
+            self.set_pos(nid, x, y)
+        return pos
+
+    # ---------- Рамки-комментарии (аннотации, вне исполнения) ----------
+    #
+    # Комментарии — прямоугольники с текстом для группировки/пояснений на
+    # холсте. Живут в meta["comments"] (list of dict), движок их не читает,
+    # сериализация — общая (round-trip через to_spec_dict/from_spec_dict).
+
+    def comments(self) -> list[dict]:
+        raw = self.meta.get("comments")
+        return raw if isinstance(raw, list) else []
+
+    def _set_comments(self, items: list[dict]) -> None:
+        if items:
+            self.meta["comments"] = items
+        else:
+            self.meta.pop("comments", None)
+
+    def unique_comment_id(self) -> str:
+        used = {c.get("id") for c in self.comments()}
+        i = 1
+        while f"cmt_{i}" in used:
+            i += 1
+        return f"cmt_{i}"
+
+    def add_comment(self, x: float = 40.0, y: float = 40.0,
+                    w: float = 260.0, h: float = 160.0,
+                    text: str = "Комментарий",
+                    color: str | None = None,
+                    comment_id: str | None = None) -> dict:
+        cid = comment_id or self.unique_comment_id()
+        item = {"id": cid, "x": float(x), "y": float(y),
+                "w": float(w), "h": float(h), "text": str(text)}
+        if color:
+            item["color"] = color
+        items = list(self.comments())
+        items.append(item)
+        self._set_comments(items)
+        return item
+
+    def update_comment(self, comment_id: str, **fields) -> None:
+        items = list(self.comments())
+        for c in items:
+            if c.get("id") == comment_id:
+                c.update(fields)
+                break
+        self._set_comments(items)
+
+    def remove_comment(self, comment_id: str) -> None:
+        items = [c for c in self.comments() if c.get("id") != comment_id]
+        self._set_comments(items)
+
     # ---------- Валидация ----------
 
     def validate(self) -> None:

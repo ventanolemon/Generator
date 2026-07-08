@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 from core.graph import DocEdge, GraphDocument, find_converter, is_compatible
 
 from . import style
+from .comment import CommentItem
 from .frame import FRAMEABLE_TYPES, InnerNodeItem, LoopFrameItem, make_frame_item
 from .items import EdgeItem, NodeItem, PortItem, can_connect
 
@@ -35,6 +36,10 @@ class GraphScene(QGraphicsScene):
         self._entries = {e["type_id"]: e for e in self.registry.palette()}
         self.node_items: dict[str, NodeItem] = {}
         self.edge_items: list[EdgeItem] = []
+        self.comment_items: dict[str, CommentItem] = {}
+        # Форма проводов: ортогональная (Г-образная) или кубическая. Читается
+        # EdgeItem.update_path; хранится в meta, поэтому переживает сохранение.
+        self.orthogonal_edges = False
 
         self.setBackgroundBrush(style.SCENE_BG)
         self.setSceneRect(0, 0, 2400, 1600)
@@ -55,12 +60,73 @@ class GraphScene(QGraphicsScene):
         self.clear()
         self.node_items.clear()
         self.edge_items.clear()
+        self.comment_items.clear()
+        # Форма проводов — из meta (переживает сохранение/undo).
+        self.orthogonal_edges = bool(self.doc.meta.get("orthogonal_edges", False))
+        for c in self.doc.comments():
+            self._spawn_comment_item(c.get("id"))
         for nid in self.doc.nodes:
             self._spawn_node_item(nid)
         for e in list(self.doc.edges):
             self._spawn_edge_item(e.from_node, e.from_port, e.to_node, e.to_port)
         self.blockSignals(False)
         self._update_result_marks()
+
+    # ---------- Рамки-комментарии (аннотации) ----------
+
+    def _spawn_comment_item(self, comment_id: str) -> Optional[CommentItem]:
+        if not comment_id:
+            return None
+        item = CommentItem(self.doc, comment_id)
+        self.addItem(item)
+        self.comment_items[comment_id] = item
+        return item
+
+    def add_comment(self, pos: QPointF) -> CommentItem:
+        """Создать рамку-комментарий с левым-верхним углом в pos."""
+        data = self.doc.add_comment(x=pos.x(), y=pos.y())
+        item = self._spawn_comment_item(data["id"])
+        self.changed_doc.emit()
+        return item
+
+    def _remove_comment_item(self, item: CommentItem) -> None:
+        self.doc.remove_comment(item.comment_id)
+        self.comment_items.pop(item.comment_id, None)
+        if item.scene():
+            self.removeItem(item)
+
+    # ---------- Форма проводов ----------
+
+    def set_orthogonal(self, flag: bool) -> None:
+        """Переключить провода между ортогональной и кубической формой."""
+        flag = bool(flag)
+        if flag == self.orthogonal_edges:
+            return
+        self.orthogonal_edges = flag
+        if flag:
+            self.doc.meta["orthogonal_edges"] = True
+        else:
+            self.doc.meta.pop("orthogonal_edges", None)
+        for e in self.edge_items:
+            e.update_path()
+        for f in self.frames():
+            for e in f.inner_edges:
+                e.update_path()
+        self.changed_doc.emit()
+
+    # ---------- Раскладка узлов по слоям ----------
+
+    def auto_layout_layers(self) -> None:
+        """Расставить узлы холста по слоям (источники слева → потребители
+        справа) и синхронизировать графические элементы с моделью."""
+        pos = self.doc.apply_layered_layout()
+        for nid, (x, y) in pos.items():
+            item = self.node_items.get(nid)
+            if item is not None:
+                item.setPos(x, y)
+        for e in self.edge_items:
+            e.update_path()
+        self.changed_doc.emit()
 
     def _update_result_marks(self) -> None:
         """
@@ -142,6 +208,11 @@ class GraphScene(QGraphicsScene):
             out.extend(f.inner_nodes.values())
         return out
 
+    def all_movable_items(self) -> list:
+        """Всё, что можно перетаскивать (узлы + комментарии) — для фиксации
+        перемещения в истории по отпусканию мыши."""
+        return self.all_node_items() + list(self.comment_items.values())
+
     def add_node_to_frame(self, frame: LoopFrameItem, type_id: str) -> NodeItem:
         item = frame.add_inner_node(self, type_id)
         self.changed_doc.emit()
@@ -191,7 +262,10 @@ class GraphScene(QGraphicsScene):
     def delete_selected(self) -> None:
         removed = False
         for it in list(self.selectedItems()):
-            if isinstance(it, InnerNodeItem):
+            if isinstance(it, CommentItem):
+                self._remove_comment_item(it)
+                removed = True
+            elif isinstance(it, InnerNodeItem):
                 if it.scene():                    # мог уйти вместе с рамкой
                     it.frame.remove_inner_node(self, it)
                     removed = True
@@ -539,6 +613,30 @@ class GraphScene(QGraphicsScene):
             item = item.parentItem()
         return item
 
+    def _canvas_context_menu(self, event) -> None:
+        """Меню пустого холста: комментарий и раскладка по слоям."""
+        menu = QMenu()
+        a_comment = menu.addAction("Добавить комментарий здесь")
+        a_layout = menu.addAction("Разложить узлы по слоям")
+        chosen = menu.exec(event.screenPos())
+        if chosen is a_comment:
+            self.add_comment(event.scenePos())
+        elif chosen is a_layout:
+            self.auto_layout_layers()
+        event.accept()
+
+    def _comment_context_menu(self, comment: CommentItem, event) -> None:
+        menu = QMenu()
+        a_edit = menu.addAction("Изменить текст…")
+        a_del = menu.addAction("Удалить комментарий")
+        chosen = menu.exec(event.screenPos())
+        if chosen is a_edit:
+            comment.edit_text()
+        elif chosen is a_del:
+            self._remove_comment_item(comment)
+            self.changed_doc.emit()
+        event.accept()
+
     def contextMenuEvent(self, event):
         node = None
         for it in self.items(event.scenePos()):
@@ -546,7 +644,15 @@ class GraphScene(QGraphicsScene):
             if node is not None:
                 break
         if node is None:
-            return super().contextMenuEvent(event)
+            # Комментарий под курсором — его собственное меню.
+            comment = next((it for it in self.items(event.scenePos())
+                            if isinstance(it, CommentItem)), None)
+            if comment is not None:
+                self._comment_context_menu(comment, event)
+                return
+            # Пустой холст — добавить комментарий / разложить по слоям.
+            self._canvas_context_menu(event)
+            return
 
         menu = QMenu()
         # Рамка: только свернуть; внутренний узел: без z-операций.
@@ -598,6 +704,13 @@ class GraphCanvasView(QGraphicsView):
 
     Сочетания клавиш редактирования транслируются сигналами наружу (редактор их
     связывает с undo/redo/copy/paste): сам вид о документе и истории не знает.
+
+    Смена dragMode (рамка ⇄ рука) выполняется ТОЛЬКО при отпущенной ЛКМ:
+    переключение во время зажатой кнопки оставляет QGraphicsView в застрявшем
+    hand-scroll — тогда узлы перестают двигаться при выделении (это тот самый
+    баг: выделил узел, панорамировал холст, а узлы больше не таскаются).
+    Желаемый режим хранится в _space_held, применяется _sync_drag_mode() по
+    отпусканию кнопки / клавиши / потере фокуса.
     """
 
     copy_requested = pyqtSignal()
@@ -612,8 +725,25 @@ class GraphCanvasView(QGraphicsView):
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self._zoom = 1.0
-        self._space_pan = False        # активен ли режим панорамы по пробелу
+        self._space_held = False       # зажат ли пробел (желаемый режим — рука)
+        self._left_down = False        # зажата ли ЛКМ (нельзя менять dragMode)
         self._press_positions: dict = {}   # для определения реального перемещения
+
+    def _sync_drag_mode(self) -> None:
+        """Привести dragMode к желаемому (рука при зажатом пробеле, иначе рамка).
+
+        Пока ЛКМ нажата — откладываем: смена режима на середине жеста оставляет
+        Qt в застрявшем hand-scroll, и узлы перестают перетаскиваться."""
+        if self._left_down:
+            return
+        want_pan = self._space_held
+        is_pan = self.dragMode() == QGraphicsView.DragMode.ScrollHandDrag
+        if want_pan and not is_pan:
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+        elif not want_pan and is_pan:
+            self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+            self.viewport().unsetCursor()
 
     def wheelEvent(self, event):
         factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
@@ -623,18 +753,22 @@ class GraphCanvasView(QGraphicsView):
             self.scale(factor, factor)
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._left_down = True
         # Запомнить позиции узлов (включая внутренние узлы рамок) до
-        # возможного перетаскивания.
+        # возможного перетаскивания. В режиме панорамы это не перенос — пропуск.
         sc = self.scene()
         if (event.button() == Qt.MouseButton.LeftButton
-                and not self._space_pan and isinstance(sc, GraphScene)):
+                and not self._space_held and isinstance(sc, GraphScene)):
             self._press_positions = {
-                it: (it.x(), it.y()) for it in sc.all_node_items()
+                it: (it.x(), it.y()) for it in sc.all_movable_items()
             }
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._left_down = False
         # Если какой-то узел реально сместился — зафиксировать в истории.
         if self._press_positions:
             moved = False
@@ -649,6 +783,18 @@ class GraphCanvasView(QGraphicsView):
             self._press_positions = {}
             if moved:
                 self.moved_nodes.emit()
+        # Кнопка отпущена — можно применить отложенную смену режима (напр. пробел
+        # отпустили ещё во время панорамы).
+        self._sync_drag_mode()
+
+    def focusOutEvent(self, event):
+        # Потеря фокуса (Alt+Tab, контекстное меню, клик мимо) во время
+        # панорамы — Qt не пришлёт keyRelease пробела; принудительно выходим из
+        # режима руки, чтобы узлы не «застряли» неподвижными.
+        self._space_held = False
+        self._left_down = False
+        self._sync_drag_mode()
+        super().focusOutEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
@@ -678,10 +824,8 @@ class GraphCanvasView(QGraphicsView):
                 self.redo_requested.emit(); event.accept(); return
         # Пробел — включить «руку» для панорамы (игнорируем автоповтор).
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
-            if not self._space_pan:
-                self._space_pan = True
-                self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-                self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+            self._space_held = True
+            self._sync_drag_mode()
             event.accept()
             return
         super().keyPressEvent(event)
@@ -689,10 +833,8 @@ class GraphCanvasView(QGraphicsView):
     def keyReleaseEvent(self, event):
         # Отпустили пробел — вернуть рамочное выделение и обычный курсор.
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
-            if self._space_pan:
-                self._space_pan = False
-                self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
-                self.viewport().unsetCursor()
+            self._space_held = False
+            self._sync_drag_mode()
             event.accept()
             return
         super().keyReleaseEvent(event)
