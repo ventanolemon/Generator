@@ -32,6 +32,7 @@ TYPE_MEANINGS: dict[PortType, str] = {
     PortType.BLOCK: "блок задания",
     PortType.BLOCK_LIST: "список блоков",
     PortType.TASK: "готовое задание (финал графа)",
+    PortType.FUNC: "символьная функция: параметры + тело (expr_lambda → expr_call)",
     PortType.ANY: "любой тип — полиморфный вход (узел сам разбирает)",
 }
 
