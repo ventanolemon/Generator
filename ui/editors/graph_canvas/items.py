@@ -63,7 +63,12 @@ class PortItem(QGraphicsEllipseItem):
 
 
 class EdgeItem(QGraphicsPathItem):
-    """Кубическая кривая между выходным и входным портами."""
+    """Провод между выходным и входным портами.
+
+    Форма зависит от режима сцены: кубическая кривая (по умолчанию) или
+    ортогональная (Г-образная) трасса из прямых углов. Режим читается со сцены
+    (`orthogonal_edges`) при каждой перерисовке — переключение мгновенно
+    применяется ко всем проводам."""
 
     def __init__(self, src: PortItem, dst: PortItem):
         super().__init__()
@@ -74,9 +79,32 @@ class EdgeItem(QGraphicsPathItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.update_path()
 
+    def _is_orthogonal(self) -> bool:
+        sc = self.scene()
+        return bool(getattr(sc, "orthogonal_edges", False))
+
+    @staticmethod
+    def _orthogonal_path(p1: QPointF, p2: QPointF) -> QPainterPath:
+        """Г-образная трасса выход→вход: короткие «усы» от портов и переход по
+        средней вертикали, чтобы провод не влезал в тела узлов."""
+        stub = 18.0
+        ax = p1.x() + stub
+        bx = p2.x() - stub
+        midx = (ax + bx) / 2.0
+        path = QPainterPath(p1)
+        path.lineTo(ax, p1.y())
+        path.lineTo(midx, p1.y())
+        path.lineTo(midx, p2.y())
+        path.lineTo(bx, p2.y())
+        path.lineTo(p2)
+        return path
+
     def update_path(self) -> None:
         p1 = self.src.scene_center()
         p2 = self.dst.scene_center()
+        if self._is_orthogonal():
+            self.setPath(self._orthogonal_path(p1, p2))
+            return
         dx = max(40.0, abs(p2.x() - p1.x()) * 0.5)
         path = QPainterPath(p1)
         path.cubicTo(p1.x() + dx, p1.y(), p2.x() - dx, p2.y(), p2.x(), p2.y())
