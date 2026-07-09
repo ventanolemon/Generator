@@ -19,7 +19,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from core.graph import (
     DEFAULT_REGISTRY, ExecContext, GraphExecutor, GraphSpec, PortType,
 )
-from core.graph.errors import RetryGeneration
+from core.graph.errors import GraphValidationError, RetryGeneration
 from core.graph.nodes.lists import RandomChoiceNode
 from core.graph.nodes.compute import TemplateNode, _marker_str
 
@@ -92,6 +92,75 @@ class RandomChoiceTests(unittest.TestCase):
         n = RandomChoiceNode("c", {"elem_type": "expr", "items": ["x**2"]})
         out = n.compute({}, _ctx(0))["out"]
         self.assertEqual(out, sp.Symbol("x")**2)
+
+
+class RandomChoiceCountTests(unittest.TestCase):
+    """count/allow_duplicates: выбор нескольких элементов, LIST при count>1."""
+
+    def test_default_count_is_one_scalar_out(self):
+        n = RandomChoiceNode("c", {"elem_type": "string", "items": ["a", "b"]})
+        self.assertEqual(n.output_ports()[0].type, PortType.STRING)
+        out = n.compute({}, _ctx(0))["out"]
+        self.assertIsInstance(out, str)   # не список — обратная совместимость
+
+    def test_count_greater_than_one_outputs_list_type(self):
+        n = RandomChoiceNode("c", {"elem_type": "number",
+                                   "items": [1, 2, 3], "count": 2})
+        self.assertEqual(n.output_ports()[0].type, PortType.LIST)
+        out = n.compute({}, _ctx(0))["out"]
+        self.assertIsInstance(out, list)
+        self.assertEqual(len(out), 2)
+
+    def test_no_duplicates_by_default(self):
+        n = RandomChoiceNode("c", {"elem_type": "number",
+                                   "items": [1, 2, 3, 4, 5], "count": 5})
+        out = n.compute({}, _ctx(3))["out"]
+        self.assertEqual(sorted(out), [1.0, 2.0, 3.0, 4.0, 5.0])  # все разные
+
+    def test_no_duplicates_rejects_count_over_pool_size(self):
+        # Node.__init__ уже зовёт validate_params() — статический items длиной
+        # 2 при count=3 без повторов ловится на конструкции узла.
+        with self.assertRaises(GraphValidationError):
+            RandomChoiceNode("c", {"elem_type": "number",
+                                   "items": [1, 2], "count": 3})
+
+    def test_no_duplicates_rejects_dynamic_pool_at_runtime(self):
+        # Набор из входа list неизвестен при конструкции — ловится в compute().
+        n = RandomChoiceNode("c", {"elem_type": "number", "count": 3})
+        with self.assertRaises(RetryGeneration):
+            n.compute({"list": [1, 2]}, _ctx(0))
+
+    def test_allow_duplicates_permits_repeats_over_pool_size(self):
+        n = RandomChoiceNode("c", {"elem_type": "number", "items": [1, 2],
+                                   "count": 5, "allow_duplicates": True})
+        n.validate_params()   # не должно бросать — повторы разрешены
+        out = n.compute({}, _ctx(0))["out"]
+        self.assertEqual(len(out), 5)
+        self.assertTrue(all(v in (1.0, 2.0) for v in out))
+
+    def test_reproducible_by_seed_with_count(self):
+        spec = {"elem_type": "number", "items": [1, 2, 3, 4, 5], "count": 3}
+        a = RandomChoiceNode("c", dict(spec)).compute({}, _ctx(9))["out"]
+        b = RandomChoiceNode("c", dict(spec)).compute({}, _ctx(9))["out"]
+        self.assertEqual(a, b)
+
+    @unittest.skipUnless(HAS_SYMPY, "sympy не установлен")
+    def test_count_with_expr_elem_feeds_list_get(self):
+        # Выбрать 2 выражения (LIST) и достать первое узлом list_get — типовая
+        # связка «случайно выбранное выражение → следующий символьный узел».
+        data = {
+            "nodes": [
+                {"id": "pool", "type": "random_choice",
+                 "params": {"elem_type": "expr", "count": 2,
+                            "items": ["x+1", "x-1", "x**2", "sin(x)"]}},
+                {"id": "first", "type": "list_get",
+                 "params": {"elem_type": "expr", "index": 0}},
+            ],
+            "edges": [{"from": "pool:out", "to": "first:list"}],
+        }
+        out = GraphExecutor(GraphSpec.parse(data)).run_full()
+        self.assertIn(str(out["first"]["out"]),
+                      {"x + 1", "x - 1", "x**2", "sin(x)"})
 
 
 class MarkerStrTests(unittest.TestCase):

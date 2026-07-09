@@ -31,7 +31,7 @@ _PORT_AFFECTING = {
     "list_new": {"count", "elem_type"},  # число/тип входов-элементов
     "list_append": {"elem_type"},        # тип входа item
     "list_get": {"elem_type"},           # тип выхода
-    "random_choice": {"elem_type"},      # тип выхода (варианта)
+    "random_choice": {"elem_type", "count"},  # тип/форма выхода (варианта / списка)
     "map": {"imports", "outputs"},
     "case": {"imports", "cases", "outputs"},  # cases → число кнопок-ветвей
     "input_var": {"type"},      # тип внешней переменной меняет выходной порт
@@ -259,5 +259,23 @@ class ParamInspector(QWidget):
         self.params_changed.emit(self.node_id)
 
     def _commit_ports(self) -> None:
-        if self.node_id is not None:
-            self.ports_changed.emit(self.node_id)
+        """
+        Отложенно (следующий тик цикла событий), а НЕ сразу.
+
+        Причина: этот метод вызывается ИЗНУТРИ сигнала виджета формы (enum
+        combo currentTextChanged / editingFinished). Синхронный ports_changed
+        ведёт по цепочке scene.refresh_node → again.setSelected(True) →
+        selectionChanged → GraphScene._on_selection → GraphEditor.
+        _on_node_selected → inspector.show_node(), который уничтожает ВСЕ
+        виджеты формы (QFormLayout.removeRow) — включая тот самый виджет, чей
+        сигнал сейчас выполняется. Уничтожение QObject из его же обработчика
+        сигнала — undefined behavior в Qt/PyQt: процесс падает access violation
+        (0xC0000005) при возврате из сигнала в уже освобождённый C++ объект.
+        Тот же приём (QTimer.singleShot(0, ...)) уже применяется в frame.py и
+        scene.py для той же категории «нельзя рушить объект из его обработчика».
+        """
+        if self.node_id is None:
+            return
+        from PyQt6.QtCore import QTimer
+        node_id = self.node_id
+        QTimer.singleShot(0, lambda n=node_id: self.ports_changed.emit(n))

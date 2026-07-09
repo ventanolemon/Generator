@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from ..errors import RetryGeneration
+from ..errors import GraphValidationError, RetryGeneration
 from ..node import ExecContext, Node, Port
 from ..port_types import PortType
 
@@ -176,13 +176,21 @@ class ListGetNode(Node):
 
 class RandomChoiceNode(Node):
     """
-    Случайный выбор одного элемента из набора — «пул вариантов» одним узлом.
+    Случайный выбор элемента(ов) из набора — «пул вариантов» одним узлом.
 
     Набор берётся из входа list (LIST), а если он не подключён — из параметра
-    items (текстовые литералы). Выбранный элемент приводится к типу elem_type
-    (number/string/expr/matrix/bool/block), поэтому результат можно сразу
-    подать дальше: строку — в маркер #имя# текста, выражение — в diff/limit и т.п.
-    Воспроизводимо через ctx.rng (как random_natural).
+    items (текстовые литералы). Каждый выбранный элемент приводится к типу
+    elem_type (number/string/expr/matrix/bool/block), поэтому результат можно
+    сразу подать дальше: строку — в маркер #имя# текста, выражение — в diff/limit
+    и т.п. Воспроизводимо через ctx.rng (как random_natural).
+
+    Параметр count — сколько элементов выбрать (по умолчанию 1). При count=1
+    выход типизирован как elem_type (как раньше — обратная совместимость,
+    подключается прямо в узлы соответствующего типа). При count>1 выход — LIST
+    (обычная связка с list_get/list_join/map или циклом). allow_duplicates
+    (по умолчанию False) — можно ли выбрать один и тот же элемент дважды: False
+    — выборка БЕЗ повторов (ctx.rng.sample, count не может превышать размер
+    набора), True — выборка С повторами (ctx.rng.choices).
 
     Покрывает самый частый паттерн реальных генераторов (пулы эквивалентностей,
     варианты функций) без связки list_new + random_natural + list_get.
@@ -190,18 +198,44 @@ class RandomChoiceNode(Node):
     type_id = "random_choice"
     category = "source"
     display_name = "Случайный выбор"
-    description = ("Случайно выбрать элемент из набора (вход LIST или параметр "
-                   "items). Тип выхода — elem_type. Источник варианта.")
+    description = ("Случайно выбрать count элементов из набора (вход LIST или "
+                   "параметр items). Тип выхода — elem_type при count=1, иначе "
+                   "LIST. allow_duplicates — допустимы ли повторы.")
     INPUTS = [Port("list", PortType.LIST, required=False)]
     PARAMS_SCHEMA = {
         "elem_type": {"type": "enum", "values": list(_ELEM_TYPES),
                       "default": "string", "optional": True},
         "items": {"type": "list", "default": [], "optional": True},
+        "count": {"type": "int", "default": 1, "optional": True},
+        "allow_duplicates": {"type": "bool", "default": False, "optional": True},
     }
 
+    def _count(self) -> int:
+        try:
+            return max(1, int(self.params.get("count", 1)))
+        except (TypeError, ValueError):
+            return 1
+
+    def validate_params(self) -> None:
+        if self._count() != int(self.params.get("count", 1) or 1):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: count должно быть целым ≥ 1."
+            )
+        items = self.params.get("items") or []
+        allow_dup = bool(self.params.get("allow_duplicates", False))
+        # Статические items известны заранее — проверяем размер сразу; набор
+        # из входа list известен только в рантайме (см. compute).
+        if items and not allow_dup and self._count() > len(items):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: count={self._count()} больше набора "
+                f"({len(items)}) без повторов (allow_duplicates=false)."
+            )
+
     def output_ports(self):
-        et = _ELEM_TYPES.get(self.params.get("elem_type", "string"), PortType.STRING)
-        return [Port("out", et)]
+        if self._count() == 1:
+            et = _ELEM_TYPES.get(self.params.get("elem_type", "string"), PortType.STRING)
+            return [Port("out", et)]
+        return [Port("out", PortType.LIST)]
 
     def _coerce(self, value):
         et = self.params.get("elem_type", "string")
@@ -234,7 +268,19 @@ class RandomChoiceNode(Node):
             raise RetryGeneration(
                 f"random_choice {self.node_id!r}: пустой набор для выбора."
             )
-        return {"out": self._coerce(ctx.rng.choice(items))}
+        count = self._count()
+        allow_dup = bool(self.params.get("allow_duplicates", False))
+        if allow_dup:
+            chosen = ctx.rng.choices(items, k=count)
+        else:
+            if count > len(items):
+                raise RetryGeneration(
+                    f"random_choice {self.node_id!r}: count={count} больше "
+                    f"набора ({len(items)}) без повторов."
+                )
+            chosen = ctx.rng.sample(items, count)
+        coerced = [self._coerce(v) for v in chosen]
+        return {"out": coerced[0] if count == 1 else coerced}
 
 
 class ListJoinNode(Node):
