@@ -122,6 +122,27 @@ class Node(ABC):
                 return key
         return None
 
+    def summary(self) -> str:
+        """
+        Однострочная сводка СОДЕРЖАНИЯ узла для отображения прямо на теле
+        узла на холсте (наглядность: взглянул на граф — видно, что узел
+        делает, без клика по инспектору). Примеры переопределений:
+        expr_const → сам текст выражения, diff → 'd/dx', limit → 'lim x→0',
+        random_natural → '1…20', subs_expr → 'w := ●'.
+
+        Базовая реализация — компактный свод скалярных параметров ('k=v').
+        Пустая строка = показывать нечего. Держите КОРОТКО (холст усечёт
+        по ширине узла); подробности остаются инспектору. Сводка из 1–3
+        символов рисуется холстом крупным глифом (например '+' у
+        expr_binop) — как у арифметики LabVIEW.
+        """
+        bits = []
+        for k, v in self.params.items():
+            if isinstance(v, (list, dict)) or v is None or v == "":
+                continue
+            bits.append(f"{k}={v}")
+        return ", ".join(bits)
+
     @abstractmethod
     def compute(self, inputs: dict[str, Any], ctx: ExecContext) -> dict[str, Any]:
         """

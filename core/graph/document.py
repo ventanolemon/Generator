@@ -255,6 +255,21 @@ class GraphDocument:
             changed |= self._propagate_from_output(node_id, p.name, visited)
         return changed
 
+    # ---------- Сводка узла (текст на теле узла) ----------
+
+    def node_summary(self, node_id: str) -> str:
+        """Однострочная сводка содержания узла (Node.summary) для холста.
+        Безопасна к некорректным params — как safe_ports: не отрисовалось,
+        значит пусто, узел всё равно рисуется."""
+        node = self.nodes.get(node_id)
+        if node is None:
+            return ""
+        cls = self.registry.get(node.type)
+        try:
+            return str(cls("_probe", dict(node.params or {})).summary() or "")
+        except Exception:
+            return ""
+
     def prune_invalid_edges(self) -> None:
         """Удалить рёбра, ссылающиеся на порты, которых больше нет."""
         valid_in: dict[str, set[str]] = {}

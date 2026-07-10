@@ -80,6 +80,9 @@ class SymbolNode(Node):
         if not name:
             raise GraphValidationError(f"Узел {self.node_id!r}: пустое имя символа.")
 
+    def summary(self) -> str:
+        return str(self.params.get("name", "x")).strip()
+
     def compute(self, inputs, ctx: ExecContext):
         name = str(self.params.get("name", "x")).strip()
         syms = build_symbols([name], self.params.get("assumptions", "complex"))
@@ -115,6 +118,9 @@ class ExprConstNode(Node):
         syms = build_symbols([str(n) for n in names],
                              self.params.get("assumptions", "complex"))
         parse_expr(self.params.get("expr", ""), syms)
+
+    def summary(self) -> str:
+        return str(self.params.get("expr", "")).strip()
 
     def compute(self, inputs, ctx: ExecContext):
         names = self.params.get("vars") or []
@@ -289,6 +295,13 @@ _BINARY_OPS = {
     "div": lambda a, b: a / b,
     "pow": lambda a, b: a ** b,
 }
+# Синонимы-символы: пользователь пишет '+', а не вспоминает 'add'.
+_BINARY_OP_ALIASES = {
+    "+": "add", "-": "sub", "−": "sub", "*": "mul", "×": "mul", "·": "mul",
+    "/": "div", "÷": "div", "^": "pow", "**": "pow",
+}
+# Глиф операции для отображения на теле узла (наглядность холста).
+_BINARY_OP_GLYPHS = {"add": "+", "sub": "−", "mul": "×", "div": "÷", "pow": "^"}
 
 
 class ExprBinaryNode(Node):
@@ -302,21 +315,83 @@ class ExprBinaryNode(Node):
         "op": {"type": "enum", "values": list(_BINARY_OPS), "default": "add"},
     }
 
+    def _op(self) -> str:
+        raw = str(self.params.get("op", "add")).strip()
+        return _BINARY_OP_ALIASES.get(raw, raw)
+
     def validate_params(self) -> None:
-        op = self.params.get("op", "add")
-        if op not in _BINARY_OPS:
+        if self._op() not in _BINARY_OPS:
             raise GraphValidationError(
-                f"Узел {self.node_id!r}: неизвестная операция {op!r}. "
-                f"Допустимы: {list(_BINARY_OPS)}"
+                f"Узел {self.node_id!r}: неизвестная операция "
+                f"{self.params.get('op')!r}. Допустимы: {list(_BINARY_OPS)} "
+                f"или символы {list(_BINARY_OP_ALIASES)}."
             )
+
+    def summary(self) -> str:
+        # 1 символ → холст нарисует крупным глифом (как арифметика LabVIEW).
+        return _BINARY_OP_GLYPHS.get(self._op(), self._op())
 
     def compute(self, inputs, ctx: ExecContext):
         a = as_expr(inputs["a"])
         b = as_expr(inputs["b"])
         try:
-            result = _BINARY_OPS[self.params.get("op", "add")](a, b)
+            result = _BINARY_OPS[self._op()](a, b)
         except Exception as e:
             raise RetryGeneration(f"expr_binop {self.node_id!r}: {e}")
+        return {"out": guard_numeric(result)}
+
+
+class ExprReduceNode(Node):
+    """
+    Свёртка СПИСКА выражений в одно: сумма или произведение всех элементов.
+
+    Закрывает доминирующий паттерн матановских генераторов (см.
+    exercises/matan/limits/equals.py: `options[1] * options[2] * options[3]`):
+    сумма/произведение N выражений раньше требовали цепочку из N−1 связанных
+    expr_binop — теперь это list_new/random_choice(count>1)/туннель цикла →
+    ОДИН expr_reduce. Элементы приводятся as_expr (числа и строки — тоже
+    выражения). Пустой список → RetryGeneration.
+    """
+    type_id = "expr_reduce"
+    category = "symbolic"
+    display_name = "Свёртка списка (Σ/Π)"
+    description = ("Сумма или произведение ВСЕХ выражений списка одним узлом. "
+                   "Вход: list (LIST из EXPR). Выход: EXPR.")
+    INPUTS = [Port("list", PortType.LIST)]
+    OUTPUTS = [Port("out", PortType.EXPR)]
+    PARAMS_SCHEMA = {
+        "op": {"type": "enum", "values": ["add", "mul"], "default": "mul"},
+    }
+
+    def _op(self) -> str:
+        raw = str(self.params.get("op", "mul")).strip()
+        return _BINARY_OP_ALIASES.get(raw, raw)
+
+    def validate_params(self) -> None:
+        if self._op() not in ("add", "mul"):
+            raise GraphValidationError(
+                f"Узел {self.node_id!r}: op должен быть add или mul "
+                f"(или символы '+', '*')."
+            )
+
+    def summary(self) -> str:
+        # 1 символ → крупный глиф на холсте.
+        return "Σ" if self._op() == "add" else "Π"
+
+    def compute(self, inputs, ctx: ExecContext):
+        sp = sympy()
+        raw = inputs.get("list")
+        items = list(raw) if isinstance(raw, (list, tuple)) else (
+            [raw] if raw is not None else [])
+        if not items:
+            raise RetryGeneration(
+                f"expr_reduce {self.node_id!r}: пустой список выражений."
+            )
+        try:
+            exprs = [as_expr(v) for v in items]
+            result = sp.Add(*exprs) if self._op() == "add" else sp.Mul(*exprs)
+        except Exception as e:
+            raise RetryGeneration(f"expr_reduce {self.node_id!r}: {e}")
         return {"out": guard_numeric(result)}
 
 
@@ -351,6 +426,10 @@ class SubstituteNode(Node):
             if s and s not in seen:
                 seen.add(s); out.append(s)
         return out
+
+    def summary(self) -> str:
+        names = self._names()
+        return " ".join(f"{n}:=●" for n in names) if names else ""
 
     def input_ports(self):
         ports = [Port("in", PortType.EXPR)]
@@ -416,6 +495,10 @@ class ExprLambdaNode(Node):
                 f"Узел {self.node_id!r}: имена параметров не уникальны."
             )
 
+    def summary(self) -> str:
+        names = ", ".join(str(n).strip() for n in (self.params.get("params") or []))
+        return f"f({names}) = ●" if names else ""
+
     def compute(self, inputs, ctx: ExecContext):
         from ..symbolic import GraphFunction
         body = as_expr(inputs["body"])
@@ -446,6 +529,10 @@ class ExprCallNode(Node):
             if s and s not in seen:
                 seen.add(s); out.append(s)
         return out
+
+    def summary(self) -> str:
+        names = self._names()
+        return f"f({', '.join(names)})" if names else "f(…)"
 
     def input_ports(self):
         ports = [Port("func", PortType.FUNC)]
@@ -491,6 +578,9 @@ class SubsExprNode(Node):
             raise GraphValidationError(
                 f"Узел {self.node_id!r}: пустое имя подставляемого символа."
             )
+
+    def summary(self) -> str:
+        return f"{str(self.params.get('name', 'w')).strip()} := ●"
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
@@ -577,6 +667,12 @@ class DiffNode(Node):
                 f"Узел {self.node_id!r}: order должен быть целым ≥ 0."
             )
 
+    def summary(self) -> str:
+        order = int(self.params.get("order", 1))
+        var = str(self.params.get("var", "")).strip() or "x"
+        sup = {2: "²", 3: "³"}.get(order, f"^{order}" if order > 3 else "")
+        return f"d{sup}/d{var}{sup}" if order != 1 else f"d/d{var}"
+
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
@@ -606,6 +702,13 @@ class IntegrateNode(Node):
         "upper": {"type": "string", "default": "", "optional": True},
         "var": {"type": "string", "default": "", "optional": True},
     }
+
+    def summary(self) -> str:
+        lo = str(self.params.get("lower", "")).strip().replace("oo", "∞")
+        hi = str(self.params.get("upper", "")).strip().replace("oo", "∞")
+        var = str(self.params.get("var", "")).strip() or "x"
+        rng = f"[{lo}; {hi}]" if lo and hi else ""
+        return f"∫{rng} d{var}"
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
@@ -643,6 +746,12 @@ class LimitNode(Node):
         "var": {"type": "string", "default": "", "optional": True},
     }
 
+    def summary(self) -> str:
+        var = str(self.params.get("var", "")).strip() or "x"
+        point = str(self.params.get("point", "0")).strip().replace("oo", "∞")
+        d = {"+": "⁺", "-": "⁻"}.get(self.params.get("dir", "+-"), "")
+        return f"lim {var}→{point}{d}"
+
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
         expr = as_expr(inputs["in"])
@@ -673,6 +782,12 @@ class LimitDisplayNode(Node):
         "dir": {"type": "enum", "values": ["+-", "+", "-"], "default": "+-"},
         "var": {"type": "string", "default": "", "optional": True},
     }
+
+    def summary(self) -> str:
+        var = str(self.params.get("var", "")).strip() or "x"
+        point = str(self.params.get("point", "0")).strip().replace("oo", "∞")
+        d = {"+": "⁺", "-": "⁻"}.get(self.params.get("dir", "+-"), "")
+        return f"lim {var}→{point}{d}"
 
     def compute(self, inputs, ctx: ExecContext):
         sp = sympy()
