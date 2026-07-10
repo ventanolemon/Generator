@@ -93,6 +93,8 @@ class InputVarNode(Node):
         "name": {"type": "string", "default": "x"},
         "type": {"type": "enum", "values": list(_IMPORT_TYPES), "default": "number"},
     }
+    TYPE_PARAM = "type"
+    TYPE_PARAM_MAP = _IMPORT_TYPES
 
     def validate_params(self) -> None:
         t = self.params.get("type", "number")
@@ -105,6 +107,9 @@ class InputVarNode(Node):
     def output_ports(self):
         return [Port("out", _IMPORT_TYPES.get(self.params.get("type", "number"),
                                               PortType.NUMBER))]
+
+    def type_param_ports(self) -> set[str]:
+        return {"out"}
 
     def compute(self, inputs, ctx: ExecContext):
         name = str(self.params.get("name", "x"))
@@ -253,6 +258,8 @@ class OutputVarNode(Node):
         "name": {"type": "string", "default": "result"},
         "type": {"type": "enum", "values": list(_IMPORT_TYPES), "default": "number"},
     }
+    TYPE_PARAM = "type"
+    TYPE_PARAM_MAP = _IMPORT_TYPES
 
     def validate_params(self) -> None:
         t = self.params.get("type", "number")
@@ -267,6 +274,9 @@ class OutputVarNode(Node):
 
     def input_ports(self):
         return [Port("value", self._t())]
+
+    def type_param_ports(self) -> set[str]:
+        return {"value"}
 
     def compute(self, inputs, ctx: ExecContext):
         # Невидимый снаружи выход: исполнитель сохранит его в outputs узла,
@@ -332,6 +342,8 @@ class ShiftGetNode(Node):
         "name": {"type": "string", "default": "acc"},
         "type": {"type": "enum", "values": list(_IMPORT_TYPES), "default": "number"},
     }
+    TYPE_PARAM = "type"
+    TYPE_PARAM_MAP = _IMPORT_TYPES
 
     def validate_params(self) -> None:
         t = self.params.get("type", "number")
@@ -343,6 +355,9 @@ class ShiftGetNode(Node):
     def output_ports(self):
         return [Port("out", _IMPORT_TYPES.get(self.params.get("type", "number"),
                                               PortType.NUMBER))]
+
+    def type_param_ports(self) -> set[str]:
+        return {"out"}
 
     def compute(self, inputs, ctx: ExecContext):
         name = str(self.params.get("name", "acc"))
@@ -367,6 +382,8 @@ class ShiftSetNode(Node):
         "name": {"type": "string", "default": "acc"},
         "type": {"type": "enum", "values": list(_IMPORT_TYPES), "default": "number"},
     }
+    TYPE_PARAM = "type"
+    TYPE_PARAM_MAP = _IMPORT_TYPES
 
     def validate_params(self) -> None:
         t = self.params.get("type", "number")
@@ -383,6 +400,9 @@ class ShiftSetNode(Node):
 
     def output_ports(self):
         return [Port("out", self._t())]
+
+    def type_param_ports(self) -> set[str]:
+        return {"value", "out"}
 
     def compute(self, inputs, ctx: ExecContext):
         return {"out": inputs.get("value")}
@@ -560,6 +580,8 @@ class MapItemNode(Node):
     PARAMS_SCHEMA = {
         "type": {"type": "enum", "values": list(_ITEM_TYPES), "default": "string"},
     }
+    TYPE_PARAM = "type"
+    TYPE_PARAM_MAP = _ITEM_TYPES
 
     def validate_params(self) -> None:
         t = self.params.get("type", "string")
@@ -572,6 +594,9 @@ class MapItemNode(Node):
     def output_ports(self):
         return [Port("out", _ITEM_TYPES.get(self.params.get("type", "string"),
                                             PortType.STRING))]
+
+    def type_param_ports(self) -> set[str]:
+        return {"out"}
 
     def compute(self, inputs, ctx: ExecContext):
         v = ctx.extra.get(MAP_ITEM_KEY)
