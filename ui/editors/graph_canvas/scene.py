@@ -540,9 +540,12 @@ class GraphScene(QGraphicsScene):
             if e.dst.node_id == in_port.node_id and e.dst.port.name == in_port.port.name:
                 self._remove_edge_item(e)
         self.doc.add_edge(out_port.node_id, out_port.port.name, node.id, inp.name)
-        self._spawn_edge_item(out_port.node_id, out_port.port.name, node.id, inp.name)
         self.doc.add_edge(node.id, outp.name, in_port.node_id, in_port.port.name)
-        self._spawn_edge_item(node.id, outp.name, in_port.node_id, in_port.port.name)
+        # add_edge уже мог протолкнуть типы дальше по цепочке (см.
+        # GraphDocument.propagate_types_from_node) — перерисовываем сцену из
+        # модели целиком, а не точечно, чтобы отразить любые каскадные правки.
+        self.doc.prune_invalid_edges()
+        self.rebuild()
         self.changed_doc.emit()
         return True
 
@@ -563,7 +566,12 @@ class GraphScene(QGraphicsScene):
             if e.dst.node_id == dst.node_id and e.dst.port.name == dst.port.name:
                 self._remove_edge_item(e)
         self.doc.add_edge(src.node_id, src.port.name, dst.node_id, dst.port.name)
-        self._spawn_edge_item(src.node_id, src.port.name, dst.node_id, dst.port.name)
+        # Новый провод мог ретайпить узел(ы) дальше по цепочке (elem_type и
+        # т.п., см. GraphDocument.propagate_types_from_node внутри add_edge) —
+        # перестраиваем сцену из модели целиком, чтобы это увидеть сразу, без
+        # отдельного клика по инспектору.
+        self.doc.prune_invalid_edges()
+        self.rebuild()
         self.changed_doc.emit()
 
     def mouseDoubleClickEvent(self, event):
@@ -594,6 +602,12 @@ class GraphScene(QGraphicsScene):
     def refresh_node(self, node_id: str) -> None:
         if node_id not in self.node_items:
             return
+        # Если изменённый параметр был TYPE_PARAM узла (elem_type/value_type/
+        # type), протолкнуть новый тип по подключённым проводам ПЕРЕД
+        # обрезкой — иначе prune_invalid_edges снёс бы провод, который
+        # проброс типа как раз делает снова валидным (см.
+        # GraphDocument.propagate_types_from_node).
+        self.doc.propagate_types_from_node(node_id)
         # Смена динамических портов могла сделать часть рёбер висячими —
         # обрезаем их в модели и полностью перерисовываем сцену из модели.
         self.doc.prune_invalid_edges()
@@ -606,7 +620,7 @@ class GraphScene(QGraphicsScene):
 
     def refresh_inner_node(self, frame: LoopFrameItem, node_id: str) -> None:
         """Перестроить тело рамки после смены портов внутреннего узла."""
-        frame.refresh_inner(self)
+        frame.refresh_inner(self, node_id)
         again = frame.inner_nodes.get(node_id)
         if again is not None:
             again.setSelected(True)

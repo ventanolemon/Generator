@@ -12,7 +12,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from core.graph import DEFAULT_REGISTRY, ExecContext, PortType
+from core.graph import DEFAULT_REGISTRY, ExecContext, PortType, RetryGeneration
 from core.graph.nodes.lists import (
     ListAppendNode, ListGetNode, ListJoinNode, ListLengthNode, ListNewNode,
 )
@@ -42,9 +42,41 @@ class RegistryTests(unittest.TestCase):
 
 
 class ListOpsTests(unittest.TestCase):
-    def test_new_from_items(self):
-        out = ListNewNode("n", {"items": ["1", "2", "x"]}).compute({}, _ctx())["out"]
-        self.assertEqual(out, [1, 2, "x"])
+    def test_new_from_items_respects_elem_type_number(self):
+        # elem_type по умолчанию "number" — режим items ЧЕСТНО приводит к
+        # числу (float), а не гадает по каждому элементу отдельно (раньше
+        # список из чисто числовых строк молча получался int/float вперемешку
+        # со строкой при первой неразобранной — elem_type игнорировался).
+        out = ListNewNode("n", {"items": ["1", "2"]}).compute({}, _ctx())["out"]
+        self.assertEqual(out, [1.0, 2.0])
+
+    def test_new_from_items_number_rejects_non_numeric(self):
+        with self.assertRaises(RetryGeneration):
+            ListNewNode("n", {"items": ["1", "x"]}).compute({}, _ctx())
+
+    def test_new_from_items_string(self):
+        out = ListNewNode("n", {"elem_type": "string",
+                                "items": ["1", "2", "x"]}).compute({}, _ctx())["out"]
+        self.assertEqual(out, ["1", "2", "x"])
+
+    def test_new_from_items_expr_produces_real_expressions(self):
+        # Фикс: раньше items с elem_type=expr хранил ГОЛЫЕ строки, не sympy-
+        # объекты (elem_type в этом режиме вообще не учитывался). Симптом
+        # пользователя: "список expr" не давал настоящих переменных.
+        import sympy
+        out = ListNewNode("n", {"elem_type": "expr",
+                                "items": ["x+1", "y**2"]}).compute({}, _ctx())["out"]
+        self.assertEqual(len(out), 2)
+        for expr in out:
+            self.assertIsInstance(expr, sympy.Basic)
+        self.assertEqual(out[0], sympy.sympify("x+1"))
+        self.assertEqual(out[1], sympy.sympify("y**2"))
+
+    def test_new_from_items_matrix(self):
+        out = ListNewNode("n", {"elem_type": "matrix",
+                                "items": ["1,2;3,4"]}).compute({}, _ctx())["out"]
+        import sympy
+        self.assertEqual(out[0], sympy.Matrix([[1, 2], [3, 4]]))
 
     def test_new_from_inputs(self):
         n = ListNewNode("n", {"count": 2, "elem_type": "number"})

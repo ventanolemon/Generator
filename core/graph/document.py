@@ -102,6 +102,9 @@ class GraphDocument:
                       if not (e.to_node == to_node and e.to_port == to_port)]
         edge = DocEdge(from_node, from_port, to_node, to_port)
         self.edges.append(edge)
+        # Новый провод мог подключить типизированный вход к источнику другого
+        # типа — протолкнуть тип по цепочке (см. propagate_types_from_node).
+        self.propagate_types_from_node(from_node)
         return edge
 
     def remove_edge(self, edge: DocEdge) -> None:
@@ -129,6 +132,128 @@ class GraphDocument:
             return list(inst.input_ports()), list(inst.output_ports())
         except Exception:
             return list(cls.INPUTS), list(cls.OUTPUTS)
+
+    # ---------- Проброс типов по типизированным узлам ----------
+    #
+    # Часть узлов выбирает тип своих портов параметром-перечислением
+    # (Node.TYPE_PARAM/TYPE_PARAM_MAP — list_new.elem_type, select.value_type,
+    # input_var.type и т.п., см. node.py). Без проброса смена такого
+    # параметра на одном блоке требует вручную поправить elem_type на КАЖДОМ
+    # подключённом узле — то, о чём и был вопрос. Правила:
+    #
+    #   Правило A (обычный скалярный порт): провод несёт порт src.type;
+    #   если порт назначения — из type_param_ports() узла-приёмника (то есть
+    #   САМ управляется TYPE_PARAM), приёмник ретайпится под src.type, если
+    #   тот вообще выразим в его TYPE_PARAM_MAP.
+    #
+    #   Правило B (граница LIST): PortType.LIST не несёт тип элемента на
+    #   проводе (list[Any]), поэтому список_new.out → list_get.list не ловится
+    #   правилом A (list_get.list не входит в его type_param_ports() — оттуда
+    #   типизирован только "out"). Здесь элементный тип синхронизируется
+    #   НАПРЯМУЮ по строковому ключу TYPE_PARAM между двумя типизированными
+    #   LIST-узлами, раз уж это концептуально «тот же список».
+    #
+    # После ретайпа продолжаем с новых выходов приёмника — так смена одного
+    # источника расходится по всей цепочке потребителей автоматически.
+
+    def _type_param_ports(self, node: DocNode) -> set[str]:
+        cls = self.registry.get(node.type)
+        if not getattr(cls, "TYPE_PARAM", None):
+            return set()
+        try:
+            inst = cls("_probe", dict(node.params or {}))
+            return inst.type_param_ports()
+        except Exception:
+            return set()
+
+    def _propagate_edge(self, src_node: DocNode, src_port: Port,
+                        dst_node: DocNode, dst_port: Port,
+                        visited: set) -> set[str]:
+        dst_cls = self.registry.get(dst_node.type)
+        dst_tp = getattr(dst_cls, "TYPE_PARAM", None)
+        if not dst_tp:
+            return set()
+
+        changed = False
+        if dst_port.name in self._type_param_ports(dst_node):
+            # Правило A.
+            key = dst_cls.type_param_key_for(src_port.type)
+            if key is not None and dst_node.params.get(dst_tp) != key:
+                dst_node.params[dst_tp] = key
+                changed = True
+        elif dst_port.type is PortType.LIST:
+            # Правило B: проброс elem_type через границу LIST, если оба конца
+            # — типизированные списковые узлы с совпадающим по имени ключом.
+            src_cls = self.registry.get(src_node.type)
+            src_tp = getattr(src_cls, "TYPE_PARAM", None)
+            if src_tp and src_port.type is PortType.LIST:
+                src_key = src_node.params.get(src_tp)
+                if src_key in dst_cls.TYPE_PARAM_MAP and \
+                        dst_node.params.get(dst_tp) != src_key:
+                    dst_node.params[dst_tp] = src_key
+                    changed = True
+
+        if not changed:
+            return set()
+        result = {dst_node.id}
+        _, dst_outs = self.safe_ports(dst_node.type, dst_node.params)
+        for p in dst_outs:
+            result |= self._propagate_from_output(dst_node.id, p.name, visited)
+        return result
+
+    def _propagate_from_output(self, node_id: str, port_name: str,
+                               visited: set) -> set[str]:
+        key = (node_id, port_name)
+        if key in visited:
+            return set()          # защита от зацикливания при странном графе
+        visited.add(key)
+
+        src_node = self.nodes.get(node_id)
+        if src_node is None:
+            return set()
+        _, src_outs = self.safe_ports(src_node.type, src_node.params)
+        src_port = next((p for p in src_outs if p.name == port_name), None)
+        if src_port is None:
+            return set()
+
+        changed: set[str] = set()
+        for e in self.edges:
+            if e.from_node != node_id or e.from_port != port_name:
+                continue
+            dst_node = self.nodes.get(e.to_node)
+            if dst_node is None:
+                continue
+            dst_ins, _ = self.safe_ports(dst_node.type, dst_node.params)
+            dst_port = next((p for p in dst_ins if p.name == e.to_port), None)
+            if dst_port is None:
+                continue
+            changed |= self._propagate_edge(src_node, src_port, dst_node, dst_port, visited)
+        return changed
+
+    def propagate_types_from_node(self, node_id: str) -> set[str]:
+        """
+        Протолкнуть типы со всех выходов node_id по подключённым проводам —
+        после того, как параметры node_id изменились (добавлен провод из его
+        выхода, или пользователь сам поменял elem_type/value_type/type в
+        инспекторе). Возвращает id узлов, чьи параметры реально изменились
+        (редактор перестраивает их порты и, если нужно, обрезает повисшие
+        провода — прежний тип мог перестать совпадать с портом дальше по цепи).
+
+        node_id САМ не обязан быть типизированным (TYPE_PARAM) — обычный
+        expr_const/formula тоже ретайпит подключённый governed-порт
+        назначения (правило A решается со стороны ПРИЁМНИКА, см.
+        _propagate_edge); TYPE_PARAM у источника нужен только правилу B
+        (проброс elem_type через границу LIST).
+        """
+        node = self.nodes.get(node_id)
+        if node is None:
+            return set()
+        _, outs = self.safe_ports(node.type, node.params)
+        visited: set = set()
+        changed: set[str] = set()
+        for p in outs:
+            changed |= self._propagate_from_output(node_id, p.name, visited)
+        return changed
 
     def prune_invalid_edges(self) -> None:
         """Удалить рёбра, ссылающиеся на порты, которых больше нет."""

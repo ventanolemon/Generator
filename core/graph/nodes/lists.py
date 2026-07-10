@@ -42,6 +42,38 @@ _ELEM_TYPES = {
 }
 
 
+def _coerce_to_elem_type(value, elem_type: str):
+    """
+    Привести литеральное значение (из текстового поля items) к elem_type.
+
+    Общая для list_new и random_choice: раньше list_new в режиме items её не
+    вызывал вовсе и молча хранил голые Python-строки даже при elem_type=expr/
+    matrix — узел, стоящий следом, "угадывал" тип сам (большинство EXPR-
+    потребителей вызывают as_expr на своих входах), но это везло не всегда
+    (list_length/list_join элемент не трогают, а сравнение по isinstance —
+    свежий sympy.Basic vs str — уже нет). Здесь элемент приводится к
+    настоящему значению заявленного типа сразу при создании списка.
+    """
+    if elem_type == "number":
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise RetryGeneration(f"элемент {value!r} не число.")
+    if elem_type == "string":
+        return _fmt(value) if isinstance(value, (int, float)) else str(value)
+    if elem_type == "bool":
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "да", "yes")
+        return bool(value)
+    if elem_type == "expr":
+        from ..symbolic import as_expr
+        return as_expr(value)
+    if elem_type == "matrix":
+        from ..symbolic import as_matrix
+        return as_matrix(value)
+    return value      # block — как есть
+
+
 class ListNewNode(Node):
     """
     Создать список. count>0 — динамические входы in0..inN (тип elem_type)
@@ -60,6 +92,8 @@ class ListNewNode(Node):
                       "default": "number", "optional": True},
         "items": {"type": "list", "default": [], "optional": True},
     }
+    TYPE_PARAM = "elem_type"
+    TYPE_PARAM_MAP = _ELEM_TYPES
 
     def _count(self) -> int:
         try:
@@ -71,19 +105,18 @@ class ListNewNode(Node):
         et = _ELEM_TYPES.get(self.params.get("elem_type", "number"), PortType.NUMBER)
         return [Port(f"in{i}", et, required=False) for i in range(self._count())]
 
+    def type_param_ports(self) -> set[str]:
+        return {f"in{i}" for i in range(self._count())}
+
     def compute(self, inputs, ctx: ExecContext):
         if self._count() > 0:
             return {"out": [inputs[f"in{i}"] for i in range(self._count())
                             if f"in{i}" in inputs]}
-        # Иначе — из текстовых items (числа распознаём, иначе строка).
-        out = []
-        for raw in (self.params.get("items") or []):
-            s = str(raw)
-            try:
-                out.append(float(s) if ("." in s or "e" in s.lower()) else int(s))
-            except ValueError:
-                out.append(s)
-        return {"out": out}
+        # Иначе — из текстовых items, приведённых к elem_type (числа/bool/
+        # expr/matrix разбираются по-настоящему, не остаются голым текстом).
+        et = str(self.params.get("elem_type", "number"))
+        return {"out": [_coerce_to_elem_type(raw, et)
+                        for raw in (self.params.get("items") or [])]}
 
 
 class ListAppendNode(Node):
@@ -101,10 +134,15 @@ class ListAppendNode(Node):
         "elem_type": {"type": "enum", "values": list(_ELEM_TYPES),
                       "default": "number", "optional": True},
     }
+    TYPE_PARAM = "elem_type"
+    TYPE_PARAM_MAP = _ELEM_TYPES
 
     def input_ports(self):
         et = _ELEM_TYPES.get(self.params.get("elem_type", "number"), PortType.NUMBER)
         return [Port("list", PortType.LIST, required=False), Port("item", et)]
+
+    def type_param_ports(self) -> set[str]:
+        return {"item"}
 
     def compute(self, inputs, ctx: ExecContext):
         base = _as_list(inputs.get("list"))
@@ -156,10 +194,15 @@ class ListGetNode(Node):
         "index": {"type": "int", "default": -1, "optional": True},
     }
     INPUTS = [Port("list", PortType.LIST), Port("index", PortType.NUMBER, required=False)]
+    TYPE_PARAM = "elem_type"
+    TYPE_PARAM_MAP = _ELEM_TYPES
 
     def output_ports(self):
         et = _ELEM_TYPES.get(self.params.get("elem_type", "number"), PortType.NUMBER)
         return [Port("out", et)]
+
+    def type_param_ports(self) -> set[str]:
+        return {"out"}
 
     def compute(self, inputs, ctx: ExecContext):
         items = _as_list(inputs.get("list"))
@@ -209,6 +252,11 @@ class RandomChoiceNode(Node):
         "count": {"type": "int", "default": 1, "optional": True},
         "allow_duplicates": {"type": "bool", "default": False, "optional": True},
     }
+    TYPE_PARAM = "elem_type"
+    TYPE_PARAM_MAP = _ELEM_TYPES
+
+    def type_param_ports(self) -> set[str]:
+        return {"out"} if self._count() == 1 else set()
 
     def _count(self) -> int:
         try:
@@ -238,27 +286,12 @@ class RandomChoiceNode(Node):
         return [Port("out", PortType.LIST)]
 
     def _coerce(self, value):
-        et = self.params.get("elem_type", "string")
-        if et == "number":
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                raise RetryGeneration(
-                    f"random_choice {self.node_id!r}: элемент {value!r} не число."
-                )
-        if et == "string":
-            return _fmt(value) if isinstance(value, (int, float)) else str(value)
-        if et == "bool":
-            if isinstance(value, str):
-                return value.strip().lower() in ("1", "true", "да", "yes")
-            return bool(value)
-        if et == "expr":
-            from ..symbolic import as_expr
-            return as_expr(value)
-        if et == "matrix":
-            from ..symbolic import as_matrix
-            return as_matrix(value)
-        return value      # block — как есть
+        try:
+            return _coerce_to_elem_type(value, self.params.get("elem_type", "string"))
+        except RetryGeneration:
+            raise RetryGeneration(
+                f"random_choice {self.node_id!r}: элемент {value!r} не число."
+            )
 
     def compute(self, inputs, ctx: ExecContext):
         items = _as_list(inputs.get("list"))

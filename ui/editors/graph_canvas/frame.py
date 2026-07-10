@@ -195,9 +195,11 @@ class LoopFrameItem(NodeItem):
                 self.remove_inner_edge(scene, e)
         self.body_doc.add_edge(src.node_id, src.port.name,
                                dst.node_id, dst.port.name)
-        self._spawn_inner_edge(scene, src.node_id, src.port.name,
-                               dst.node_id, dst.port.name)
-        self.commit_body()
+        # add_edge уже мог протолкнуть тип дальше по телу (elem_type и т.п.,
+        # см. GraphDocument.propagate_types_from_node внутри add_edge) —
+        # перестраиваем тело целиком, а не одним точечным проводом, чтобы
+        # каскад отразился сразу.
+        self.refresh_inner(scene)
 
     def remove_inner_edge(self, scene, edge: EdgeItem) -> None:
         fn, fp, tn, tp = edge.as_doc_tuple()
@@ -236,8 +238,19 @@ class LoopFrameItem(NodeItem):
                 scene.removeItem(item)
         self.inner_nodes.clear()
 
-    def refresh_inner(self, scene) -> None:
-        """Перестроить тело после смены параметров внутреннего узла."""
+    def refresh_inner(self, scene, node_id: str | None = None) -> None:
+        """
+        Перестроить тело после смены параметров внутреннего узла.
+
+        node_id — узел, чей TYPE_PARAM (elem_type/value_type/type) мог
+        поменяться: перед обрезкой висячих проводов протолкнуть новый тип по
+        подключённым (см. GraphDocument.propagate_types_from_node) — иначе
+        prune_invalid_edges снесёт провод, который проброс делает валидным
+        снова. None — вызывающий уже пробросил сам (например, add_inner_edge
+        через body_doc.add_edge) или пробрасывать нечего.
+        """
+        if node_id is not None:
+            self.body_doc.propagate_types_from_node(node_id)
         self.body_doc.prune_invalid_edges()
         self.clear_inner(scene)
         self.populate(scene)

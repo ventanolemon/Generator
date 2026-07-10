@@ -182,6 +182,8 @@ class SelectNode(Node):
         "value_type": {"type": "enum", "values": list(_SELECT_TYPES),
                        "default": "number"},
     }
+    TYPE_PARAM = "value_type"
+    TYPE_PARAM_MAP = _SELECT_TYPES
 
     def validate_params(self) -> None:
         vt = self.params.get("value_type", "number")
@@ -206,6 +208,9 @@ class SelectNode(Node):
     def output_ports(self):
         return [Port("out", self._value_type())]
 
+    def type_param_ports(self) -> set[str]:
+        return {"on_true", "on_false", "out"}
+
     def compute(self, inputs, ctx: ExecContext):
         return {"out": inputs["on_true"] if inputs.get("cond") else inputs["on_false"]}
 
@@ -229,6 +234,8 @@ class PickNode(Node):
         "value_type": {"type": "enum", "values": list(_SELECT_TYPES),
                        "default": "block"},
     }
+    TYPE_PARAM = "value_type"
+    TYPE_PARAM_MAP = _SELECT_TYPES
 
     def validate_params(self) -> None:
         vt = self.params.get("value_type", "block")
@@ -263,6 +270,9 @@ class PickNode(Node):
 
     def output_ports(self):
         return [Port("out", self._value_type())]
+
+    def type_param_ports(self) -> set[str]:
+        return {f"in{i}" for i in range(self._count())} | {"out"}
 
     def compute(self, inputs, ctx: ExecContext):
         try:
