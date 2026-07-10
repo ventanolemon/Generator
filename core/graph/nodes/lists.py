@@ -258,6 +258,12 @@ class RandomChoiceNode(Node):
     def type_param_ports(self) -> set[str]:
         return {"out"} if self._count() == 1 else set()
 
+    def summary(self) -> str:
+        pool = len(self.params.get("items") or [])
+        src = f"из {pool}" if pool else "из списка"
+        n = self._count()
+        return f"{n} {src}" if n > 1 else src
+
     def _count(self) -> int:
         try:
             return max(1, int(self.params.get("count", 1)))

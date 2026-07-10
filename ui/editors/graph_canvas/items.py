@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QGraphicsItem, QGraphicsObject, QGraphicsPathItem, QGraphicsEllipseItem,
 )
 
-from core.graph import GraphDocument, Port, PortType
+from core.graph import GraphDocument, Node, Port, PortType
 from core.graph.port_types import is_compatible
 
 from . import style
@@ -176,20 +176,38 @@ class NodeItem(QGraphicsObject):
         self.setZValue(1)
         node = doc.nodes[node_id]
         self.setPos(node.x, node.y)
+        # Лента-сводка резервируется по КЛАССУ узла (переопределён ли
+        # Node.summary), а не по текущему тексту: геометрия узла не должна
+        # прыгать, когда параметр очищают/заполняют.
+        self._summary_reserved = self._class_overrides_summary()
         self._build_ports()
 
     # --- геометрия ---
+
+    def _class_overrides_summary(self) -> bool:
+        node = self.doc.nodes.get(self.node_id)
+        if node is None:
+            return False
+        try:
+            cls = self.doc.registry.get(node.type)
+        except Exception:
+            return False
+        return cls.summary is not Node.summary
+
+    def _summary_h(self) -> float:
+        return style.SUMMARY_H if self._summary_reserved else 0.0
 
     def _row_count(self) -> int:
         return max(len(self.in_ports), len(self.out_ports), 1)
 
     def boundingRect(self) -> QRectF:
-        h = style.HEADER_H + self._row_count() * style.ROW_H + 8
+        h = style.HEADER_H + self._summary_h() \
+            + self._row_count() * style.ROW_H + 8
         return QRectF(0, 0, style.NODE_WIDTH, h)
 
     def _build_ports(self) -> None:
         ins, outs = self.doc.ports(self.node_id)
-        y0 = style.HEADER_H + style.ROW_H / 2
+        y0 = style.HEADER_H + self._summary_h() + style.ROW_H / 2
         for i, p in enumerate(ins):
             item = PortItem(self, p, is_output=False)
             item.setPos(0, y0 + i * style.ROW_H)
@@ -251,6 +269,10 @@ class NodeItem(QGraphicsObject):
                          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                          title)
 
+        # лента-сводка содержимого под заголовком (Node.summary)
+        if self._summary_reserved:
+            self._paint_summary(painter, rect)
+
         # подписи портов + краткий параметр
         painter.setPen(QPen(style.NODE_TEXT))
         f = painter.font(); f.setPointSize(8); painter.setFont(f)
@@ -265,13 +287,41 @@ class NodeItem(QGraphicsObject):
                              Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
                              p.port.name)
 
-        # краткая сводка параметров под заголовком (если есть место)
-        summary = self._param_summary()
-        if summary and not self.in_ports:
-            painter.setPen(QPen(QColor("#AAAAAA")))
-            painter.drawText(QRectF(10, style.HEADER_H + 2, style.NODE_WIDTH - 20, 16),
-                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                             summary)
+        # запасная сводка «k=v» для узлов БЕЗ собственного summary()
+        # (лента не зарезервирована — рисуем в свободной зоне портов)
+        if not self._summary_reserved:
+            summary = self._param_summary()
+            if summary and not self.in_ports:
+                painter.setPen(QPen(QColor("#AAAAAA")))
+                painter.drawText(QRectF(10, style.HEADER_H + 2,
+                                        style.NODE_WIDTH - 20, 16),
+                                 Qt.AlignmentFlag.AlignVCenter
+                                 | Qt.AlignmentFlag.AlignLeft,
+                                 summary)
+
+    def _paint_summary(self, painter, rect: QRectF) -> None:
+        """Лента-сводка: короткая (≤3 символов) — крупный глиф операции по
+        центру (LabVIEW-style '+', 'Σ'), длинная — обрезаемый текст акцентом."""
+        band = QRectF(rect.left() + 1, rect.top() + style.HEADER_H,
+                      rect.width() - 2, style.SUMMARY_H)
+        painter.fillRect(band, QBrush(style.SUMMARY_BG))
+        text = self.doc.node_summary(self.node_id)
+        if not text:
+            return
+        saved = painter.font()
+        f = QFont(saved)
+        if len(text) <= style.GLYPH_MAX_CHARS:
+            f.setPointSize(13)
+            f.setBold(True)
+        else:
+            f.setPointSize(8)
+        painter.setFont(f)
+        painter.setPen(QPen(style.SUMMARY_TEXT))
+        elided = painter.fontMetrics().elidedText(
+            text, Qt.TextElideMode.ElideRight, int(band.width()) - 12)
+        painter.drawText(band.adjusted(6, 0, -6, 0),
+                         Qt.AlignmentFlag.AlignCenter, elided)
+        painter.setFont(saved)
 
     def _paint_role_badge(self, painter, header: QRectF) -> float:
         """Бейдж роли («ВЫХОД» и т.п.) в правой части заголовка. Возвращает

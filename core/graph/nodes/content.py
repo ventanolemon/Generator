@@ -149,6 +149,10 @@ class TextNode(Node):
     OUTPUTS = [Port("out", PortType.BLOCK)]
     PARAMS_SCHEMA = {"text": {"type": "text", "default": ""}}
 
+    def summary(self) -> str:
+        text = " ".join(str(self.params.get("text", "")).split())
+        return f"«{text}»" if text else ""
+
     def input_ports(self):
         from .compute import _marker_names
         # Маркеры #имя# — полиморфные входы (ANY): число, строка, выражение.

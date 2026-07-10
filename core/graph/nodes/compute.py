@@ -44,6 +44,9 @@ class VarDictNode(Node):
     def input_ports(self):
         return [Port(str(n), PortType.NUMBER) for n in self.params["names"]]
 
+    def summary(self) -> str:
+        return "{" + ", ".join(map(str, self.params.get("names") or [])) + "}"
+
     def compute(self, inputs, ctx: ExecContext):
         return {"out": {str(n): float(inputs[str(n)]) for n in self.params["names"]}}
 
@@ -88,6 +91,10 @@ class FormulaNode(Node):
             )
         except Exception:
             return set()
+
+    def summary(self) -> str:
+        expr = str(self.params.get("expr", "")).strip()
+        return f"= {expr}" if expr else ""
 
     def input_ports(self):
         # По одному числовому входу на каждую переменную формулы + запасной vars.
@@ -134,6 +141,15 @@ class ConstraintNode(Node):
 
     def _constraint(self) -> ResultConstraint:
         return ResultConstraint.parse(self.params or None)
+
+    def summary(self) -> str:
+        kind = {"natural": "натуральное", "integer": "целое",
+                "real": "вещественное"}.get(self.params.get("kind", "real"), "")
+        lo, hi = self.params.get("min"), self.params.get("max")
+        rng = ""
+        if lo is not None or hi is not None:
+            rng = f" {lo if lo is not None else '−∞'}…{hi if hi is not None else '+∞'}"
+        return f"{kind}{rng}".strip()
 
     def compute(self, inputs, ctx: ExecContext):
         rc = self._constraint()
@@ -235,6 +251,10 @@ class TemplateNode(Node):
     display_name = "Текстовый шаблон"
     OUTPUTS = [Port("out", PortType.STRING)]
     PARAMS_SCHEMA = {"text": {"type": "text", "default": ""}}
+
+    def summary(self) -> str:
+        text = " ".join(str(self.params.get("text", "")).split())
+        return f"«{text}»" if text else ""
 
     def input_ports(self):
         # Маркеры — полиморфные входы (ANY): принимают число, строку, выражение.

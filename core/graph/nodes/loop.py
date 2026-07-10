@@ -111,6 +111,9 @@ class InputVarNode(Node):
     def type_param_ports(self) -> set[str]:
         return {"out"}
 
+    def summary(self) -> str:
+        return f"↘ {self.params.get('name', 'x')}"
+
     def compute(self, inputs, ctx: ExecContext):
         name = str(self.params.get("name", "x"))
         key = IMPORT_PREFIX + name
@@ -277,6 +280,9 @@ class OutputVarNode(Node):
 
     def type_param_ports(self) -> set[str]:
         return {"value"}
+
+    def summary(self) -> str:
+        return f"↗ {self.params.get('name', 'result')}"
 
     def compute(self, inputs, ctx: ExecContext):
         # Невидимый снаружи выход: исполнитель сохранит его в outputs узла,
@@ -464,6 +470,11 @@ class RepeatNode(Node):
                     f"Узел {self.node_id!r}: туннель вывода {name!r} совпадает "
                     f"с выходом регистра — переименуйте туннель или регистр."
                 )
+
+    def summary(self) -> str:
+        body = self.params.get("body") or {}
+        nodes = len(body.get("nodes") or []) if isinstance(body, dict) else 0
+        return f"× {self.params.get('count', 3)} · тело: {nodes} узл."
 
     def validate_structure(self) -> None:
         _check_tunnels(self.node_id, self.params,

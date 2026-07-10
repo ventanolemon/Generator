@@ -96,6 +96,13 @@ NODE_WIDTH = 180.0
 HEADER_H = 26.0
 ROW_H = 22.0
 
+# Лента-сводка содержимого узла под заголовком (Node.summary()): «окошко»,
+# в котором видно, ЧТО узел делает — формула, диапазон, глиф операции.
+SUMMARY_H = 20.0
+SUMMARY_BG = QColor("#232323")           # чуть темнее тела — как дисплей
+SUMMARY_TEXT = QColor("#F5D06E")         # тёплый акцент: сводка ≠ подпись порта
+GLYPH_MAX_CHARS = 3                      # сводки не длиннее — крупным глифом
+
 
 def port_color(port_type: PortType) -> QColor:
     return PORT_COLORS.get(port_type, QColor("#AAAAAA"))
