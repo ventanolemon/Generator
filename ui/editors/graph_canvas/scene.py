@@ -9,13 +9,14 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from PyQt6.QtCore import QPointF, Qt, pyqtSignal
+from PyQt6.QtCore import QPointF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import (
     QGraphicsScene, QGraphicsView, QGraphicsPathItem, QMenu,
 )
 
 from core.graph import DocEdge, GraphDocument, find_converter, is_compatible
+from core.graph.routing import EdgeSpec, route_edges
 
 from . import style
 from .comment import CommentItem
@@ -37,9 +38,12 @@ class GraphScene(QGraphicsScene):
         self.node_items: dict[str, NodeItem] = {}
         self.edge_items: list[EdgeItem] = []
         self.comment_items: dict[str, CommentItem] = {}
-        # Форма проводов: ортогональная (Г-образная) или кубическая. Читается
-        # EdgeItem.update_path; хранится в meta, поэтому переживает сохранение.
-        self.orthogonal_edges = False
+        # Форма проводов: ортогональная (основной режим, по умолчанию) или
+        # кубическая. Читается EdgeItem.update_path; хранится в meta, поэтому
+        # переживает сохранение. Трассы ортогональных проводов кладёт
+        # совместный роутер (core/graph/routing.py, см. _do_reroute).
+        self.orthogonal_edges = True
+        self._reroute_pending = False
 
         self.setBackgroundBrush(style.SCENE_BG)
         self.setSceneRect(0, 0, 2400, 1600)
@@ -51,6 +55,9 @@ class GraphScene(QGraphicsScene):
         self.selectionChanged.connect(self._on_selection)
         # Любое изменение графа может сменить финальный узел — обновляем метки.
         self.changed_doc.connect(self._update_result_marks)
+        # …и потребовать перекладки трасс (добавление/удаление проводов,
+        # пересборка портов). Коалесцируется в request_reroute.
+        self.changed_doc.connect(self.request_reroute)
         self.rebuild()
 
     # ---------- Полная перерисовка из модели ----------
@@ -61,8 +68,9 @@ class GraphScene(QGraphicsScene):
         self.node_items.clear()
         self.edge_items.clear()
         self.comment_items.clear()
-        # Форма проводов — из meta (переживает сохранение/undo).
-        self.orthogonal_edges = bool(self.doc.meta.get("orthogonal_edges", False))
+        # Форма проводов — из meta (переживает сохранение/undo). Ортогональ —
+        # режим по умолчанию: явный False в meta выключает.
+        self.orthogonal_edges = bool(self.doc.meta.get("orthogonal_edges", True))
         for c in self.doc.comments():
             self._spawn_comment_item(c.get("id"))
         for nid in self.doc.nodes:
@@ -71,6 +79,7 @@ class GraphScene(QGraphicsScene):
             self._spawn_edge_item(e.from_node, e.from_port, e.to_node, e.to_port)
         self.blockSignals(False)
         self._update_result_marks()
+        self.request_reroute()
 
     # ---------- Рамки-комментарии (аннотации) ----------
 
@@ -98,21 +107,62 @@ class GraphScene(QGraphicsScene):
     # ---------- Форма проводов ----------
 
     def set_orthogonal(self, flag: bool) -> None:
-        """Переключить провода между ортогональной и кубической формой."""
+        """Переключить провода между ортогональной (основной) и кубической
+        формой. Ортогональ — умолчание, поэтому в meta пишется явный False."""
         flag = bool(flag)
         if flag == self.orthogonal_edges:
             return
         self.orthogonal_edges = flag
         if flag:
-            self.doc.meta["orthogonal_edges"] = True
-        else:
             self.doc.meta.pop("orthogonal_edges", None)
+        else:
+            self.doc.meta["orthogonal_edges"] = False
         for e in self.edge_items:
             e.update_path()
         for f in self.frames():
             for e in f.inner_edges:
                 e.update_path()
+        self.request_reroute()
         self.changed_doc.emit()
+
+    # ---------- Совместная укладка ортогональных проводов ----------
+
+    def request_reroute(self) -> None:
+        """Переложить трассы всех проводов (коалесцируется на тик событий:
+        перенос узла двигает десятки проводов — роутер зовём один раз)."""
+        if self._reroute_pending or not self.orthogonal_edges:
+            return
+        self._reroute_pending = True
+        QTimer.singleShot(0, self._do_reroute)
+
+    def _do_reroute(self) -> None:
+        self._reroute_pending = False
+        if not self.orthogonal_edges:
+            return
+        # Препятствия: тела узлов верхнего уровня и рамки циклов целиком
+        # (внутренние узлы накрыты рамкой). Провода внутри рамок роутер не
+        # трогает — у них локальная геометрия и одиночный фолбэк.
+        rects: dict[str, tuple] = {}
+        for nid, item in self.node_items.items():
+            r = item.sceneBoundingRect()
+            rects[nid] = (r.x(), r.y(), r.width(), r.height())
+
+        specs: list[EdgeSpec] = []
+        for e in self.edge_items:
+            p1 = e.src.scene_center()
+            p2 = e.dst.scene_center()
+            specs.append(EdgeSpec(
+                key=id(e),
+                src=(p1.x(), p1.y()),
+                dst=(p2.x(), p2.y()),
+                net=(e.src.node_id, e.src.port.name),
+                src_node=e.src.node_id,
+                dst_node=e.dst.node_id,
+            ))
+
+        routes = route_edges(rects, specs)
+        for e in self.edge_items:
+            e.set_route(routes.get(id(e)))
 
     # ---------- Раскладка узлов по слоям ----------
 

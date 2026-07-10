@@ -127,17 +127,22 @@ class CanvasToolTests(unittest.TestCase):
         return GraphScene(doc or _chain_doc())
 
     def test_orthogonal_toggle_reshapes_edges(self):
+        # Ортогональ — режим по умолчанию: сцена стартует с ней и meta чист.
         scene = self._scene()
         edge = scene.edge_items[0]
-        cubic_pts = edge.path().elementCount()
-        scene.set_orthogonal(True)
         self.assertTrue(scene.orthogonal_edges)
         self.assertTrue(edge._is_orthogonal())
-        self.assertGreater(edge.path().elementCount(), 2)
-        # выключение возвращает кривую и очищает meta
-        scene.set_orthogonal(False)
         self.assertNotIn("orthogonal_edges", scene.doc.meta)
-        self.assertEqual(edge.path().elementCount(), cubic_pts)
+        self.assertGreater(edge.path().elementCount(), 2)
+        # Выключение — кубическая кривая, в meta явный False (умолчание
+        # инвертировалось, поэтому теперь персистится именно отказ).
+        scene.set_orthogonal(False)
+        self.assertIs(scene.doc.meta.get("orthogonal_edges"), False)
+        cubic_pts = edge.path().elementCount()
+        # Включение обратно очищает meta и возвращает ломаную.
+        scene.set_orthogonal(True)
+        self.assertNotIn("orthogonal_edges", scene.doc.meta)
+        self.assertGreater(edge.path().elementCount(), cubic_pts)
 
     def test_layout_moves_items_with_model(self):
         scene = self._scene()

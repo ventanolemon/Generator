@@ -240,16 +240,36 @@ class GraphDocument:
     def layered_positions(self, x_gap: float = 260.0, y_gap: float = 150.0,
                           x0: float = 40.0, y0: float = 40.0) -> dict[str, tuple]:
         """
-        Позиции узлов раскладкой «по слоям»: столбец = слой (см. layer_of_nodes),
-        внутри столбца узлы идут сверху вниз в порядке добавления. Возвращает
-        {node_id: (x, y)}; исполнение графа не затрагивает (только meta.layout).
+        Позиции узлов раскладкой «по слоям»: столбец = слой (см. layer_of_nodes).
+        Внутри столбца ≥1 узлы упорядочены по МЕДИАННОЙ Y-координате своих
+        источников (приём трассировщика ОПВС, см. calculate_positions в
+        exercises/opvs/png_generator.py): потребитель ложится напротив своих
+        входов, что структурно снижает число пересечений проводов ещё до
+        трассировки; медиана устойчивее среднего к выбросам. Слой 0 — в
+        порядке добавления (стабильность). Возвращает {node_id: (x, y)};
+        исполнение графа не затрагивает (только meta.layout).
         """
+        from statistics import median
+
         layer = self.layer_of_nodes()
         by_layer: dict[int, list[str]] = {}
         for nid in self.nodes:                # порядок добавления — стабильность
             by_layer.setdefault(layer.get(nid, 0), []).append(nid)
+
+        preds: dict[str, list[str]] = {n: [] for n in self.nodes}
+        for e in self.edges:
+            if e.from_node in self.nodes and e.to_node in self.nodes:
+                preds[e.to_node].append(e.from_node)
+
         pos: dict[str, tuple] = {}
         for col, nids in sorted(by_layer.items()):
+            if col > 0:
+                def _median_src_y(nid: str) -> float:
+                    ys = sorted(pos[p][1] for p in preds[nid] if p in pos)
+                    # Узлы без размещённых источников — вниз столбца,
+                    # между собой в порядке добавления (sort стабилен).
+                    return float(median(ys)) if ys else float("inf")
+                nids = sorted(nids, key=_median_src_y)
             for row, nid in enumerate(nids):
                 pos[nid] = (x0 + col * x_gap, y0 + row * y_gap)
         return pos

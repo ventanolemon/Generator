@@ -74,6 +74,10 @@ class EdgeItem(QGraphicsPathItem):
         super().__init__()
         self.src = src
         self.dst = dst
+        # Совместная трасса от сценового роутера (core/graph/routing.py):
+        # список точек ломаной. None — роутер этот провод не прокладывал
+        # (кубический режим, провода внутри рамок) → одиночный фолбэк.
+        self._route: Optional[list[tuple[float, float]]] = None
         self.setZValue(0)
         self.setPen(QPen(style.port_color(src.port.type), 2.4))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -83,10 +87,16 @@ class EdgeItem(QGraphicsPathItem):
         sc = self.scene()
         return bool(getattr(sc, "orthogonal_edges", False))
 
+    def set_route(self, points: Optional[list[tuple[float, float]]]) -> None:
+        """Принять трассу из совместной укладки сцены (или сбросить)."""
+        self._route = points
+        self.update_path()
+
     @staticmethod
     def _orthogonal_path(p1: QPointF, p2: QPointF) -> QPainterPath:
-        """Г-образная трасса выход→вход: короткие «усы» от портов и переход по
-        средней вертикали, чтобы провод не влезал в тела узлов."""
+        """Одиночная Г-образная трасса — фолбэк без роутера (кубический режим
+        выключен, но совместная укладка ещё не прошла; провода внутри рамок).
+        Наложений соседних проводов не избегает — это работа роутера."""
         stub = 18.0
         ax = p1.x() + stub
         bx = p2.x() - stub
@@ -103,6 +113,19 @@ class EdgeItem(QGraphicsPathItem):
         p1 = self.src.scene_center()
         p2 = self.dst.scene_center()
         if self._is_orthogonal():
+            route = self._route
+            # Трасса валидна, пока её концы совпадают с портами: при движении
+            # узла до перекладки роутером рисуем фолбэк, а не устаревшую.
+            if route and len(route) >= 2 and \
+                    abs(route[0][0] - p1.x()) < 0.5 and \
+                    abs(route[0][1] - p1.y()) < 0.5 and \
+                    abs(route[-1][0] - p2.x()) < 0.5 and \
+                    abs(route[-1][1] - p2.y()) < 0.5:
+                path = QPainterPath(QPointF(*route[0]))
+                for pt in route[1:]:
+                    path.lineTo(QPointF(*pt))
+                self.setPath(path)
+                return
             self.setPath(self._orthogonal_path(p1, p2))
             return
         dx = max(40.0, abs(p2.x() - p1.x()) * 0.5)
@@ -291,6 +314,11 @@ class NodeItem(QGraphicsObject):
             self.doc.set_pos(self.node_id, self.x(), self.y())
             for e in self.edges:
                 e.update_path()
+            # Совместная укладка проводов зависит от ВСЕХ узлов — просим
+            # сцену переложить трассы (коалесцируется на тик событий).
+            sc = self.scene()
+            if sc is not None and hasattr(sc, "request_reroute"):
+                sc.request_reroute()
         return super().itemChange(change, value)
 
 
