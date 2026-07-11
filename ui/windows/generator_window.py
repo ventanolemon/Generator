@@ -24,9 +24,11 @@ from PyQt6.QtWidgets import (
 )
 
 from core import (
-    Capability, GeneratorRegistry, Repository, Subject, Partition,
+    Capability, GeneratorRegistry, Subject, Partition,
     TaskGenerator, WordStatsStore,
 )
+from ui.app_context import AppContext
+from ui.widgets import TopBar
 from ui.views import (
     StaticTaskView, TableTaskView, InteractiveTaskView, TestExportView
 )
@@ -37,7 +39,6 @@ from .stats_window import StatsWindow
 
 # Тип фабрики, пересобирающей реестр после изменений в БД.
 RegistryBuilder = Callable[[], GeneratorRegistry]
-UserIdProvider = Callable[[], Optional[str]]
 
 
 class GeneratorWindow(QMainWindow):
@@ -45,28 +46,32 @@ class GeneratorWindow(QMainWindow):
 
     def __init__(
         self,
-        repository: Repository,
+        context: AppContext,
         registry: GeneratorRegistry,
         registry_builder: RegistryBuilder | None = None,
         *,
         stats_store: WordStatsStore | None = None,
-        user_id_provider: UserIdProvider | None = None,
         words_dir: Path | None = None,
     ):
         """
+        context — кросс-сквозная инфраструктура и сессия (репозиторий,
+        настройки, провайдеры user_id/role, клиенты sync/контура).
+
         registry_builder — опциональная функция, которая пересобирает реестр
         после изменения БД. Без неё кнопки правки/создания не показываются.
 
-        stats_store + user_id_provider — если переданы, в шапке появляется
-        кнопка «Моя статистика», открывающая StatsWindow. words_dir нужен
-        окну статистики, чтобы рядом с термином показывать перевод.
+        stats_store — если передан, в шапке появляется кнопка «Моя
+        статистика», открывающая StatsWindow. words_dir нужен окну
+        статистики, чтобы рядом с термином показывать перевод.
         """
         super().__init__()
-        self.repo = repository
+        self.ctx = context
+        self.repo = context.repo
+        self.user_id_provider = context.user_id_provider
+        self.user_role_provider = context.user_role_provider
         self.registry = registry
         self.registry_builder = registry_builder
         self.stats_store = stats_store
-        self.user_id_provider = user_id_provider
         self.words_dir = words_dir
         self.subjects: list[Subject] = []
         self.partitions: list[Partition] = []
@@ -83,21 +88,31 @@ class GeneratorWindow(QMainWindow):
     def _build_ui(self) -> None:
         central = QWidget(self)
         self.setCentralWidget(central)
-        root = QHBoxLayout(central)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ---- Верхняя панель действий ----
+        # Единая точка расширения: подсистемы вешают сюда свои кнопки
+        # (статистика сейчас; настройки/sync/контур — следующими волнами).
+        self.top_bar = TopBar(self.user_role_provider, self)
+        outer.addWidget(self.top_bar)
+        if self.stats_store is not None:
+            self.top_bar.add_action(
+                "Моя статистика",
+                "История прохождения словарного тренажёра "
+                "(межсессионная для авторизованных, "
+                "в рамках запуска — для гостей).",
+                self._open_stats_window,
+            )
+
+        # ---- Контент (под панелью) ----
+        content = QWidget(central)
+        root = QHBoxLayout(content)
+        outer.addWidget(content, stretch=1)
 
         # ---- Левая панель ----
         left = QVBoxLayout()
-
-        # Кнопка просмотра статистики — только если есть хранилище.
-        if self.stats_store is not None:
-            self.stats_btn = QPushButton("Моя статистика", self)
-            self.stats_btn.setToolTip(
-                "История прохождения словарного тренажёра "
-                "(межсессионная для авторизованных, "
-                "в рамках запуска — для гостей)."
-            )
-            self.stats_btn.clicked.connect(self._open_stats_window)
-            left.addWidget(self.stats_btn)
 
         left.addWidget(QLabel("Предмет:"))
         self.subject_combo = QComboBox(self)
@@ -157,6 +172,12 @@ class GeneratorWindow(QMainWindow):
         controls.addWidget(self.delete_btn)
 
         parent_layout.addLayout(controls)
+
+    def showEvent(self, event) -> None:
+        # Окно показывается после авторизации — роль сессии уже известна,
+        # пересматриваем видимость ролевых кнопок панели (кнопка контура и т.п.).
+        super().showEvent(event)
+        self.top_bar.refresh_roles()
 
     # ---------- Окно статистики ----------
 

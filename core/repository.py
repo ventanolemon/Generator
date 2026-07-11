@@ -295,13 +295,43 @@ class Repository:
 
     # ---------- Users (для авторизации) ----------
 
-    def find_user(self, login: str, password: str) -> Optional[tuple]:
+    def ensure_user_role_column(self) -> None:
+        """
+        Гарантировать колонку role в users. Идемпотентно (ALTER только если
+        колонки ещё нет). Существующие аккаунты десктопа — авторы заданий,
+        поэтому дефолт 'teacher'; гость роли не имеет (сессия ставит
+        'student'). Ролью гейтятся ролевые действия (кнопка контура и т.п.).
+        """
         with self._connect() as conn:
-            return conn.execute(
-                "SELECT login, FIO, \"group\" FROM users "
-                "WHERE login = ? AND password = ?",
-                (login, password),
-            ).fetchone()
+            cols = [r[1] for r in
+                    conn.execute("PRAGMA table_info(users)").fetchall()]
+            if "role" not in cols:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN "
+                    "role TEXT NOT NULL DEFAULT 'teacher'"
+                )
+                conn.commit()
+
+    def find_user(self, login: str, password: str) -> Optional[tuple]:
+        """
+        Вернуть (login, FIO, group, role) или None. Если колонки role ещё нет
+        (ensure_user_role_column не отработал — например, вне обычного старта),
+        мягко откатываемся к трём полям и роли 'teacher' по умолчанию.
+        """
+        with self._connect() as conn:
+            try:
+                return conn.execute(
+                    "SELECT login, FIO, \"group\", role FROM users "
+                    "WHERE login = ? AND password = ?",
+                    (login, password),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                row = conn.execute(
+                    "SELECT login, FIO, \"group\" FROM users "
+                    "WHERE login = ? AND password = ?",
+                    (login, password),
+                ).fetchone()
+                return (row + ("teacher",)) if row is not None else None
 
     # ---------- WordStats (межсессионная статистика по словам) ----------
 

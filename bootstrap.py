@@ -78,6 +78,9 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
     # Таблица WordStats для межсессионной памяти словарного тренажёра.
     repo.ensure_word_stats_table()
 
+    # Колонка role в users — источник роли сессии (гейтинг ролевых действий).
+    repo.ensure_user_role_column()
+
     for subject_id, gen in CODE_GENERATORS:
         if gen.partition_id is None:
             continue
