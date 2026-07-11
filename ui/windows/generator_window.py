@@ -78,6 +78,7 @@ class GeneratorWindow(QMainWindow):
         self._editor_window: PartitionEditor | None = None
         self._stats_window: StatsWindow | None = None
         self._sync_window = None
+        self._contour_window = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -120,6 +121,15 @@ class GeneratorWindow(QMainWindow):
             )
             # Бейдж состояния синка (несинхронизированные правки / конфликты).
             self.top_bar.add_badge("sync")
+        if self.ctx.contour_client is not None:
+            # Контур доступен только преподавателям/админам (гейтинг ролью).
+            self.top_bar.add_action(
+                "✨ ИИ-генератор",
+                "Генератор через ИИ: опишите задание — сервер соберёт и "
+                "проверит генератор, вы утвердите результат.",
+                self._open_contour_window,
+                roles={"teacher", "admin"},
+            )
 
         # ---- Контент (под панелью) ----
         content = QWidget(central)
@@ -241,6 +251,32 @@ class GeneratorWindow(QMainWindow):
     def _on_sync_window_destroyed(self, *_args) -> None:
         self._sync_window = None
         self._refresh_sync_badge()
+
+    # ---------- Контур (ИИ-генератор) ----------
+
+    def _open_contour_window(self) -> None:
+        from ui.windows.contour_window import ContourWindow
+        if self._contour_window is None:
+            self._contour_window = ContourWindow(self.ctx, self)
+            self._contour_window.partition_created.connect(
+                self._on_contour_partition_created)
+            self._contour_window.destroyed.connect(
+                self._on_contour_window_destroyed)
+        else:
+            self._contour_window.refresh()
+        self._contour_window.show()
+        self._contour_window.raise_()
+        self._contour_window.activateWindow()
+
+    def _on_contour_partition_created(self, partition_id: int) -> None:
+        # Контур создал партицию на сервере (constracted=4). Пересобираем
+        # реестр и перечитываем текущий предмет — новый раздел появится,
+        # если принадлежит выбранному предмету.
+        self._rebuild_registry()
+        self._refresh_current_subject(select_partition_id=partition_id)
+
+    def _on_contour_window_destroyed(self, *_args) -> None:
+        self._contour_window = None
 
     def _refresh_sync_badge(self) -> None:
         """Обновить статус-бейдж синка в панели (очередь/конфликты)."""
