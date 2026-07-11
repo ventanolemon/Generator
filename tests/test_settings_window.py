@@ -98,5 +98,66 @@ class SettingsWindowTests(unittest.TestCase):
         self.assertIn("не задан", dlg.conn_status.text().lower())
 
 
+@unittest.skipUnless(HAS_QT, "PyQt6 не установлен")
+class AccountTabTests(unittest.TestCase):
+    """D2: смена пароля во вкладке «Аккаунт» (поверх repo.set_password D1)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _ctx_with_user(self, uid="t"):
+        db = tempfile.mktemp(suffix=".db")
+        self._db = db
+        conn = sqlite3.connect(db)
+        conn.execute(
+            'CREATE TABLE users (login TEXT PRIMARY KEY, password TEXT, '
+            'FIO TEXT, "group" TEXT, role TEXT NOT NULL DEFAULT \'teacher\')')
+        conn.execute(
+            "INSERT INTO users VALUES ('t', 'старый', 'ФИО', 'Г', 'teacher')")
+        conn.commit()
+        conn.close()
+        self.repo = Repository(db)
+        settings = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+                                      QSettings.Format.IniFormat))
+        return AppContext(repo=self.repo, settings=settings,
+                          user_id_provider=lambda: uid,
+                          user_role_provider=lambda: "teacher")
+
+    def test_change_password_happy_path(self):
+        dlg = SettingsWindow(self._ctx_with_user())
+        dlg.old_pass_edit.setText("старый")
+        dlg.new_pass_edit.setText("новый")
+        dlg.repeat_pass_edit.setText("новый")
+        dlg._on_change_password()
+        self.assertIn("изменён", dlg.pass_status.text())
+        self.assertIsNotNone(self.repo.find_user("t", "новый"))
+        self.assertIsNone(self.repo.find_user("t", "старый"))
+        # Поля очищены после успеха.
+        self.assertEqual(dlg.new_pass_edit.text(), "")
+
+    def test_wrong_old_password_rejected(self):
+        dlg = SettingsWindow(self._ctx_with_user())
+        dlg.old_pass_edit.setText("не тот")
+        dlg.new_pass_edit.setText("новый")
+        dlg.repeat_pass_edit.setText("новый")
+        dlg._on_change_password()
+        self.assertIn("неверен", dlg.pass_status.text())
+        self.assertIsNotNone(self.repo.find_user("t", "старый"))
+
+    def test_mismatched_new_rejected(self):
+        dlg = SettingsWindow(self._ctx_with_user())
+        dlg.old_pass_edit.setText("старый")
+        dlg.new_pass_edit.setText("а")
+        dlg.repeat_pass_edit.setText("б")
+        dlg._on_change_password()
+        self.assertIn("не совпадают", dlg.pass_status.text())
+
+    def test_guest_has_no_password_form(self):
+        dlg = SettingsWindow(self._ctx_with_user(uid=None))
+        self.assertFalse(hasattr(dlg, "old_pass_edit"),
+                         "у гостя формы смены пароля нет")
+
+
 if __name__ == "__main__":
     unittest.main()

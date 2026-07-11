@@ -105,13 +105,40 @@ class SettingsWindow(QDialog):
     def _account_tab(self) -> QWidget:
         w = QWidget(self)
         form = QFormLayout(w)
-        uid = self.ctx.user_id_provider() or "гость"
-        form.addRow("Текущий вход:", QLabel(str(uid), w))
+        uid = self.ctx.user_id_provider()
+        form.addRow("Текущий вход:", QLabel(str(uid or "гость"), w))
         form.addRow("Роль:", QLabel(self.ctx.user_role_provider(), w))
-        soon = QLabel("Смена пароля появится здесь в следующем обновлении.", w)
-        soon.setProperty("class", "muted")
-        soon.setWordWrap(True)
-        form.addRow(soon)
+
+        if uid is None:
+            guest = QLabel("Войдите в аккаунт, чтобы менять пароль.", w)
+            guest.setProperty("class", "muted")
+            guest.setWordWrap(True)
+            form.addRow(guest)
+            return w
+
+        # --- Смена пароля (D1: repo.set_password, старый обязателен) ---
+        header = QLabel("Смена пароля", w)
+        header.setProperty("class", "subtitle")
+        form.addRow(header)
+
+        self.old_pass_edit = QLineEdit(w)
+        self.old_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Текущий пароль:", self.old_pass_edit)
+        self.new_pass_edit = QLineEdit(w)
+        self.new_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Новый пароль:", self.new_pass_edit)
+        self.repeat_pass_edit = QLineEdit(w)
+        self.repeat_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Ещё раз:", self.repeat_pass_edit)
+
+        row = QHBoxLayout()
+        change_btn = QPushButton("Сменить пароль", w)
+        change_btn.clicked.connect(self._on_change_password)
+        self.pass_status = QLabel("", w)
+        self.pass_status.setProperty("class", "muted")
+        row.addWidget(change_btn)
+        row.addWidget(self.pass_status, stretch=1)
+        form.addRow(row)
         return w
 
     # ---------- действия ----------
@@ -141,6 +168,39 @@ class SettingsWindow(QDialog):
             self.conn_status.setText(f"Отвечает (HTTP {e.code}).")
         except Exception as e:
             self.conn_status.setText(f"Недоступен: {e}")
+
+    def _on_change_password(self) -> None:
+        """Смена пароля: старый обязан пройти проверку (repo.set_password)."""
+        login = self.ctx.user_id_provider()
+        if login is None:
+            return
+        old = self.old_pass_edit.text()
+        new = self.new_pass_edit.text()
+        repeat = self.repeat_pass_edit.text()
+        if not new:
+            self._pass_feedback("Новый пароль пуст.", ok=False)
+            return
+        if new != repeat:
+            self._pass_feedback("Новые пароли не совпадают.", ok=False)
+            return
+        try:
+            changed = self.ctx.repo.set_password(str(login), old, new)
+        except Exception as e:
+            self._pass_feedback(f"Ошибка БД: {e}", ok=False)
+            return
+        if not changed:
+            self._pass_feedback("Текущий пароль неверен.", ok=False)
+            return
+        self.old_pass_edit.clear()
+        self.new_pass_edit.clear()
+        self.repeat_pass_edit.clear()
+        self._pass_feedback("Пароль изменён.", ok=True)
+
+    def _pass_feedback(self, text: str, *, ok: bool) -> None:
+        self.pass_status.setText(text)
+        self.pass_status.setProperty("class", "muted" if ok else "danger")
+        self.pass_status.style().unpolish(self.pass_status)
+        self.pass_status.style().polish(self.pass_status)
 
     def _on_save(self) -> None:
         url = self.base_url_edit.text().strip()
