@@ -4,63 +4,54 @@ TestExportView — представление теста.
 Тест — это собранный список заданий с вариантами. Кнопка генерации
 создаёт N вариантов, каждый — большой StaticTask. Кнопка экспорта
 сохраняет все варианты в один docx.
+
+Хром (заголовок + строка кнопок) — из BaseTaskView (контракт K4);
+центральная зона своя: вкладки с превью вариантов.
 """
 
 from __future__ import annotations
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QSpinBox, QCheckBox,
+    QVBoxLayout, QHBoxLayout, QPushButton, QSpinBox, QCheckBox,
     QLabel, QFileDialog, QMessageBox, QScrollArea, QTabWidget
 )
 
-from core import Capability, StaticTask, TaskGenerator
-from ui.utils import render_blocks, clear_layout
+from core import Capability, StaticTask
+from ui.utils import render_blocks
 from ui.exporter import export_test_to_docx
+from .base_view import BaseTaskView
 
 
-class TestExportView(QWidget):
+class TestExportView(BaseTaskView):
     """Тест: N вариантов, каждый — StaticTask из TestGenerator."""
 
-    def __init__(self, generator: TaskGenerator, parent: QWidget | None = None):
-        super().__init__(parent)
-        if Capability.EXPORTABLE not in generator.capabilities:
-            raise ValueError(
-                f"TestExportView требует EXPORTABLE, у {generator.name!r} его нет."
-            )
-        self.generator = generator
+    REQUIRED_CAPABILITY = Capability.EXPORTABLE
+
+    def _init_state(self) -> None:
         self.variants: list[StaticTask] = []
-        self._build_ui()
 
-    def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
-
-        title = QLabel(self.generator.name, self)
-        title.setStyleSheet("font-size: 14pt; font-weight: bold;")
-        root.addWidget(title)
-
-        ctrl = QHBoxLayout()
-        ctrl.addWidget(QLabel("Вариантов:", self))
+    def build_controls(self, row: QHBoxLayout) -> None:
+        row.addWidget(QLabel("Вариантов:", self))
         self.variants_spin = QSpinBox(self)
         self.variants_spin.setRange(1, 50)
         self.variants_spin.setValue(4)
-        ctrl.addWidget(self.variants_spin)
+        row.addWidget(self.variants_spin)
 
         self.gen_btn = QPushButton("Сгенерировать варианты", self)
         self.export_btn = QPushButton("Экспорт в Word", self)
         self.show_answers_chk = QCheckBox("С ответами", self)
-        ctrl.addWidget(self.gen_btn)
-        ctrl.addWidget(self.export_btn)
-        ctrl.addWidget(self.show_answers_chk)
-        ctrl.addStretch()
-        root.addLayout(ctrl)
-
-        # Превью вариантов в табах
-        self.tabs = QTabWidget(self)
-        root.addWidget(self.tabs, stretch=1)
+        row.addWidget(self.gen_btn)
+        row.addWidget(self.export_btn)
+        row.addWidget(self.show_answers_chk)
+        row.addStretch()
 
         self.gen_btn.clicked.connect(self._on_generate)
         self.export_btn.clicked.connect(self._on_export)
         self.show_answers_chk.stateChanged.connect(self._refresh_tabs)
+
+    def build_center(self, root: QVBoxLayout) -> None:
+        # Превью вариантов в табах
+        self.tabs = QTabWidget(self)
+        root.addWidget(self.tabs, stretch=1)
 
     def _on_generate(self) -> None:
         n = self.variants_spin.value()

@@ -82,7 +82,7 @@ class ParamInspector(QWidget):
         if desc:
             lbl = QLabel(desc)
             lbl.setWordWrap(True)
-            lbl.setStyleSheet("color: #9AA0A6;")
+            lbl.setProperty("class", "muted")
             self._form.addRow(lbl)
         self._form.addRow("id", QLabel(node.id))
 
@@ -193,7 +193,7 @@ class ParamInspector(QWidget):
         cur = str(node.params.get(key, meta.get("default", "")) or "")
         path_lbl = QLabel(cur or "— файл не выбран —")
         path_lbl.setWordWrap(True)
-        path_lbl.setStyleSheet("color: #9AA0A6;")
+        path_lbl.setProperty("class", "muted")
         col.addWidget(path_lbl)
 
         row = QHBoxLayout()

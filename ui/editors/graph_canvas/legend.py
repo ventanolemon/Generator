@@ -90,5 +90,5 @@ class TypeLegendDialog(QDialog):
             "зелёным, а входы, куда нужен конвертер, — янтарным пунктиром. "
             "Отпустите на янтарном, чтобы вставить конвертер автоматически.")
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #9AA0A6;")
+        hint.setProperty("class", "muted")
         root.addWidget(hint)

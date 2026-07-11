@@ -37,7 +37,7 @@ class AuthWindow(QWidget):
         root = QVBoxLayout(self)
 
         title = QLabel("Генератор заданий", self)
-        title.setStyleSheet("font-size: 16pt; font-weight: bold;")
+        title.setProperty("class", "title")
         root.addWidget(title)
 
         root.addWidget(QLabel("Логин:"))

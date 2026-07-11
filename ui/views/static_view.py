@@ -4,67 +4,51 @@ StaticTaskView — представление одного статичного 
 Кнопка 'Сгенерировать' создаёт новый таск, кнопка 'Показать ответ'
 переключает между условием и ответом. Если генератор объявил флаг
 EXPORTABLE — появляется кнопка прямого экспорта текущего задания в Word.
+
+Хром (заголовок + строка кнопок + прокручиваемый контейнер блоков) —
+из BaseTaskView (контракт K4).
 """
 
 from __future__ import annotations
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QScrollArea, QLabel,
-    QFileDialog, QMessageBox
+    QHBoxLayout, QPushButton, QFileDialog, QMessageBox
 )
 
 from core import Capability, StaticTask, TaskGenerator
-from ui.utils import render_blocks, clear_layout
 from ui.exporter import export_tasks_to_docx
+from .base_view import BaseTaskView
 
 
-class StaticTaskView(QWidget):
+class StaticTaskView(BaseTaskView):
     """Один таск + кнопка показа ответа. Подходит для всех STATIC-генераторов."""
 
-    def __init__(self, generator: TaskGenerator, parent: QWidget | None = None):
-        super().__init__(parent)
-        if Capability.STATIC not in generator.capabilities:
-            raise ValueError(
-                f"StaticTaskView не работает с {generator.name!r}: "
-                "у него нет флага STATIC."
-            )
+    REQUIRED_CAPABILITY = Capability.STATIC
 
-        self.generator = generator
+    def _capability_error(self, generator: TaskGenerator) -> str:
+        return (
+            f"StaticTaskView не работает с {generator.name!r}: "
+            "у него нет флага STATIC."
+        )
+
+    def _init_state(self) -> None:
         self.current_task: StaticTask | None = None
         self.showing_answer = False
-        self.is_exportable = Capability.EXPORTABLE in generator.capabilities
+        self.is_exportable = Capability.EXPORTABLE in self.generator.capabilities
 
-        self._build_ui()
-
-    def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
-
-        title = QLabel(self.generator.name, self)
-        title.setStyleSheet("font-size: 14pt; font-weight: bold;")
-        root.addWidget(title)
-
-        btns = QHBoxLayout()
+    def build_controls(self, row: QHBoxLayout) -> None:
         self.generate_btn = QPushButton("Сгенерировать", self)
         self.answer_btn = QPushButton("Показать ответ", self)
         self.answer_btn.setEnabled(False)
-        btns.addWidget(self.generate_btn)
-        btns.addWidget(self.answer_btn)
+        row.addWidget(self.generate_btn)
+        row.addWidget(self.answer_btn)
 
         if self.is_exportable:
             self.export_btn = QPushButton("Экспорт в Word", self)
             self.export_btn.setEnabled(False)
             self.export_btn.clicked.connect(self._on_export)
-            btns.addWidget(self.export_btn)
+            row.addWidget(self.export_btn)
 
-        btns.addStretch()
-        root.addLayout(btns)
-
-        self.scroll = QScrollArea(self)
-        self.scroll.setWidgetResizable(True)
-        self.content_holder = QWidget(self.scroll)
-        self.content_layout = QVBoxLayout(self.content_holder)
-        self.scroll.setWidget(self.content_holder)
-        root.addWidget(self.scroll, stretch=1)
+        row.addStretch()
 
         self.generate_btn.clicked.connect(self._on_generate)
         self.answer_btn.clicked.connect(self._on_toggle_answer)
@@ -82,7 +66,7 @@ class StaticTaskView(QWidget):
         self.answer_btn.setText("Показать ответ")
         if self.is_exportable:
             self.export_btn.setEnabled(True)
-        self._show_blocks(task.statement)
+        self.show_blocks(task.statement)
 
     def _on_toggle_answer(self) -> None:
         if self.current_task is None:
@@ -90,10 +74,10 @@ class StaticTaskView(QWidget):
         self.showing_answer = not self.showing_answer
         if self.showing_answer:
             self.answer_btn.setText("Показать условие")
-            self._show_blocks(self.current_task.answer)
+            self.show_blocks(self.current_task.answer)
         else:
             self.answer_btn.setText("Показать ответ")
-            self._show_blocks(self.current_task.statement)
+            self.show_blocks(self.current_task.statement)
 
     def _on_export(self) -> None:
         if self.current_task is None:
@@ -113,8 +97,3 @@ class StaticTaskView(QWidget):
             QMessageBox.information(self, "Экспорт", "Готово.")
         except Exception as e:
             QMessageBox.critical(self, "Экспорт", f"Ошибка: {e}")
-
-    def _show_blocks(self, blocks) -> None:
-        clear_layout(self.content_layout)
-        widget = render_blocks(blocks, self.content_holder)
-        self.content_layout.addWidget(widget)
