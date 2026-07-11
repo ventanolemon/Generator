@@ -22,6 +22,7 @@ class Subject:
     id: int
     name: str
     parent_name: str  # значение поля pra_subject
+    hidden: bool = False      # локальный флаг видимости (не синкается)
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ class Partition:
     name: str
     constracted: int          # 0=одиночный, 1=конструктор, 2=группа, 3=тест
     generation_params: dict   # распарсенный JSON или {}
+    hidden: bool = False      # локальный флаг видимости (не синкается)
 
 
 # Какой view_kind использовать для каждого constracted:
@@ -66,14 +68,56 @@ class Repository:
         finally:
             conn.close()
 
+    # ---------- Скрытие (локальный флаг видимости, D3) ----------
+    #
+    # hidden — колонка в Subjects/Partitions, ЛОКАЛЬНАЯ настройка видимости
+    # этой копии БД: sync-протокол её не знает и не передаёт (скрытие ≠
+    # удаление; tombstones — только про настоящие удаления). Скрытая
+    # сущность остаётся в БД, генераторы по ней продолжают работать.
+
+    def ensure_hidden_columns(self) -> None:
+        """Гарантировать колонки hidden в Subjects и Partitions. Идемпотентно."""
+        with self._connect() as conn:
+            for table in ("Subjects", "Partitions"):
+                cols = [r[1] for r in conn.execute(
+                    f"PRAGMA table_info({table})").fetchall()]
+                if "hidden" not in cols:
+                    conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN "
+                        f"hidden INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+
+    def set_subject_hidden(self, subject_id: int, hidden: bool) -> None:
+        self.ensure_hidden_columns()
+        with self._connect() as conn:
+            conn.execute("UPDATE Subjects SET hidden = ? WHERE id = ?",
+                         (1 if hidden else 0, subject_id))
+            conn.commit()
+
+    def set_partition_hidden(self, partition_id: int, hidden: bool) -> None:
+        self.ensure_hidden_columns()
+        with self._connect() as conn:
+            conn.execute("UPDATE Partitions SET hidden = ? WHERE id = ?",
+                         (1 if hidden else 0, partition_id))
+            conn.commit()
+
     # ---------- Subjects ----------
 
-    def list_subjects(self) -> List[Subject]:
+    def list_subjects(self, include_hidden: bool = False) -> List[Subject]:
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, subject_name, pra_subject FROM Subjects"
-            ).fetchall()
-        return [Subject(r[0], r[1], r[2]) for r in rows]
+            try:
+                rows = conn.execute(
+                    "SELECT id, subject_name, pra_subject, hidden "
+                    "FROM Subjects" +
+                    ("" if include_hidden else " WHERE hidden = 0")
+                ).fetchall()
+                return [Subject(r[0], r[1], r[2], bool(r[3])) for r in rows]
+            except sqlite3.OperationalError:
+                # БД без колонки hidden (старые копии/тестовые схемы).
+                rows = conn.execute(
+                    "SELECT id, subject_name, pra_subject FROM Subjects"
+                ).fetchall()
+                return [Subject(r[0], r[1], r[2]) for r in rows]
 
     def get_subject_by_name(self, name: str) -> Optional[Subject]:
         with self._connect() as conn:
@@ -84,16 +128,48 @@ class Repository:
             ).fetchone()
         return Subject(*row) if row else None
 
+    def delete_subject(self, subject_id: int) -> None:
+        """
+        Необратимо удалить предмет ВМЕСТЕ с его разделами. Каждое удаление
+        уходит в outbox синка tombstone'ом (слушатель). Встроенные предметы
+        пересоздаются сидами при следующем запуске (bootstrap.sync_database)
+        — для них уместнее скрытие; предупреждение — забота UI.
+        """
+        with self._connect() as conn:
+            partition_ids = [r[0] for r in conn.execute(
+                "SELECT id FROM Partitions WHERE subject_id = ?",
+                (subject_id,)).fetchall()]
+            conn.execute("DELETE FROM Partitions WHERE subject_id = ?",
+                         (subject_id,))
+            conn.execute("DELETE FROM Subjects WHERE id = ?", (subject_id,))
+            conn.commit()
+        if self.sync_listener is not None:
+            for pid in partition_ids:
+                self.sync_listener.partition_deleted(pid)
+            self.sync_listener.subject_deleted(subject_id)
+
     # ---------- Partitions ----------
 
-    def list_partitions_for_subject(self, subject_id: int) -> List[Partition]:
+    def list_partitions_for_subject(
+        self, subject_id: int, include_hidden: bool = False,
+    ) -> List[Partition]:
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, subject_id, partition_name, constracted, "
-                "       generation_parametrs "
-                "FROM Partitions WHERE subject_id = ? ORDER BY id",
-                (subject_id,),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT id, subject_id, partition_name, constracted, "
+                    "       generation_parametrs, hidden "
+                    "FROM Partitions WHERE subject_id = ?" +
+                    ("" if include_hidden else " AND hidden = 0") +
+                    " ORDER BY id",
+                    (subject_id,),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = conn.execute(
+                    "SELECT id, subject_id, partition_name, constracted, "
+                    "       generation_parametrs "
+                    "FROM Partitions WHERE subject_id = ? ORDER BY id",
+                    (subject_id,),
+                ).fetchall()
         return [self._row_to_partition(r) for r in rows]
 
     def get_partition(self, partition_id: int) -> Optional[Partition]:
@@ -131,6 +207,8 @@ class Repository:
             name=row[2],
             constracted=row[3],
             generation_params=params,
+            # 6-я колонка (hidden) есть только у выборок с ней.
+            hidden=bool(row[5]) if len(row) > 5 else False,
         )
 
     # ---------- Запись разделов ----------

@@ -56,6 +56,9 @@ class RepositorySyncListener:
     def partition_deleted(self, partition_id: int) -> None:
         self.client.queue_partition_change(partition_id, {}, deleted=True)
 
+    def subject_deleted(self, subject_id: int) -> None:
+        self.client.queue_subject_change(subject_id, {}, deleted=True)
+
 
 @dataclass
 class SyncReport:

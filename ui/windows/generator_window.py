@@ -19,7 +19,7 @@ from typing import Callable, Optional
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
-    QComboBox, QLabel, QMessageBox, QListWidgetItem, QPushButton,
+    QCheckBox, QComboBox, QLabel, QMessageBox, QListWidgetItem, QPushButton,
     QMenu, QToolButton
 )
 
@@ -130,12 +130,36 @@ class GeneratorWindow(QMainWindow):
         left = QVBoxLayout()
 
         left.addWidget(QLabel("Предмет:"))
+        subj_row = QHBoxLayout()
         self.subject_combo = QComboBox(self)
-        left.addWidget(self.subject_combo)
+        subj_row.addWidget(self.subject_combo, stretch=1)
+        # Меню действий над предметом: скрыть/показать/удалить.
+        self.subject_menu_btn = QToolButton(self)
+        self.subject_menu_btn.setText("⋯")
+        self.subject_menu_btn.setToolTip("Действия с предметом")
+        self.subject_menu_btn.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup)
+        subj_menu = QMenu(self.subject_menu_btn)
+        self._subj_hide_action = subj_menu.addAction(
+            "Скрыть предмет", self._on_toggle_subject_hidden)
+        subj_menu.addAction("Удалить предмет…", self._on_delete_subject)
+        self.subject_menu_btn.setMenu(subj_menu)
+        subj_row.addWidget(self.subject_menu_btn)
+        left.addLayout(subj_row)
 
         left.addWidget(QLabel("Разделы:"))
         self.partition_list = QListWidget(self)
+        # Контекстное меню раздела: скрыть/показать/удалить.
+        self.partition_list.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu)
+        self.partition_list.customContextMenuRequested.connect(
+            self._on_partition_context_menu)
         left.addWidget(self.partition_list, stretch=1)
+
+        # Показ скрытых: влияет и на предметы, и на разделы.
+        self.show_hidden_cb = QCheckBox("Показывать скрытые", self)
+        self.show_hidden_cb.toggled.connect(self._on_show_hidden_toggled)
+        left.addWidget(self.show_hidden_cb)
 
         # Панель управления разделами — только если есть registry_builder
         if self.registry_builder is not None:
@@ -256,33 +280,117 @@ class GeneratorWindow(QMainWindow):
 
     # ---------- Загрузка данных ----------
 
+    def _show_hidden(self) -> bool:
+        return self.show_hidden_cb.isChecked()
+
     def _load_subjects(self) -> None:
         try:
-            self.subjects = self.repo.list_subjects()
+            self.subjects = self.repo.list_subjects(
+                include_hidden=self._show_hidden())
         except Exception as e:
             QMessageBox.critical(self, "Ошибка БД",
                                  f"Не удалось загрузить предметы: {e}")
             return
         self.subject_combo.clear()
         for subj in self.subjects:
-            self.subject_combo.addItem(subj.name, subj.id)
+            label = f"{subj.name} · скрыт" if subj.hidden else subj.name
+            self.subject_combo.addItem(label, subj.id)
 
     def _on_subject_changed(self, idx: int) -> None:
         if idx < 0:
             return
         subject_id = self.subject_combo.itemData(idx)
         try:
-            self.partitions = self.repo.list_partitions_for_subject(subject_id)
+            self.partitions = self.repo.list_partitions_for_subject(
+                subject_id, include_hidden=self._show_hidden())
         except Exception as e:
             QMessageBox.critical(self, "Ошибка БД",
                                  f"Не удалось загрузить разделы: {e}")
             return
         self.partition_list.clear()
         for p in self.partitions:
-            item = QListWidgetItem(p.name)
+            item = QListWidgetItem(f"{p.name} · скрыт" if p.hidden else p.name)
             item.setData(Qt.ItemDataRole.UserRole, p.id)
             self.partition_list.addItem(item)
         self._on_selection_changed()
+        # Подпись пункта скрытия — под текущий предмет.
+        subj = self._current_subject()
+        if subj is not None:
+            self._subj_hide_action.setText(
+                "Показать предмет" if subj.hidden else "Скрыть предмет")
+
+    def _current_subject(self) -> Subject | None:
+        sid = self.subject_combo.currentData()
+        for s in self.subjects:
+            if s.id == sid:
+                return s
+        return None
+
+    # ---------- Скрытие/удаление (D3) ----------
+
+    def _on_show_hidden_toggled(self, _checked: bool) -> None:
+        """Перезагрузить оба списка, сохранив выбранный предмет, если можно."""
+        keep = self.subject_combo.currentData()
+        self._load_subjects()
+        if keep is not None:
+            for i in range(self.subject_combo.count()):
+                if self.subject_combo.itemData(i) == keep:
+                    self.subject_combo.setCurrentIndex(i)
+                    break
+
+    def _on_toggle_subject_hidden(self) -> None:
+        subj = self._current_subject()
+        if subj is None:
+            return
+        self.repo.set_subject_hidden(subj.id, not subj.hidden)
+        self._on_show_hidden_toggled(self._show_hidden())
+
+    def _on_delete_subject(self) -> None:
+        subj = self._current_subject()
+        if subj is None:
+            return
+        n = len(self.repo.list_partitions_for_subject(subj.id,
+                                                      include_hidden=True))
+        ok = QMessageBox.question(
+            self, "Удаление предмета",
+            f"Необратимо удалить предмет «{subj.name}» и все его разделы "
+            f"({n} шт.)?\n\nВстроенные предметы будут восстановлены при "
+            f"следующем запуске приложения — для них уместнее «Скрыть».",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ok != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.repo.delete_subject(subj.id)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка БД", str(e))
+            return
+        self._rebuild_registry()
+        self._load_subjects()
+        clear_layout(self.view_layout)
+        self._refresh_sync_badge()   # удаления ушли в outbox
+
+    def _on_partition_context_menu(self, pos) -> None:
+        item = self.partition_list.itemAt(pos)
+        if item is None:
+            return
+        self.partition_list.setCurrentItem(item)
+        pid = item.data(Qt.ItemDataRole.UserRole)
+        partition = next((p for p in self.partitions if p.id == pid), None)
+        if partition is None:
+            return
+        menu = QMenu(self.partition_list)
+        menu.addAction(
+            "Показать раздел" if partition.hidden else "Скрыть раздел",
+            lambda: self._toggle_partition_hidden(partition))
+        if self.registry_builder is not None:
+            menu.addSeparator()
+            menu.addAction("Удалить раздел…", self._on_delete_clicked)
+        menu.exec(self.partition_list.mapToGlobal(pos))
+
+    def _toggle_partition_hidden(self, partition: Partition) -> None:
+        self.repo.set_partition_hidden(partition.id, not partition.hidden)
+        self._refresh_current_subject()
 
     def _refresh_current_subject(self, select_partition_id: int | None = None) -> None:
         """Перечитать разделы и при необходимости выделить указанный."""
