@@ -7,7 +7,9 @@ Repository — слой доступа к БД.
 """
 
 from __future__ import annotations
+import hashlib
 import json
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -333,26 +335,128 @@ class Repository:
                 )
                 conn.commit()
 
+    # -- Пароли: PBKDF2 + прозрачная миграция унаследованных plain-text --
+    #
+    # Формат хранения: "pbkdf2$<итерации>$<соль hex>$<хэш hex>" — сам себя
+    # описывает и не пересекается с plain-text (в паролях '$'-префикс
+    # 'pbkdf2$' практически исключён). Унаследованные строки сравниваются
+    # как есть и ПРИ ПЕРВОМ УСПЕШНОМ ВХОДЕ переписываются хэшем.
+
+    _PBKDF2_ITERATIONS = 200_000
+
+    @classmethod
+    def _hash_password(cls, password: str, *, salt: Optional[bytes] = None,
+                       iterations: Optional[int] = None) -> str:
+        salt = salt if salt is not None else secrets.token_bytes(16)
+        iters = iterations or cls._PBKDF2_ITERATIONS
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iters)
+        return f"pbkdf2${iters}${salt.hex()}${digest.hex()}"
+
+    @staticmethod
+    def _is_hashed(stored: str) -> bool:
+        return isinstance(stored, str) and stored.startswith("pbkdf2$")
+
+    @classmethod
+    def _verify_password(cls, password: str, stored: str) -> bool:
+        """Проверить пароль против хранимого значения (хэш ИЛИ legacy plain)."""
+        if not cls._is_hashed(stored):
+            # compare_digest по байтам: str-вариант не принимает не-ASCII
+            # (кириллические пароли — обычное дело).
+            return secrets.compare_digest(
+                str(stored).encode("utf-8"), password.encode("utf-8"))
+        try:
+            _, iters, salt_hex, hash_hex = stored.split("$", 3)
+            digest = hashlib.pbkdf2_hmac(
+                "sha256", password.encode("utf-8"),
+                bytes.fromhex(salt_hex), int(iters))
+            return secrets.compare_digest(digest.hex(), hash_hex)
+        except (ValueError, TypeError):
+            return False
+
     def find_user(self, login: str, password: str) -> Optional[tuple]:
         """
-        Вернуть (login, FIO, group, role) или None. Если колонки role ещё нет
-        (ensure_user_role_column не отработал — например, вне обычного старта),
-        мягко откатываемся к трём полям и роли 'teacher' по умолчанию.
+        Вернуть (login, FIO, group, role) или None. Пароль проверяется в
+        Python (_verify_password): и PBKDF2-хэш, и унаследованный plain-text;
+        успешный вход со старым plain прозрачно мигрирует запись на хэш.
+        Если колонки role ещё нет (ensure_user_role_column не отработал —
+        например, вне обычного старта) — роль 'teacher' по умолчанию.
         """
         with self._connect() as conn:
             try:
-                return conn.execute(
-                    "SELECT login, FIO, \"group\", role FROM users "
-                    "WHERE login = ? AND password = ?",
-                    (login, password),
+                row = conn.execute(
+                    "SELECT login, FIO, \"group\", role, password FROM users "
+                    "WHERE login = ?", (login,),
                 ).fetchone()
             except sqlite3.OperationalError:
-                row = conn.execute(
-                    "SELECT login, FIO, \"group\" FROM users "
-                    "WHERE login = ? AND password = ?",
-                    (login, password),
+                base = conn.execute(
+                    "SELECT login, FIO, \"group\", password FROM users "
+                    "WHERE login = ?", (login,),
                 ).fetchone()
-                return (row + ("teacher",)) if row is not None else None
+                row = None if base is None else (
+                    base[0], base[1], base[2], "teacher", base[3])
+            if row is None or not self._verify_password(password, row[4]):
+                return None
+            if not self._is_hashed(row[4]):
+                # Прозрачная миграция plain → PBKDF2 при первом входе.
+                conn.execute(
+                    "UPDATE users SET password = ? WHERE login = ?",
+                    (self._hash_password(password), login),
+                )
+                conn.commit()
+            return row[:4]
+
+    def set_password(self, login: str, old_password: str,
+                     new_password: str) -> bool:
+        """
+        Сменить пароль: старый обязан пройти проверку (хэш или legacy plain).
+        Новый всегда пишется PBKDF2-хэшем. Возвращает успех.
+        """
+        if not new_password:
+            return False
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT password FROM users WHERE login = ?", (login,),
+            ).fetchone()
+            if row is None or not self._verify_password(old_password, row[0]):
+                return False
+            conn.execute(
+                "UPDATE users SET password = ? WHERE login = ?",
+                (self._hash_password(new_password), login),
+            )
+            conn.commit()
+        return True
+
+    def create_user(self, login: str, password: str, *, fio: str = "",
+                    group: str = "", role: str = "teacher") -> bool:
+        """
+        Создать пользователя (экран регистрации, волна E2). Пароль сразу
+        хэшируется. False — логин занят или пустые логин/пароль.
+        """
+        if not login.strip() or not password:
+            return False
+        with self._connect() as conn:
+            taken = conn.execute(
+                "SELECT 1 FROM users WHERE login = ?", (login,),
+            ).fetchone()
+            if taken:
+                return False
+            try:
+                conn.execute(
+                    "INSERT INTO users (login, password, FIO, \"group\", role) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (login.strip(), self._hash_password(password),
+                     fio, group, role),
+                )
+            except sqlite3.OperationalError:
+                # БД без колонки role (ensure не отработал) — без роли.
+                conn.execute(
+                    "INSERT INTO users (login, password, FIO, \"group\") "
+                    "VALUES (?, ?, ?, ?)",
+                    (login.strip(), self._hash_password(password), fio, group),
+                )
+            conn.commit()
+        return True
 
     # ---------- WordStats (межсессионная статистика по словам) ----------
 
