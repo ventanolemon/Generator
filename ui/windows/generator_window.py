@@ -105,6 +105,11 @@ class GeneratorWindow(QMainWindow):
                 "в рамках запуска — для гостей).",
                 self._open_stats_window,
             )
+        self.top_bar.add_action(
+            "Настройки",
+            "Технические настройки среды: адрес сервера, оформление, аккаунт.",
+            self._open_settings,
+        )
 
         # ---- Контент (под панелью) ----
         content = QWidget(central)
@@ -178,6 +183,12 @@ class GeneratorWindow(QMainWindow):
         # пересматриваем видимость ролевых кнопок панели (кнопка контура и т.п.).
         super().showEvent(event)
         self.top_bar.refresh_roles()
+
+    # ---------- Настройки ----------
+
+    def _open_settings(self) -> None:
+        from ui.windows.settings_window import SettingsWindow
+        SettingsWindow(self.ctx, self).exec()
 
     # ---------- Окно статистики ----------
 

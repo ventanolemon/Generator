@@ -48,8 +48,13 @@ _VIEW_KIND_BY_CONSTRACTED = {
 class Repository:
     """Доступ к таблицам Subjects, Partitions, users."""
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, *, sync_listener=None):
         self.db_path = Path(db_path)
+        # Необязательный слушатель мутаций (утиный интерфейс: partition_changed/
+        # partition_deleted) — превращает пользовательские правки разделов в
+        # записи outbox синхронизации. None у тестов/офлайн-сборок. Ставится в
+        # main.py ПОСЛЕ стартовых сидов, чтобы они не сыпались в очередь.
+        self.sync_listener = sync_listener
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -238,6 +243,7 @@ class Repository:
         else:
             raw = str(generation_params)
 
+        created = False
         with self._connect() as conn:
             cur = conn.execute(
                 "SELECT id FROM Partitions WHERE subject_id = ? AND partition_name = ?",
@@ -267,7 +273,10 @@ class Repository:
                     (subject_id, name, constracted, raw),
                 )
                 pid = cur.lastrowid
+                created = True
             conn.commit()
+        self._notify_partition_changed(pid, subject_id, name, constracted, raw,
+                                       created=created)
         return pid
 
     def delete_partition(self, partition_id: int) -> None:
@@ -276,6 +285,18 @@ class Repository:
                 "DELETE FROM Partitions WHERE id = ?", (partition_id,)
             )
             conn.commit()
+        if self.sync_listener is not None:
+            self.sync_listener.partition_deleted(partition_id)
+
+    def _notify_partition_changed(self, pid, subject_id, name, constracted, raw,
+                                  *, created: bool) -> None:
+        """Отдать правку раздела слушателю синхронизации (если подключён)."""
+        if self.sync_listener is None:
+            return
+        self.sync_listener.partition_changed(pid, {
+            "subject_id": subject_id, "partition_name": name,
+            "constracted": constracted, "generation_parametrs": raw,
+        }, created=created)
 
     # ---------- Карта constracted → kind редактора ----------
 

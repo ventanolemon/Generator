@@ -260,3 +260,27 @@ class SyncStore:
             }
             for r in rows
         ]
+
+    def get_conflict(self, conflict_id: int) -> Optional[dict]:
+        """Один конфликт по id (для диалога разрешения). None — если нет."""
+        with self._connect() as conn:
+            r = conn.execute(
+                "SELECT id, entity_kind, entity_id, mine, theirs, "
+                "       created_at, resolved_at "
+                "FROM sync_conflicts WHERE id = ?", (conflict_id,)
+            ).fetchone()
+        if r is None:
+            return None
+        return {
+            "id": r[0], "entity_kind": r[1], "entity_id": r[2],
+            "mine": json.loads(r[3]), "theirs": json.loads(r[4]),
+            "created_at": r[5], "resolved_at": r[6],
+        }
+
+    def mark_conflict_resolved(self, conflict_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE sync_conflicts SET resolved_at = ? WHERE id = ?",
+                (time.time(), conflict_id),
+            )
+            conn.commit()
