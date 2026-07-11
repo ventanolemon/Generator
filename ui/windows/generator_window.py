@@ -20,7 +20,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
     QCheckBox, QComboBox, QLabel, QMessageBox, QListWidgetItem, QPushButton,
-    QMenu, QToolButton
+    QMenu, QSizePolicy, QToolButton
 )
 
 from core import (
@@ -134,12 +134,24 @@ class GeneratorWindow(QMainWindow):
         # ---- Контент (под панелью) ----
         content = QWidget(central)
         root = QHBoxLayout(content)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
         outer.addWidget(content, stretch=1)
 
-        # ---- Левая панель ----
-        left = QVBoxLayout()
+        # ---- Боковая панель (навигация по предметам и разделам) ----
+        left_widget = QWidget(self)
+        left_widget.setProperty("class", "sidebar")
+        left = QVBoxLayout(left_widget)
+        left.setContentsMargins(14, 14, 14, 14)
+        left.setSpacing(8)
 
-        left.addWidget(QLabel("Предмет:"))
+        brand = QLabel("Генератор", left_widget)
+        brand.setProperty("class", "brand")
+        left.addWidget(brand)
+
+        subj_cap = QLabel("Предмет", left_widget)
+        subj_cap.setProperty("class", "subtitle")
+        left.addWidget(subj_cap)
         subj_row = QHBoxLayout()
         self.subject_combo = QComboBox(self)
         subj_row.addWidget(self.subject_combo, stretch=1)
@@ -157,14 +169,26 @@ class GeneratorWindow(QMainWindow):
         subj_row.addWidget(self.subject_menu_btn)
         left.addLayout(subj_row)
 
-        left.addWidget(QLabel("Разделы:"))
+        left.addSpacing(4)
+        part_cap = QLabel("Разделы", left_widget)
+        part_cap.setProperty("class", "subtitle")
+        left.addWidget(part_cap)
+
         self.partition_list = QListWidget(self)
+        self.partition_list.setSpacing(2)
         # Контекстное меню раздела: скрыть/показать/удалить.
         self.partition_list.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu)
         self.partition_list.customContextMenuRequested.connect(
             self._on_partition_context_menu)
         left.addWidget(self.partition_list, stretch=1)
+
+        # Пустое состояние списка разделов (показывается вместо пустого списка).
+        self.partitions_empty = QLabel("", left_widget)
+        self.partitions_empty.setProperty("class", "muted")
+        self.partitions_empty.setWordWrap(True)
+        self.partitions_empty.hide()
+        left.addWidget(self.partitions_empty)
 
         # Показ скрытых: влияет и на предметы, и на разделы.
         self.show_hidden_cb = QCheckBox("Показывать скрытые", self)
@@ -175,15 +199,18 @@ class GeneratorWindow(QMainWindow):
         if self.registry_builder is not None:
             self._build_partition_controls(left)
 
-        left_widget = QWidget(self)
-        left_widget.setLayout(left)
-        left_widget.setMaximumWidth(300)
+        left_widget.setFixedWidth(300)
         root.addWidget(left_widget)
 
-        # ---- Правая панель ----
+        # ---- Правая панель (область задания) ----
         self.view_holder = QWidget(self)
         self.view_layout = QVBoxLayout(self.view_holder)
+        self.view_layout.setContentsMargins(18, 18, 18, 18)
         root.addWidget(self.view_holder, stretch=1)
+
+        # Приветствие/пустое состояние области задания.
+        self._show_content_placeholder(
+            "Выберите раздел слева, чтобы сгенерировать задание.")
 
         # Сигналы
         self.subject_combo.currentIndexChanged.connect(self._on_subject_changed)
@@ -195,11 +222,15 @@ class GeneratorWindow(QMainWindow):
         Кнопки «Создать», «Изменить», «Удалить» под списком разделов.
         Кнопка «Создать» открывает меню с тремя типами: группа / тест / задача физики.
         """
-        controls = QHBoxLayout()
-
+        # Первичное действие — «+ Создать» на всю ширину сайдбара.
         self.create_btn = QToolButton(self)
-        self.create_btn.setText("+ Создать")
+        self.create_btn.setText("+ Создать раздел")
+        self.create_btn.setProperty("class", "primary")
+        self.create_btn.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                      QSizePolicy.Policy.Fixed)
         self.create_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.create_btn.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextOnly)
         create_menu = QMenu(self.create_btn)
         create_menu.addAction("Группу", lambda: self._open_editor_new("group"))
         create_menu.addAction("Тест",   lambda: self._open_editor_new("test"))
@@ -208,8 +239,10 @@ class GeneratorWindow(QMainWindow):
         create_menu.addAction("Граф (визуальный конструктор)",
                               lambda: self._open_editor_new("graph"))
         self.create_btn.setMenu(create_menu)
-        controls.addWidget(self.create_btn)
+        parent_layout.addWidget(self.create_btn)
 
+        # Вторичные действия — правка/удаление выбранного, отдельным рядом.
+        controls = QHBoxLayout()
         self.edit_btn = QPushButton("Изменить", self)
         self.edit_btn.setEnabled(False)
         self.edit_btn.clicked.connect(self._on_edit_clicked)
@@ -219,8 +252,27 @@ class GeneratorWindow(QMainWindow):
         self.delete_btn.setEnabled(False)
         self.delete_btn.clicked.connect(self._on_delete_clicked)
         controls.addWidget(self.delete_btn)
-
         parent_layout.addLayout(controls)
+
+    # Ярлык типа раздела по constracted — для метки в списке.
+    _TYPE_LABEL = {0: "Одиночный", 1: "Физика", 2: "Группа",
+                   3: "Тест", 4: "Граф"}
+
+    def _partition_label(self, p: Partition) -> str:
+        """Строка раздела в списке: [Тип] Имя (· скрыт)."""
+        kind = self._TYPE_LABEL.get(p.constracted)
+        prefix = f"[{kind}] " if kind else ""
+        suffix = "   · скрыт" if p.hidden else ""
+        return f"{prefix}{p.name}{suffix}"
+
+    def _show_content_placeholder(self, text: str) -> None:
+        """Показать в правой области центрированную подсказку (пустое состояние)."""
+        clear_layout(self.view_layout)
+        placeholder = QLabel(text, self.view_holder)
+        placeholder.setProperty("class", "empty")
+        placeholder.setWordWrap(True)
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.view_layout.addWidget(placeholder)
 
     def showEvent(self, event) -> None:
         # Окно показывается после авторизации — роль сессии уже известна,
@@ -345,9 +397,18 @@ class GeneratorWindow(QMainWindow):
             return
         self.partition_list.clear()
         for p in self.partitions:
-            item = QListWidgetItem(f"{p.name} · скрыт" if p.hidden else p.name)
+            item = QListWidgetItem(self._partition_label(p))
             item.setData(Qt.ItemDataRole.UserRole, p.id)
             self.partition_list.addItem(item)
+        # Пустое состояние списка разделов.
+        empty = not self.partitions
+        self.partition_list.setVisible(not empty)
+        self.partitions_empty.setVisible(empty)
+        if empty:
+            self.partitions_empty.setText(
+                "У этого предмета пока нет разделов." +
+                ("\nСоздайте первый кнопкой «+ Создать»."
+                 if self.registry_builder is not None else ""))
         self._on_selection_changed()
         # Подпись пункта скрытия — под текущий предмет.
         subj = self._current_subject()
@@ -403,7 +464,8 @@ class GeneratorWindow(QMainWindow):
             return
         self._rebuild_registry()
         self._load_subjects()
-        clear_layout(self.view_layout)
+        self._show_content_placeholder(
+            "Выберите раздел слева, чтобы сгенерировать задание.")
         self._refresh_sync_badge()   # удаления ушли в outbox
 
     def _on_partition_context_menu(self, pos) -> None:
@@ -541,7 +603,8 @@ class GeneratorWindow(QMainWindow):
             return
         self._rebuild_registry()
         self._refresh_current_subject()
-        clear_layout(self.view_layout)
+        self._show_content_placeholder(
+            "Выберите раздел слева, чтобы сгенерировать задание.")
         self._refresh_sync_badge()   # удаление ушло в outbox
 
     def _open_editor(self, kind: str, subject_id: int,

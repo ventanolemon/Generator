@@ -115,9 +115,33 @@ def main() -> int:
         generator_window.setWindowTitle(title)
         generator_window.show()
 
-    auth = AuthWindow(repository=repo, on_success=on_auth)
-    auth.show()
+    # Держим ссылки на окна входа/регистрации, чтобы Qt их не удалил, пока
+    # пользователь навигирует между ними.
+    windows: dict[str, object] = {}
 
+    def show_auth() -> None:
+        from ui.windows import AuthWindow as _Auth
+        auth = _Auth(repository=repo, on_success=on_auth,
+                     on_register=show_register)
+        apply_theme(app, settings.get_theme())  # на случай смены темы в сессии
+        windows["auth"] = auth
+        auth.show()
+
+    def show_register() -> None:
+        from ui.windows import RegisterWindow as _Reg
+
+        def on_registered(login: str) -> None:
+            # Автологин сразу после регистрации: аккаунт только что создан
+            # (create_user, роль teacher) — входим по известному логину/роли,
+            # повторная проверка пароля не нужна.
+            on_auth((login, "", "", "teacher"))
+
+        reg = _Reg(repository=repo, on_success=on_registered,
+                   on_back=show_auth)
+        windows["register"] = reg
+        reg.show()
+
+    show_auth()
     return app.exec()
 
 

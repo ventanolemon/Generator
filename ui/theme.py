@@ -400,6 +400,88 @@ QWidget[class="accent"] {{
     font-weight: 600;
     background: transparent;
 }}
+
+/* ============ структурные классы (волна E) ============ */
+/* Базовые значения от Opus; тонкую визуальную настройку ведёт Fable. */
+
+/* Боковая панель главного окна */
+QWidget[class="sidebar"] {{
+    background-color: {p.surface};
+    border-right: 1px solid {p.border};
+}}
+
+/* Бренд-надпись (крупнее title, «лицо» приложения) */
+QWidget[class="brand"] {{
+    font-size: 18pt;
+    font-weight: bold;
+    color: {p.text};
+    background: transparent;
+}}
+
+/* Первичная (акцентная) кнопка — главное действие экрана */
+QPushButton[class="primary"] {{
+    background-color: {p.accent};
+    color: #FFFFFF;
+    border: 1px solid {p.accent};
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-weight: 600;
+}}
+QPushButton[class="primary"]:hover {{
+    border-color: {p.text};
+}}
+QPushButton[class="primary"]:pressed {{
+    background-color: {accent_soft};
+}}
+QPushButton[class="primary"]:disabled {{
+    background-color: {p.surface_alt};
+    color: {p.text_muted};
+    border-color: {p.border};
+}}
+QToolButton[class="primary"] {{
+    background-color: {p.accent};
+    color: #FFFFFF;
+    border: 1px solid {p.accent};
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-weight: 600;
+}}
+QToolButton[class="primary"]:hover {{
+    border-color: {p.text};
+}}
+QToolButton[class="primary"]::menu-indicator {{
+    image: none;
+    width: 0;
+}}
+
+/* Кнопка-ссылка (плоская, акцентный текст) — второстепенная навигация */
+QPushButton[class="link"] {{
+    background: transparent;
+    border: none;
+    color: {p.accent};
+    padding: 2px 4px;
+    text-decoration: underline;
+}}
+QPushButton[class="link"]:hover {{
+    color: {p.text};
+}}
+
+/* Чип-метка (тип раздела и т.п.) — компактнее бейджа, информативный */
+QWidget[class="chip"] {{
+    background-color: {p.surface_alt};
+    color: {p.text_muted};
+    border: 1px solid {p.border};
+    border-radius: 8px;
+    padding: 1px 8px;
+    font-size: 8pt;
+}}
+
+/* Крупный центрированный placeholder пустого состояния */
+QWidget[class="empty"] {{
+    color: {p.text_muted};
+    font-size: 11pt;
+    background: transparent;
+}}
 """
 
 

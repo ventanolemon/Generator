@@ -12,25 +12,27 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton,
     QLabel, QMessageBox
 )
-from PyQt6.QtGui import QIcon
 
 from core import Repository
 
 
 class AuthWindow(QWidget):
-    """Окно входа. on_success вызывается с tuple (login, fio, group) или None для гостя."""
+    """Окно входа. on_success вызывается с tuple (login, fio, group, role) или
+    None для гостя. on_register (опционально) открывает экран регистрации."""
 
     def __init__(
         self,
         repository: Repository,
         on_success: Callable[[Optional[tuple]], None],
+        on_register: Optional[Callable[[], None]] = None,
     ):
         super().__init__()
         self.repo = repository
         self.on_success = on_success
+        self.on_register = on_register
 
         self.setWindowTitle("Вход")
-        self.resize(360, 240)
+        self.resize(360, 260)
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -51,10 +53,22 @@ class AuthWindow(QWidget):
 
         btns = QHBoxLayout()
         login_btn = QPushButton("Войти", self)
+        login_btn.setProperty("class", "primary")
         guest_btn = QPushButton("Гостевой вход", self)
         btns.addWidget(login_btn)
         btns.addWidget(guest_btn)
         root.addLayout(btns)
+
+        # Ссылка на регистрацию — только если вызывающий дал обработчик.
+        if self.on_register is not None:
+            reg_row = QHBoxLayout()
+            reg_row.addWidget(QLabel("Нет аккаунта?", self))
+            self.register_btn = QPushButton("Регистрация", self)
+            self.register_btn.setProperty("class", "link")
+            self.register_btn.clicked.connect(self._on_register)
+            reg_row.addWidget(self.register_btn)
+            reg_row.addStretch(1)
+            root.addLayout(reg_row)
 
         login_btn.clicked.connect(self._on_login)
         guest_btn.clicked.connect(self._on_guest)
@@ -79,4 +93,9 @@ class AuthWindow(QWidget):
 
     def _on_guest(self) -> None:
         self.on_success(None)
+        self.close()
+
+    def _on_register(self) -> None:
+        if self.on_register is not None:
+            self.on_register()
         self.close()
