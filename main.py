@@ -20,6 +20,7 @@ from core import Repository, WordStatsStore
 from core.settings import Settings
 from bootstrap import build_registry, sync_database
 from ui.app_context import AppContext
+from ui.theme import apply_theme
 from ui.windows import AuthWindow, GeneratorWindow
 
 
@@ -38,6 +39,10 @@ def main() -> int:
     # Технические настройки среды (адрес backend, тема). Пробрасываются в окна
     # через AppContext.
     settings = Settings()
+
+    # Тема оформления — единый QSS на всё приложение из выбранной палитры
+    # (по умолчанию тёмная). Применяем до построения окон.
+    apply_theme(app, settings.get_theme())
 
     # Мутабельный контейнер с текущей сессией. Передаётся в реестр и AppContext
     # замыканиями: один и тот же набор генераторов и одни и те же окна
