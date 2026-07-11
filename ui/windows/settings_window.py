@@ -145,10 +145,10 @@ class SettingsWindow(QDialog):
     def _on_save(self) -> None:
         url = self.base_url_edit.text().strip()
         self.settings.set_base_url(url)
-        # Клиент синхронизации подхватывает новый адрес без перезапуска.
-        client = self.ctx.sync_client
-        if client is not None and hasattr(client, "set_base_url"):
-            client.set_base_url(url)
+        # Клиенты (синк и контур) подхватывают новый адрес без перезапуска.
+        for client in (self.ctx.sync_client, self.ctx.contour_client):
+            if client is not None and hasattr(client, "set_base_url"):
+                client.set_base_url(url)
         name = self.theme_combo.currentData()
         if name:
             self.settings.set_theme(name)

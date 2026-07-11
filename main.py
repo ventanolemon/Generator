@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import QApplication
 
 from const import DB_PATH, WORDS_DIR
 from core import Repository, WordStatsStore
+from core.contour import ContourClient
 from core.settings import Settings
 from core.sync import RepositorySyncListener, SyncClient, SyncStore
 from bootstrap import build_registry, sync_database
@@ -67,6 +68,12 @@ def main() -> int:
     def user_role_provider() -> str:
         return current_user["role"] or "student"
 
+    # Клиент LLM-контура: тот же web_layer, что и синк; идентичность — из
+    # сессии. Кнопка контура гейтится ролью teacher/admin.
+    contour_client = ContourClient(base_url=settings.get_base_url(),
+                                   user_id_provider=user_id_provider,
+                                   user_role_provider=user_role_provider)
+
     def make_registry():
         return build_registry(
             repo, WORDS_DIR,
@@ -80,6 +87,7 @@ def main() -> int:
         user_id_provider=user_id_provider,
         user_role_provider=user_role_provider,
         sync_client=sync_client,
+        contour_client=contour_client,
     )
 
     registry = make_registry()
