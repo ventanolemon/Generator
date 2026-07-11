@@ -77,6 +77,7 @@ class GeneratorWindow(QMainWindow):
         self.partitions: list[Partition] = []
         self._editor_window: PartitionEditor | None = None
         self._stats_window: StatsWindow | None = None
+        self._sync_window = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -110,6 +111,15 @@ class GeneratorWindow(QMainWindow):
             "Технические настройки среды: адрес сервера, оформление, аккаунт.",
             self._open_settings,
         )
+        if self.ctx.sync_client is not None:
+            self.top_bar.add_action(
+                "Синхронизация",
+                "Отправить локальные изменения на сервер и получить чужие; "
+                "разрешить конфликты.",
+                self._open_sync_window,
+            )
+            # Бейдж состояния синка (несинхронизированные правки / конфликты).
+            self.top_bar.add_badge("sync")
 
         # ---- Контент (под панелью) ----
         content = QWidget(central)
@@ -183,12 +193,38 @@ class GeneratorWindow(QMainWindow):
         # пересматриваем видимость ролевых кнопок панели (кнопка контура и т.п.).
         super().showEvent(event)
         self.top_bar.refresh_roles()
+        self._refresh_sync_badge()
 
     # ---------- Настройки ----------
 
     def _open_settings(self) -> None:
         from ui.windows.settings_window import SettingsWindow
         SettingsWindow(self.ctx, self).exec()
+
+    # ---------- Синхронизация ----------
+
+    def _open_sync_window(self) -> None:
+        from ui.windows.sync_window import SyncWindow
+        if self._sync_window is None:
+            self._sync_window = SyncWindow(self.ctx, self)
+            self._sync_window.destroyed.connect(self._on_sync_window_destroyed)
+        else:
+            self._sync_window.refresh()
+        self._sync_window.show()
+        self._sync_window.raise_()
+        self._sync_window.activateWindow()
+
+    def _on_sync_window_destroyed(self, *_args) -> None:
+        self._sync_window = None
+        self._refresh_sync_badge()
+
+    def _refresh_sync_badge(self) -> None:
+        """Обновить статус-бейдж синка в панели (очередь/конфликты)."""
+        if self.ctx.sync_client is None:
+            return
+        from ui.windows.sync_window import pending_badge_text
+        text, level = pending_badge_text(self.ctx.sync_client)
+        self.top_bar.set_badge("sync", text, level)
 
     # ---------- Окно статистики ----------
 
@@ -362,6 +398,7 @@ class GeneratorWindow(QMainWindow):
         self._rebuild_registry()
         self._refresh_current_subject()
         clear_layout(self.view_layout)
+        self._refresh_sync_badge()   # удаление ушло в outbox
 
     def _open_editor(self, kind: str, subject_id: int,
                      partition_id: int | None) -> None:
@@ -386,6 +423,7 @@ class GeneratorWindow(QMainWindow):
     def _on_editor_saved(self, partition_id: int) -> None:
         self._rebuild_registry()
         self._refresh_current_subject(select_partition_id=partition_id)
+        self._refresh_sync_badge()   # правка ушла в outbox
         if self._editor_window is not None:
             self._editor_window.close()
             self._editor_window = None
