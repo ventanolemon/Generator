@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import QApplication
 from const import DB_PATH, WORDS_DIR
 from core import Repository, WordStatsStore
 from core.contour import ContourClient
+from core.session import Session
 from core.settings import Settings
 from core.sync import RepositorySyncListener, SyncClient, SyncStore
 from bootstrap import build_registry, sync_database
@@ -55,18 +56,19 @@ def main() -> int:
                              base_url=settings.get_base_url())
     repo.sync_listener = RepositorySyncListener(sync_client)
 
-    # Мутабельный контейнер с текущей сессией. Передаётся в реестр и AppContext
-    # замыканиями: один и тот же набор генераторов и одни и те же окна
-    # корректно работают с разными пользователями без пересоздания при
-    # перелогине. role по умолчанию 'student' (гость) — ролевые действия
-    # (например, кнопка контура) скрыты, пока не войдёт teacher/admin.
-    current_user: dict[str, str | None] = {"id": None, "role": "student"}
+    # Единая идентичность сессии (core.session.Session): один явный источник
+    # правды для провайдеров AppContext, клиентов синка/контура, атрибуции
+    # попыток и WordStats. Канонический id = login (см. core/session.py).
+    # Переживает перелогин без пересоздания реестра/окон. По умолчанию —
+    # гость (роль 'student'): ролевые действия (кнопка контура) скрыты, пока
+    # не войдёт teacher/admin.
+    session = Session()
 
     def user_id_provider() -> str | None:
-        return current_user["id"]
+        return session.user_id
 
     def user_role_provider() -> str:
-        return current_user["role"] or "student"
+        return session.role
 
     # Клиент LLM-контура: тот же web_layer, что и синк; идентичность — из
     # сессии. Кнопка контура гейтится ролью teacher/admin.
@@ -102,20 +104,18 @@ def main() -> int:
     def on_auth(user_info):
         title = "Генератор заданий"
         if user_info is not None:
-            current_user["id"] = user_info[0]
             # find_user → (login, FIO, group, role); роль гейтит UI-действия.
-            current_user["role"] = (user_info[3] if len(user_info) > 3
-                                    else "teacher") or "teacher"
-            # Идентичность клиента синка — из сессии (заголовки X-User-*).
-            # Раньше выставлялась только role — push уходил без X-User-Id
-            # (SyncClient._http_transport шлёт заголовок, только если
-            # user_id не None), т.е. правки/попытки были неатрибутируемы.
-            sync_client.user_id = current_user["id"]
-            sync_client.user_role = current_user["role"]
-            title = f"Генератор заданий — {user_info[0]}"
+            role = user_info[3] if len(user_info) > 3 else None
+            session.set_user(user_info[0], role)
+            title = f"Генератор заданий — {session.login}"
         else:
-            current_user["id"] = None
-            current_user["role"] = "student"      # гость
+            session.set_guest()
+        # Идентичность клиента синка — из сессии (заголовки X-User-*). Без
+        # user_id push уходил бы без X-User-Id (SyncClient._http_transport
+        # шлёт заголовок, только если user_id не None) — правки/попытки были
+        # бы неатрибутируемы.
+        sync_client.user_id = session.user_id
+        sync_client.user_role = session.role
         generator_window.setWindowTitle(title)
         generator_window.show()
 
