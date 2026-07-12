@@ -3,48 +3,40 @@ InteractiveTaskView — представление для интерактивн
 
 Цикл: показать prompt → дождаться ввода → submit → показать feedback и next_prompt.
 Подходит для тренажёров (например, английских слов).
+
+Хром (заголовок + строка статуса) — из BaseTaskView (контракт K4);
+центральная зона своя: история ходов + текущий промпт + поле ввода.
 """
 
 from __future__ import annotations
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
     QScrollArea, QLabel, QCheckBox
 )
 
-from core import Capability, InteractiveTask, TaskGenerator
+from core import Capability, InteractiveTask
 from ui.utils import render_blocks, clear_layout
+from .base_view import BaseTaskView
 
 
-class InteractiveTaskView(QWidget):
+class InteractiveTaskView(BaseTaskView):
     """Сессия 'спроси-ответь' с историей ходов."""
 
-    def __init__(self, generator: TaskGenerator, parent: QWidget | None = None):
-        super().__init__(parent)
-        if Capability.INTERACTIVE not in generator.capabilities:
-            raise ValueError(
-                f"InteractiveTaskView требует INTERACTIVE, "
-                f"у {generator.name!r} его нет."
-            )
-        self.generator = generator
+    REQUIRED_CAPABILITY = Capability.INTERACTIVE
+
+    def _init_state(self) -> None:
         self.task: InteractiveTask | None = None
         self.score_correct = 0
         self.score_total = 0
-        self._build_ui()
+
+    def _post_init(self) -> None:
         self._start_session()
 
-    def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
-
-        title = QLabel(self.generator.name, self)
-        title.setStyleSheet("font-size: 14pt; font-weight: bold;")
-        root.addWidget(title)
-
+    def build_controls(self, row: QHBoxLayout) -> None:
         # Строка со счётом и (если поддерживается) переключателем мягкой проверки
-        status_row = QHBoxLayout()
         self.score_label = QLabel("", self)
-        status_row.addWidget(self.score_label)
-        status_row.addStretch()
+        row.addWidget(self.score_label)
+        row.addStretch()
 
         self.tolerant_chk: QCheckBox | None = None
         if hasattr(self.generator, "tolerant"):
@@ -56,9 +48,9 @@ class InteractiveTaskView(QWidget):
             )
             self.tolerant_chk.setChecked(bool(self.generator.tolerant))
             self.tolerant_chk.toggled.connect(self._on_tolerant_toggled)
-            status_row.addWidget(self.tolerant_chk)
-        root.addLayout(status_row)
+            row.addWidget(self.tolerant_chk)
 
+    def build_center(self, root: QVBoxLayout) -> None:
         # История ходов
         self.history_scroll = QScrollArea(self)
         self.history_scroll.setWidgetResizable(True)
@@ -67,13 +59,15 @@ class InteractiveTaskView(QWidget):
         self.history_scroll.setWidget(self.history_holder)
         root.addWidget(self.history_scroll, stretch=1)
 
-        # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-        # Подключаем автоматическую прокрутку вниз при любом изменении высоты контента
-        v_scrollbar = self.history_scroll.verticalScrollBar()
-        v_scrollbar.rangeChanged.connect(
-            lambda min_val, max_val: v_scrollbar.setValue(max_val)
-        )
-        # -------------------------
+        # Автоматическая прокрутка вниз при любом изменении высоты контента.
+        # Слот — связанный метод на self, а не лямбда, замыкающая локальную
+        # переменную v_scrollbar: замыкание держало бы отдельную сильную
+        # ссылку на обёртку QScrollBar, которая могла пережить порядок
+        # разрушения C++-объектов при деструктуризации виджета/выходе из
+        # процесса — обращение к ней тогда падает (сегфолт, не RuntimeError).
+        # Связанный метод сам запрашивает scrollbar заново при каждом вызове.
+        self.history_scroll.verticalScrollBar().rangeChanged.connect(
+            self._autoscroll_history)
 
         # Текущий промпт
         self.prompt_holder = QWidget(self)
@@ -94,6 +88,9 @@ class InteractiveTaskView(QWidget):
         self.submit_btn.clicked.connect(self._on_submit)
         self.input_field.returnPressed.connect(self._on_submit)
         self.restart_btn.clicked.connect(self._start_session)
+
+    def _autoscroll_history(self, min_val: int, max_val: int) -> None:
+        self.history_scroll.verticalScrollBar().setValue(max_val)
 
     def _start_session(self) -> None:
         self.task = self.generator.generate()
@@ -122,6 +119,10 @@ class InteractiveTaskView(QWidget):
         # дублировать вручную не надо.
         self._append_history(result.feedback)
 
+        # Попытка — в outbox синка (per-partition статистика; ортогонально
+        # словарной WordStatsStore, которую генератор пишет сам себе).
+        self.queue_attempt({"input": text}, correct=result.correct)
+
         self.score_total += 1
         if result.correct:
             self.score_correct += 1
@@ -141,7 +142,7 @@ class InteractiveTaskView(QWidget):
     def _append_history(self, blocks) -> None:
         widget = render_blocks(blocks, self.history_holder)
         self.history_layout.addWidget(widget)
-        # Автоскролл вниз обрабатывается через сигнал rangeChanged в _build_ui
+        # Автоскролл вниз обрабатывается через сигнал rangeChanged в build_center
 
     def _update_score(self) -> None:
         self.score_label.setText(
@@ -163,7 +164,7 @@ class InteractiveTaskView(QWidget):
         clear_layout(self.prompt_layout)
         msg = QLabel("Сессия завершена. Нажмите «Заново», чтобы начать новую.",
                      self.prompt_holder)
-        msg.setStyleSheet("font-weight: bold; color: #2a5a8a;")
+        msg.setProperty("class", "accent")
         self.prompt_layout.addWidget(msg)
         self.input_field.setEnabled(False)
         self.submit_btn.setEnabled(False)

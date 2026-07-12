@@ -17,7 +17,13 @@ from PyQt6.QtWidgets import QApplication
 
 from const import DB_PATH, WORDS_DIR
 from core import Repository, WordStatsStore
+from core.contour import ContourClient
+from core.session import Session
+from core.settings import Settings
+from core.sync import RepositorySyncListener, SyncClient, SyncStore
 from bootstrap import build_registry, sync_database
+from ui.app_context import AppContext
+from ui.theme import apply_theme
 from ui.windows import AuthWindow, GeneratorWindow
 
 
@@ -33,13 +39,42 @@ def main() -> int:
     # Для авторизованных — SQLite, для гостей — in-memory (общая на запуск).
     stats_store = WordStatsStore(repo)
 
-    # Мутабельный контейнер с текущим user_id. Передаётся в реестр замыканием:
-    # один и тот же набор генераторов корректно работает с разными пользователями
-    # без пересоздания реестра при перелогине.
-    current_user: dict[str, str | None] = {"id": None}
+    # Технические настройки среды (адрес backend, тема). Пробрасываются в окна
+    # через AppContext.
+    settings = Settings()
+
+    # Тема оформления — единый QSS на всё приложение из выбранной палитры
+    # (по умолчанию тёмная). Применяем до построения окон.
+    apply_theme(app, settings.get_theme())
+
+    # Клиент офлайн-синхронизации: outbox в той же БД. Слушателя мутаций
+    # подключаем ПОСЛЕ sync_database — иначе стартовые сиды сыпались бы в
+    # очередь при каждом запуске. Адрес backend берём из настроек (пусто —
+    # только копим outbox, сеть не трогаем, пока адрес не задан в настройках).
+    sync_store = SyncStore(DB_PATH)
+    sync_client = SyncClient(repo, sync_store,
+                             base_url=settings.get_base_url())
+    repo.sync_listener = RepositorySyncListener(sync_client)
+
+    # Единая идентичность сессии (core.session.Session): один явный источник
+    # правды для провайдеров AppContext, клиентов синка/контура, атрибуции
+    # попыток и WordStats. Канонический id = login (см. core/session.py).
+    # Переживает перелогин без пересоздания реестра/окон. По умолчанию —
+    # гость (роль 'student'): ролевые действия (кнопка контура) скрыты, пока
+    # не войдёт teacher/admin.
+    session = Session()
 
     def user_id_provider() -> str | None:
-        return current_user["id"]
+        return session.user_id
+
+    def user_role_provider() -> str:
+        return session.role
+
+    # Клиент LLM-контура: тот же web_layer, что и синк; идентичность — из
+    # сессии. Кнопка контура гейтится ролью teacher/admin.
+    contour_client = ContourClient(base_url=settings.get_base_url(),
+                                   user_id_provider=user_id_provider,
+                                   user_role_provider=user_role_provider)
 
     def make_registry():
         return build_registry(
@@ -48,29 +83,69 @@ def main() -> int:
             user_id_provider=user_id_provider,
         )
 
+    context = AppContext(
+        repo=repo,
+        settings=settings,
+        user_id_provider=user_id_provider,
+        user_role_provider=user_role_provider,
+        sync_client=sync_client,
+        contour_client=contour_client,
+    )
+
     registry = make_registry()
     generator_window = GeneratorWindow(
-        repository=repo,
+        context=context,
         registry=registry,
         registry_builder=make_registry,
         stats_store=stats_store,
-        user_id_provider=user_id_provider,
         words_dir=WORDS_DIR,
     )
 
     def on_auth(user_info):
         title = "Генератор заданий"
         if user_info is not None:
-            current_user["id"] = user_info[0]
-            title = f"Генератор заданий — {user_info[0]}"
+            # find_user → (login, FIO, group, role); роль гейтит UI-действия.
+            role = user_info[3] if len(user_info) > 3 else None
+            session.set_user(user_info[0], role)
+            title = f"Генератор заданий — {session.login}"
         else:
-            current_user["id"] = None
+            session.set_guest()
+        # Идентичность клиента синка — из сессии (заголовки X-User-*). Без
+        # user_id push уходил бы без X-User-Id (SyncClient._http_transport
+        # шлёт заголовок, только если user_id не None) — правки/попытки были
+        # бы неатрибутируемы.
+        sync_client.user_id = session.user_id
+        sync_client.user_role = session.role
         generator_window.setWindowTitle(title)
         generator_window.show()
 
-    auth = AuthWindow(repository=repo, on_success=on_auth)
-    auth.show()
+    # Держим ссылки на окна входа/регистрации, чтобы Qt их не удалил, пока
+    # пользователь навигирует между ними.
+    windows: dict[str, object] = {}
 
+    def show_auth() -> None:
+        from ui.windows import AuthWindow as _Auth
+        auth = _Auth(repository=repo, on_success=on_auth,
+                     on_register=show_register)
+        apply_theme(app, settings.get_theme())  # на случай смены темы в сессии
+        windows["auth"] = auth
+        auth.show()
+
+    def show_register() -> None:
+        from ui.windows import RegisterWindow as _Reg
+
+        def on_registered(login: str) -> None:
+            # Автологин сразу после регистрации: аккаунт только что создан
+            # (create_user, роль teacher) — входим по известному логину/роли,
+            # повторная проверка пароля не нужна.
+            on_auth((login, "", "", "teacher"))
+
+        reg = _Reg(repository=repo, on_success=on_registered,
+                   on_back=show_auth)
+        windows["register"] = reg
+        reg.show()
+
+    show_auth()
     return app.exec()
 
 

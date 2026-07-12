@@ -7,7 +7,9 @@ Repository — слой доступа к БД.
 """
 
 from __future__ import annotations
+import hashlib
 import json
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -20,6 +22,17 @@ class Subject:
     id: int
     name: str
     parent_name: str  # значение поля pra_subject
+    hidden: bool = False      # локальный флаг видимости (не синкается)
+    # Владелец предмета с сервера (owner_user_id). None = встроенный/системный
+    # предмет (сиды bootstrap), виден всем. Строка/число — сервер назначает;
+    # на десктоп попадает через sync-pull. Access-control по нему — на СЕРВЕРЕ
+    # (pull-scope), а не здесь (см. заметку в docs/ui_rework_plan.md).
+    owner_user_id: str | None = None
+
+    @property
+    def is_builtin(self) -> bool:
+        """Встроенный/системный предмет (без владельца) — общий для всех."""
+        return self.owner_user_id is None
 
 
 @dataclass(frozen=True)
@@ -29,6 +42,7 @@ class Partition:
     name: str
     constracted: int          # 0=одиночный, 1=конструктор, 2=группа, 3=тест
     generation_params: dict   # распарсенный JSON или {}
+    hidden: bool = False      # локальный флаг видимости (не синкается)
 
 
 # Какой view_kind использовать для каждого constracted:
@@ -48,8 +62,13 @@ _VIEW_KIND_BY_CONSTRACTED = {
 class Repository:
     """Доступ к таблицам Subjects, Partitions, users."""
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, *, sync_listener=None):
         self.db_path = Path(db_path)
+        # Необязательный слушатель мутаций (утиный интерфейс: partition_changed/
+        # partition_deleted) — превращает пользовательские правки разделов в
+        # записи outbox синхронизации. None у тестов/офлайн-сборок. Ставится в
+        # main.py ПОСЛЕ стартовых сидов, чтобы они не сыпались в очередь.
+        self.sync_listener = sync_listener
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -59,14 +78,111 @@ class Repository:
         finally:
             conn.close()
 
+    # ---------- Скрытие (локальный флаг видимости, D3) ----------
+    #
+    # hidden — колонка в Subjects/Partitions, ЛОКАЛЬНАЯ настройка видимости
+    # этой копии БД: sync-протокол её не знает и не передаёт (скрытие ≠
+    # удаление; tombstones — только про настоящие удаления). Скрытая
+    # сущность остаётся в БД, генераторы по ней продолжают работать.
+
+    def ensure_hidden_columns(self) -> None:
+        """Гарантировать колонки hidden в Subjects и Partitions. Идемпотентно."""
+        with self._connect() as conn:
+            for table in ("Subjects", "Partitions"):
+                cols = [r[1] for r in conn.execute(
+                    f"PRAGMA table_info({table})").fetchall()]
+                if "hidden" not in cols:
+                    conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN "
+                        f"hidden INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+
+    def ensure_owner_column(self) -> None:
+        """
+        Гарантировать колонку owner_user_id в Subjects. Идемпотентно. NULL =
+        встроенный предмет (виден всем). Значение приходит с сервера через
+        sync-pull; локально предметы не создаются, поэтому пишет её только
+        синк. Access-control по владельцу — серверный pull-scope, не десктоп.
+        """
+        with self._connect() as conn:
+            cols = [r[1] for r in
+                    conn.execute("PRAGMA table_info(Subjects)").fetchall()]
+            if "owner_user_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE Subjects ADD COLUMN owner_user_id TEXT")
+            conn.commit()
+
+    def set_subject_owner(self, subject_id: int,
+                          owner_user_id: str | None) -> None:
+        """Проставить владельца предмета (используется синком/тестами)."""
+        self.ensure_owner_column()
+        with self._connect() as conn:
+            conn.execute("UPDATE Subjects SET owner_user_id = ? WHERE id = ?",
+                         (owner_user_id, subject_id))
+            conn.commit()
+
+    def set_subject_hidden(self, subject_id: int, hidden: bool) -> None:
+        self.ensure_hidden_columns()
+        with self._connect() as conn:
+            conn.execute("UPDATE Subjects SET hidden = ? WHERE id = ?",
+                         (1 if hidden else 0, subject_id))
+            conn.commit()
+
+    def set_partition_hidden(self, partition_id: int, hidden: bool) -> None:
+        self.ensure_hidden_columns()
+        with self._connect() as conn:
+            conn.execute("UPDATE Partitions SET hidden = ? WHERE id = ?",
+                         (1 if hidden else 0, partition_id))
+            conn.commit()
+
     # ---------- Subjects ----------
 
-    def list_subjects(self) -> List[Subject]:
+    def list_subjects(self, include_hidden: bool = False,
+                      owned_by: str | None = None) -> List[Subject]:
+        """
+        Предметы. include_hidden — показывать скрытые (локальный флаг).
+
+        owned_by — ЕСЛИ задан, вернуть только встроенные (owner IS NULL) +
+        принадлежащие этому пользователю. По умолчанию (None) фильтра нет —
+        видны все. ВАЖНО: этот фильтр НЕ является access-control (локальную
+        БД её владелец всё равно читает как хочет); он лишь для удобного
+        разграничения витрины. Настоящее разграничение доступа — на сервере
+        (pull-scope), и оно требует единой числовой идентичности пользователя
+        (сейчас десктоп знает пользователя как строку-логин, сервер — как
+        число), поэтому в UI фильтр пока НЕ включён. См.
+        docs/ui_rework_plan.md, раздел «Владение и роли».
+        """
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, subject_name, pra_subject FROM Subjects"
-            ).fetchall()
-        return [Subject(r[0], r[1], r[2]) for r in rows]
+            # Интроспекция колонок: БД могла пройти миграцию частично (старые
+            # копии, тестовые схемы) — hidden и owner_user_id независимы.
+            cols = {r[1] for r in
+                    conn.execute("PRAGMA table_info(Subjects)").fetchall()}
+            has_hidden = "hidden" in cols
+            has_owner = "owner_user_id" in cols
+
+            select = "SELECT id, subject_name, pra_subject" + \
+                (", hidden" if has_hidden else "") + \
+                (", owner_user_id" if has_owner else "")
+            where, params = [], []
+            if has_hidden and not include_hidden:
+                where.append("hidden = 0")
+            if has_owner and owned_by is not None:
+                where.append("(owner_user_id IS NULL OR owner_user_id = ?)")
+                params.append(owned_by)
+            sql = f"{select} FROM Subjects"
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            rows = conn.execute(sql, params).fetchall()
+
+            out = []
+            for r in rows:
+                i = 3
+                hidden = bool(r[i]) if has_hidden else False
+                if has_hidden:
+                    i += 1
+                owner = r[i] if has_owner else None
+                out.append(Subject(r[0], r[1], r[2], hidden, owner))
+            return out
 
     def get_subject_by_name(self, name: str) -> Optional[Subject]:
         with self._connect() as conn:
@@ -77,16 +193,48 @@ class Repository:
             ).fetchone()
         return Subject(*row) if row else None
 
+    def delete_subject(self, subject_id: int) -> None:
+        """
+        Необратимо удалить предмет ВМЕСТЕ с его разделами. Каждое удаление
+        уходит в outbox синка tombstone'ом (слушатель). Встроенные предметы
+        пересоздаются сидами при следующем запуске (bootstrap.sync_database)
+        — для них уместнее скрытие; предупреждение — забота UI.
+        """
+        with self._connect() as conn:
+            partition_ids = [r[0] for r in conn.execute(
+                "SELECT id FROM Partitions WHERE subject_id = ?",
+                (subject_id,)).fetchall()]
+            conn.execute("DELETE FROM Partitions WHERE subject_id = ?",
+                         (subject_id,))
+            conn.execute("DELETE FROM Subjects WHERE id = ?", (subject_id,))
+            conn.commit()
+        if self.sync_listener is not None:
+            for pid in partition_ids:
+                self.sync_listener.partition_deleted(pid)
+            self.sync_listener.subject_deleted(subject_id)
+
     # ---------- Partitions ----------
 
-    def list_partitions_for_subject(self, subject_id: int) -> List[Partition]:
+    def list_partitions_for_subject(
+        self, subject_id: int, include_hidden: bool = False,
+    ) -> List[Partition]:
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT id, subject_id, partition_name, constracted, "
-                "       generation_parametrs "
-                "FROM Partitions WHERE subject_id = ? ORDER BY id",
-                (subject_id,),
-            ).fetchall()
+            try:
+                rows = conn.execute(
+                    "SELECT id, subject_id, partition_name, constracted, "
+                    "       generation_parametrs, hidden "
+                    "FROM Partitions WHERE subject_id = ?" +
+                    ("" if include_hidden else " AND hidden = 0") +
+                    " ORDER BY id",
+                    (subject_id,),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = conn.execute(
+                    "SELECT id, subject_id, partition_name, constracted, "
+                    "       generation_parametrs "
+                    "FROM Partitions WHERE subject_id = ? ORDER BY id",
+                    (subject_id,),
+                ).fetchall()
         return [self._row_to_partition(r) for r in rows]
 
     def get_partition(self, partition_id: int) -> Optional[Partition]:
@@ -124,6 +272,8 @@ class Repository:
             name=row[2],
             constracted=row[3],
             generation_params=params,
+            # 6-я колонка (hidden) есть только у выборок с ней.
+            hidden=bool(row[5]) if len(row) > 5 else False,
         )
 
     # ---------- Запись разделов ----------
@@ -238,6 +388,7 @@ class Repository:
         else:
             raw = str(generation_params)
 
+        created = False
         with self._connect() as conn:
             cur = conn.execute(
                 "SELECT id FROM Partitions WHERE subject_id = ? AND partition_name = ?",
@@ -267,7 +418,10 @@ class Repository:
                     (subject_id, name, constracted, raw),
                 )
                 pid = cur.lastrowid
+                created = True
             conn.commit()
+        self._notify_partition_changed(pid, subject_id, name, constracted, raw,
+                                       created=created)
         return pid
 
     def delete_partition(self, partition_id: int) -> None:
@@ -276,6 +430,18 @@ class Repository:
                 "DELETE FROM Partitions WHERE id = ?", (partition_id,)
             )
             conn.commit()
+        if self.sync_listener is not None:
+            self.sync_listener.partition_deleted(partition_id)
+
+    def _notify_partition_changed(self, pid, subject_id, name, constracted, raw,
+                                  *, created: bool) -> None:
+        """Отдать правку раздела слушателю синхронизации (если подключён)."""
+        if self.sync_listener is None:
+            return
+        self.sync_listener.partition_changed(pid, {
+            "subject_id": subject_id, "partition_name": name,
+            "constracted": constracted, "generation_parametrs": raw,
+        }, created=created)
 
     # ---------- Карта constracted → kind редактора ----------
 
@@ -295,13 +461,145 @@ class Repository:
 
     # ---------- Users (для авторизации) ----------
 
-    def find_user(self, login: str, password: str) -> Optional[tuple]:
+    def ensure_user_role_column(self) -> None:
+        """
+        Гарантировать колонку role в users. Идемпотентно (ALTER только если
+        колонки ещё нет). Существующие аккаунты десктопа — авторы заданий,
+        поэтому дефолт 'teacher'; гость роли не имеет (сессия ставит
+        'student'). Ролью гейтятся ролевые действия (кнопка контура и т.п.).
+        """
         with self._connect() as conn:
-            return conn.execute(
-                "SELECT login, FIO, \"group\" FROM users "
-                "WHERE login = ? AND password = ?",
-                (login, password),
+            cols = [r[1] for r in
+                    conn.execute("PRAGMA table_info(users)").fetchall()]
+            if "role" not in cols:
+                conn.execute(
+                    "ALTER TABLE users ADD COLUMN "
+                    "role TEXT NOT NULL DEFAULT 'teacher'"
+                )
+                conn.commit()
+
+    # -- Пароли: PBKDF2 + прозрачная миграция унаследованных plain-text --
+    #
+    # Формат хранения: "pbkdf2$<итерации>$<соль hex>$<хэш hex>" — сам себя
+    # описывает и не пересекается с plain-text (в паролях '$'-префикс
+    # 'pbkdf2$' практически исключён). Унаследованные строки сравниваются
+    # как есть и ПРИ ПЕРВОМ УСПЕШНОМ ВХОДЕ переписываются хэшем.
+
+    _PBKDF2_ITERATIONS = 200_000
+
+    @classmethod
+    def _hash_password(cls, password: str, *, salt: Optional[bytes] = None,
+                       iterations: Optional[int] = None) -> str:
+        salt = salt if salt is not None else secrets.token_bytes(16)
+        iters = iterations or cls._PBKDF2_ITERATIONS
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), salt, iters)
+        return f"pbkdf2${iters}${salt.hex()}${digest.hex()}"
+
+    @staticmethod
+    def _is_hashed(stored: str) -> bool:
+        return isinstance(stored, str) and stored.startswith("pbkdf2$")
+
+    @classmethod
+    def _verify_password(cls, password: str, stored: str) -> bool:
+        """Проверить пароль против хранимого значения (хэш ИЛИ legacy plain)."""
+        if not cls._is_hashed(stored):
+            # compare_digest по байтам: str-вариант не принимает не-ASCII
+            # (кириллические пароли — обычное дело).
+            return secrets.compare_digest(
+                str(stored).encode("utf-8"), password.encode("utf-8"))
+        try:
+            _, iters, salt_hex, hash_hex = stored.split("$", 3)
+            digest = hashlib.pbkdf2_hmac(
+                "sha256", password.encode("utf-8"),
+                bytes.fromhex(salt_hex), int(iters))
+            return secrets.compare_digest(digest.hex(), hash_hex)
+        except (ValueError, TypeError):
+            return False
+
+    def find_user(self, login: str, password: str) -> Optional[tuple]:
+        """
+        Вернуть (login, FIO, group, role) или None. Пароль проверяется в
+        Python (_verify_password): и PBKDF2-хэш, и унаследованный plain-text;
+        успешный вход со старым plain прозрачно мигрирует запись на хэш.
+        Если колонки role ещё нет (ensure_user_role_column не отработал —
+        например, вне обычного старта) — роль 'teacher' по умолчанию.
+        """
+        with self._connect() as conn:
+            try:
+                row = conn.execute(
+                    "SELECT login, FIO, \"group\", role, password FROM users "
+                    "WHERE login = ?", (login,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                base = conn.execute(
+                    "SELECT login, FIO, \"group\", password FROM users "
+                    "WHERE login = ?", (login,),
+                ).fetchone()
+                row = None if base is None else (
+                    base[0], base[1], base[2], "teacher", base[3])
+            if row is None or not self._verify_password(password, row[4]):
+                return None
+            if not self._is_hashed(row[4]):
+                # Прозрачная миграция plain → PBKDF2 при первом входе.
+                conn.execute(
+                    "UPDATE users SET password = ? WHERE login = ?",
+                    (self._hash_password(password), login),
+                )
+                conn.commit()
+            return row[:4]
+
+    def set_password(self, login: str, old_password: str,
+                     new_password: str) -> bool:
+        """
+        Сменить пароль: старый обязан пройти проверку (хэш или legacy plain).
+        Новый всегда пишется PBKDF2-хэшем. Возвращает успех.
+        """
+        if not new_password:
+            return False
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT password FROM users WHERE login = ?", (login,),
             ).fetchone()
+            if row is None or not self._verify_password(old_password, row[0]):
+                return False
+            conn.execute(
+                "UPDATE users SET password = ? WHERE login = ?",
+                (self._hash_password(new_password), login),
+            )
+            conn.commit()
+        return True
+
+    def create_user(self, login: str, password: str, *, fio: str = "",
+                    group: str = "", role: str = "teacher") -> bool:
+        """
+        Создать пользователя (экран регистрации, волна E2). Пароль сразу
+        хэшируется. False — логин занят или пустые логин/пароль.
+        """
+        if not login.strip() or not password:
+            return False
+        with self._connect() as conn:
+            taken = conn.execute(
+                "SELECT 1 FROM users WHERE login = ?", (login,),
+            ).fetchone()
+            if taken:
+                return False
+            try:
+                conn.execute(
+                    "INSERT INTO users (login, password, FIO, \"group\", role) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (login.strip(), self._hash_password(password),
+                     fio, group, role),
+                )
+            except sqlite3.OperationalError:
+                # БД без колонки role (ensure не отработал) — без роли.
+                conn.execute(
+                    "INSERT INTO users (login, password, FIO, \"group\") "
+                    "VALUES (?, ?, ?, ?)",
+                    (login.strip(), self._hash_password(password), fio, group),
+                )
+            conn.commit()
+        return True
 
     # ---------- WordStats (межсессионная статистика по словам) ----------
 

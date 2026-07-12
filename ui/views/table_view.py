@@ -5,6 +5,9 @@ TableTaskView — табличное представление: накапли�
 
 Содержимое ячеек строится через render_qt каждого блока — поэтому формулы
 показываются как картинки, текст как текст, а изображения как изображения.
+
+Хром (заголовок + строка кнопок) — из BaseTaskView (контракт K4);
+центральная зона заменена таблицей.
 """
 
 from __future__ import annotations
@@ -15,12 +18,13 @@ from PyQt6.QtWidgets import (
     QSizePolicy
 )
 
-from core import Capability, StaticTask, TaskGenerator
+from core import Capability, StaticTask
 from ui.utils import render_blocks
 from ui.exporter import export_tasks_to_docx
+from .base_view import BaseTaskView
 
 
-class TableTaskView(QWidget):
+class TableTaskView(BaseTaskView):
     """
     Табличный вид: каждая строка — одно задание.
     Колонки: №, Условие, Ответ, Удалить.
@@ -29,35 +33,25 @@ class TableTaskView(QWidget):
     (тогда задания в таблице будут разных типов).
     """
 
-    def __init__(self, generator: TaskGenerator, parent: QWidget | None = None):
-        super().__init__(parent)
-        if Capability.STATIC not in generator.capabilities:
-            raise ValueError(
-                f"TableTaskView требует STATIC, у {generator.name!r} его нет."
-            )
+    REQUIRED_CAPABILITY = Capability.STATIC
 
-        self.generator = generator
+    def _init_state(self) -> None:
         self.tasks: list[StaticTask] = []
 
-        self._build_ui()
-
-    def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
-
-        title = QLabel(self.generator.name, self)
-        title.setStyleSheet("font-size: 14pt; font-weight: bold;")
-        root.addWidget(title)
-
-        btns = QHBoxLayout()
+    def build_controls(self, row: QHBoxLayout) -> None:
         self.gen_btn = QPushButton("Сгенерировать", self)
         self.export_btn = QPushButton("Экспорт в Word", self)
         self.show_answers_chk = QCheckBox("Показывать ответы", self)
-        btns.addWidget(self.gen_btn)
-        btns.addWidget(self.export_btn)
-        btns.addWidget(self.show_answers_chk)
-        btns.addStretch()
-        root.addLayout(btns)
+        row.addWidget(self.gen_btn)
+        row.addWidget(self.export_btn)
+        row.addWidget(self.show_answers_chk)
+        row.addStretch()
 
+        self.gen_btn.clicked.connect(self._on_generate)
+        self.export_btn.clicked.connect(self._on_export)
+        self.show_answers_chk.stateChanged.connect(self._refresh_answers_column)
+
+    def build_center(self, root: QVBoxLayout) -> None:
         self.table = QTableWidget(0, 4, self)
         self.table.setHorizontalHeaderLabels(["№", "Условие", "Ответ", ""])
         self.table.horizontalHeader().setSectionResizeMode(
@@ -74,10 +68,6 @@ class TableTaskView(QWidget):
         # Сами ячейки нельзя редактировать
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         root.addWidget(self.table, stretch=1)
-
-        self.gen_btn.clicked.connect(self._on_generate)
-        self.export_btn.clicked.connect(self._on_export)
-        self.show_answers_chk.stateChanged.connect(self._refresh_answers_column)
 
     def _on_generate(self) -> None:
         task = self.generator.generate()
@@ -123,7 +113,7 @@ class TableTaskView(QWidget):
         else:
             widget = QLabel("Нажмите, чтобы показать", self.table)
             widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            widget.setStyleSheet("color: #888; font-style: italic;")
+            widget.setProperty("class", "muted")
             # Делаем clickable: при клике — показать ответ для этой строки
             def show_for_row(event, _t=task, _r=row):
                 self._show_answer_popup(_t)

@@ -7,6 +7,6 @@ Offline-sync клиента (десктопа): локальный outbox + push
 """
 
 from .store import SyncStore
-from .client import SyncClient, SyncReport
+from .client import RepositorySyncListener, SyncClient, SyncReport
 
-__all__ = ["SyncStore", "SyncClient", "SyncReport"]
+__all__ = ["SyncStore", "SyncClient", "SyncReport", "RepositorySyncListener"]

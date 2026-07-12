@@ -37,6 +37,10 @@ COLOR_MASTERED = QColor("#e6f4ea")   # зелёный — точность ≥ 0
 COLOR_PROBLEM = QColor("#fce8e6")    # красный — точность < 0.5 или wrong >= correct
 COLOR_NEUTRAL = QColor("#fff8e1")    # жёлтый — посередине
 
+# Подложки выше — светлые пастельные; в тёмной теме глобальный цвет текста
+# светлый, поэтому подкрашенным ячейкам явно задаём тёмный текст.
+COLOR_TINTED_TEXT = QColor("#1F2328")
+
 
 class _NumericItem(QTableWidgetItem):
     """
@@ -88,12 +92,12 @@ class StatsWindow(QWidget):
 
         # Заголовок с именем пользователя
         self.user_label = QLabel("", self)
-        self.user_label.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        self.user_label.setProperty("class", "title")
         root.addWidget(self.user_label)
 
         # Сводка одной строкой
         self.summary_label = QLabel("", self)
-        self.summary_label.setStyleSheet("font-size: 11pt; color: #444;")
+        self.summary_label.setProperty("class", "subtitle")
         root.addWidget(self.summary_label)
 
         # Панель управления: поиск + обновление
@@ -138,7 +142,7 @@ class StatsWindow(QWidget):
             self,
         )
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty_label.setStyleSheet("color: #888; font-style: italic;")
+        self.empty_label.setProperty("class", "muted")
         self.empty_label.hide()
         root.addWidget(self.empty_label)
 
@@ -222,6 +226,7 @@ class StatsWindow(QWidget):
                 item = QTableWidgetItem(display)
             if bg is not None:
                 item.setBackground(QBrush(bg))
+                item.setForeground(QBrush(COLOR_TINTED_TEXT))
             self.table.setItem(row, col, item)
 
     @staticmethod

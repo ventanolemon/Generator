@@ -32,6 +32,34 @@ Transport = Callable[[str, dict], dict]
 PULL_PAGE_LIMIT = 200
 
 
+class RepositorySyncListener:
+    """
+    Адаптер Repository → outbox: превращает мутации разделов (создание/правку/
+    удаление через UI) в записи очереди синхронизации. Repository остаётся
+    слоем данных без прямой зависимости от sync — он лишь дёргает утиный
+    интерфейс listener'а. Подключается в main.py ПОСЛЕ bootstrap.sync_database,
+    чтобы стартовые сиды (ensure_*) не сыпались в outbox при каждом запуске —
+    в очередь попадают только пользовательские изменения.
+    """
+
+    def __init__(self, client: "SyncClient"):
+        self.client = client
+
+    def partition_changed(self, partition_id: int, data: dict, *,
+                          created: bool) -> None:
+        # Созданной офлайн сущности id локальный → local_ref, серверный id
+        # назначит сервер (client._remap_local_id перепривяжет).
+        self.client.queue_partition_change(
+            None if created else partition_id, data,
+            local_ref=str(partition_id) if created else None)
+
+    def partition_deleted(self, partition_id: int) -> None:
+        self.client.queue_partition_change(partition_id, {}, deleted=True)
+
+    def subject_deleted(self, subject_id: int) -> None:
+        self.client.queue_subject_change(subject_id, {}, deleted=True)
+
+
 @dataclass
 class SyncReport:
     """Итог одного прогона sync() — для статус-строки UI и тестов."""
@@ -66,7 +94,17 @@ class SyncClient:
         self.store = store
         self.user_id = user_id
         self.user_role = user_role
-        self._transport = transport or self._http_transport(base_url)
+        self._base_url = base_url
+        self._transport = transport or self._http_transport()
+
+    def set_base_url(self, url: str) -> None:
+        """Сменить адрес backend (из диалога настроек) — боевой транспорт
+        читает его при каждом запросе, так что переключение мгновенно."""
+        self._base_url = url or ""
+
+    def has_server(self) -> bool:
+        """Настроен ли адрес backend — иначе синкать некуда (только копим outbox)."""
+        return bool(self._base_url.strip())
 
     # ---------- Публичное API постановки в очередь ----------
 
@@ -198,15 +236,33 @@ class SyncClient:
 
     def _apply_page(self, resp: dict, report: SyncReport) -> None:
         with self.repo._connect() as conn:  # noqa: SLF001
+            # Переносим owner_user_id, только если сервер его прислал И колонка
+            # есть локально — так десктоп совместим и со «старым» сервером (без
+            # владельца), и со «старой» локальной БД (без колонки).
+            has_owner_col = any(
+                r[1] == "owner_user_id" for r in
+                conn.execute("PRAGMA table_info(Subjects)").fetchall())
             for s in resp.get("subjects", []):
-                conn.execute(
-                    "INSERT INTO Subjects (id, subject_name, pra_subject) "
-                    "VALUES (?, ?, ?) "
-                    "ON CONFLICT(id) DO UPDATE SET "
-                    "  subject_name = excluded.subject_name, "
-                    "  pra_subject = excluded.pra_subject",
-                    (s["id"], s["subject_name"], s["pra_subject"]),
-                )
+                if has_owner_col and "owner_user_id" in s:
+                    conn.execute(
+                        "INSERT INTO Subjects (id, subject_name, pra_subject, "
+                        " owner_user_id) VALUES (?, ?, ?, ?) "
+                        "ON CONFLICT(id) DO UPDATE SET "
+                        "  subject_name = excluded.subject_name, "
+                        "  pra_subject = excluded.pra_subject, "
+                        "  owner_user_id = excluded.owner_user_id",
+                        (s["id"], s["subject_name"], s["pra_subject"],
+                         s.get("owner_user_id")),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO Subjects (id, subject_name, pra_subject) "
+                        "VALUES (?, ?, ?) "
+                        "ON CONFLICT(id) DO UPDATE SET "
+                        "  subject_name = excluded.subject_name, "
+                        "  pra_subject = excluded.pra_subject",
+                        (s["id"], s["subject_name"], s["pra_subject"]),
+                    )
                 report.pulled_subjects += 1
             for p in resp.get("partitions", []):
                 params = p.get("generation_parametrs")
@@ -241,11 +297,68 @@ class SyncClient:
         for d in resp.get("deleted", []):
             self.store.drop_version(d["kind"], int(d["id"]))
 
+    # ---------- разрешение конфликтов (для диалога UI) ----------
+
+    def resolve_conflict(self, conflict_id: int, keep: str) -> None:
+        """
+        Разрешить стэшированный конфликт (protocol §2). keep:
+          "theirs" — принять серверную версию: она уже применена pull'ом на том
+                     же sync (сервер авторитетен), локальная БД = theirs; просто
+                     закрываем конфликт, мою правку отбрасываем.
+          "mine"   — оставить мою: пишем мою версию локально, ставим
+                     base_version = версию theirs и пере-ставим правку в outbox,
+                     чтобы следующий push прошёл version-check и перекрыл сервер.
+        """
+        if keep not in ("mine", "theirs"):
+            raise ValueError(f"keep должен быть 'mine'|'theirs', не {keep!r}")
+        conflict = self.store.get_conflict(conflict_id)
+        if conflict is None:
+            return
+        if keep == "mine":
+            kind = conflict["entity_kind"]
+            entity_id = conflict["entity_id"]
+            mine = conflict["mine"] or {}
+            theirs_version = int((conflict["theirs"] or {}).get("row_version") or 0)
+            self.store.set_version(kind, entity_id, theirs_version)
+            self._apply_local_entity(kind, entity_id, mine)
+            self.store.enqueue_entity_change(kind, entity_id, mine)
+        self.store.mark_conflict_resolved(conflict_id)
+
+    def _apply_local_entity(self, kind: str, entity_id: int, data: dict) -> None:
+        """Upsert одной сущности в локальную БД (для resolve keep='mine')."""
+        with self.repo._connect() as conn:  # noqa: SLF001 — слой данных
+            if kind == "subject":
+                conn.execute(
+                    "INSERT INTO Subjects (id, subject_name, pra_subject) "
+                    "VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                    "  subject_name = excluded.subject_name, "
+                    "  pra_subject = excluded.pra_subject",
+                    (entity_id, data.get("subject_name", ""),
+                     data.get("pra_subject", "")),
+                )
+            else:
+                params = data.get("generation_parametrs")
+                raw = params if isinstance(params, str) else json.dumps(
+                    params or {}, ensure_ascii=False)
+                conn.execute(
+                    "INSERT INTO Partitions (id, subject_id, partition_name, "
+                    " constracted, generation_parametrs) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(id) DO UPDATE SET "
+                    "  subject_id = excluded.subject_id, "
+                    "  partition_name = excluded.partition_name, "
+                    "  constracted = excluded.constracted, "
+                    "  generation_parametrs = excluded.generation_parametrs",
+                    (entity_id, data.get("subject_id", 0),
+                     data.get("partition_name", ""),
+                     data.get("constracted", 0), raw),
+                )
+            conn.commit()
+
     # ---------- боевой транспорт ----------
 
-    def _http_transport(self, base_url: str) -> Transport:
+    def _http_transport(self) -> Transport:
         def post(path: str, payload: dict) -> dict:
-            url = base_url.rstrip("/") + path
+            url = self._base_url.rstrip("/") + path
             body = json.dumps(payload, ensure_ascii=False).encode()
             headers = {"Content-Type": "application/json"}
             if self.user_id is not None:

@@ -322,6 +322,61 @@ class ConflictTests(SyncClientTestBase):
         self.assertEqual(row[0], server_id, "локальный id перепривязан")
 
 
+class ConflictResolutionTests(SyncClientTestBase):
+    """B2 плана ui_rework: разрешение стэшированного конфликта из UI."""
+
+    def _make_conflict(self) -> int:
+        """Создать один конфликт по партиции 10, вернуть его conflict_id."""
+        self.server.seed("partition", 10, {
+            "subject_id": 1, "partition_name": "Общая",
+            "constracted": 0, "generation_parametrs": ""})
+        self.client.sync()
+        self.server.seed("partition", 10, {
+            "subject_id": 1, "partition_name": "Версия B",
+            "constracted": 0, "generation_parametrs": ""})
+        self.client.queue_partition_change(10, {
+            "subject_id": 1, "partition_name": "Версия A",
+            "constracted": 0, "generation_parametrs": ""})
+        self.client.sync()
+        conflicts = self.store.unresolved_conflicts()
+        self.assertEqual(len(conflicts), 1)
+        return conflicts[0]["id"]
+
+    def test_keep_theirs_closes_conflict_local_stays_server(self):
+        cid = self._make_conflict()
+        # После sync локально уже серверная версия (сервер авторитетен).
+        self.assertIn("Версия B", self._local_partition_names())
+        self.client.resolve_conflict(cid, "theirs")
+        self.assertEqual(self.store.unresolved_conflicts(), [])
+        # theirs остаётся, повторных правок в outbox нет.
+        self.assertIn("Версия B", self._local_partition_names())
+        self.assertEqual(self.store.pending(), [])
+
+    def test_keep_mine_rewrites_local_and_requeues(self):
+        cid = self._make_conflict()
+        self.client.resolve_conflict(cid, "mine")
+        self.assertEqual(self.store.unresolved_conflicts(), [])
+        # Моя версия вернулась локально и поставлена в очередь на повторный push.
+        self.assertIn("Версия A", self._local_partition_names())
+        self.assertEqual(len(self.store.pending()), 1)
+        # Следующий sync проходит version-check (base = версия theirs) и
+        # перекрывает сервер — «моя» побеждает.
+        report = self.client.sync()
+        self.assertTrue(report.ok, report.errors)
+        self.assertEqual(report.conflicts, 0)
+        self.assertEqual(report.accepted_entities, 1)
+        self.assertEqual(
+            self.server.entities["partition"][10]["partition_name"], "Версия A")
+
+    def test_resolve_bad_keep_rejected(self):
+        cid = self._make_conflict()
+        with self.assertRaises(ValueError):
+            self.client.resolve_conflict(cid, "both")
+
+    def test_resolve_missing_conflict_is_noop(self):
+        self.client.resolve_conflict(999999, "theirs")  # не падает
+
+
 class TombstoneTests(SyncClientTestBase):
     """§2: tombstone сервера применяется как локальное удаление."""
 
@@ -401,6 +456,54 @@ class PaginationTests(SyncClientTestBase):
         self.assertEqual(sorted(names), ["P0", "P1", "P2", "P3"])
         self.assertEqual(len(names), len(set(names)),
                          "продолжение с курсора: без потерь и дублей")
+
+
+class RepositoryHookTests(SyncClientTestBase):
+    """B2: мутации разделов через Repository попадают в outbox через listener."""
+
+    def setUp(self):
+        super().setUp()
+        from core.sync import RepositorySyncListener
+        self.repo.sync_listener = RepositorySyncListener(self.client)
+
+    def test_create_enqueues_as_offline_entity(self):
+        pid = self.repo.upsert_partition(
+            subject_id=1, name="Новый", constracted=0, generation_params={})
+        pending = self.store.pending()
+        self.assertEqual(len(pending), 1)
+        payload = pending[0]["payload"]
+        self.assertIsNone(payload["id"], "новая сущность идёт без серверного id")
+        self.assertEqual(payload["local_ref"], str(pid))
+        self.assertEqual(payload["data"]["partition_name"], "Новый")
+
+    def test_update_enqueues_with_id(self):
+        pid = self.repo.upsert_partition(
+            subject_id=1, name="Раздел", constracted=0, generation_params={})
+        self.store.remove([p["outbox_id"] for p in self.store.pending()])
+        # Повторный upsert той же пары subject+name — это правка (тот же id).
+        self.repo.upsert_partition(
+            subject_id=1, name="Раздел", constracted=2, generation_params={"k": 1})
+        pending = self.store.pending()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["payload"]["id"], pid)
+        self.assertFalse(pending[0]["payload"]["deleted"])
+
+    def test_delete_enqueues_tombstone(self):
+        pid = self.repo.upsert_partition(
+            subject_id=1, name="Обречённый", constracted=0, generation_params={})
+        self.store.remove([p["outbox_id"] for p in self.store.pending()])
+        self.repo.delete_partition(pid)
+        pending = self.store.pending()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["payload"]["id"], pid)
+        self.assertTrue(pending[0]["payload"]["deleted"])
+
+    def test_no_listener_means_no_enqueue(self):
+        # Без слушателя (сборка/тесты без sync) мутации не трогают outbox.
+        self.repo.sync_listener = None
+        self.repo.upsert_partition(
+            subject_id=1, name="Тихий", constracted=0, generation_params={})
+        self.assertEqual(self.store.pending(), [])
 
 
 if __name__ == "__main__":
