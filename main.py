@@ -107,6 +107,10 @@ def main() -> int:
             current_user["role"] = (user_info[3] if len(user_info) > 3
                                     else "teacher") or "teacher"
             # Идентичность клиента синка — из сессии (заголовки X-User-*).
+            # Раньше выставлялась только role — push уходил без X-User-Id
+            # (SyncClient._http_transport шлёт заголовок, только если
+            # user_id не None), т.е. правки/попытки были неатрибутируемы.
+            sync_client.user_id = current_user["id"]
             sync_client.user_role = current_user["role"]
             title = f"Генератор заданий — {user_info[0]}"
         else:

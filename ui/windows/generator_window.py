@@ -525,6 +525,11 @@ class GeneratorWindow(QMainWindow):
             return
 
         view = self._pick_view(generator, self.repo.view_kind_for(partition))
+        # Контекст статистики попыток (см. BaseTaskView.attach_stats):
+        # используется только теми view, у которых есть проверяемый ответ
+        # (сейчас — InteractiveTaskView), остальные его тихо игнорируют.
+        view.attach_stats(partition_id=partition_id,
+                          sync_client=self.ctx.sync_client)
         clear_layout(self.view_layout)
         self.view_layout.addWidget(view)
 

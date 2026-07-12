@@ -59,11 +59,15 @@ class InteractiveTaskView(BaseTaskView):
         self.history_scroll.setWidget(self.history_holder)
         root.addWidget(self.history_scroll, stretch=1)
 
-        # Автоматическая прокрутка вниз при любом изменении высоты контента
-        v_scrollbar = self.history_scroll.verticalScrollBar()
-        v_scrollbar.rangeChanged.connect(
-            lambda min_val, max_val: v_scrollbar.setValue(max_val)
-        )
+        # Автоматическая прокрутка вниз при любом изменении высоты контента.
+        # Слот — связанный метод на self, а не лямбда, замыкающая локальную
+        # переменную v_scrollbar: замыкание держало бы отдельную сильную
+        # ссылку на обёртку QScrollBar, которая могла пережить порядок
+        # разрушения C++-объектов при деструктуризации виджета/выходе из
+        # процесса — обращение к ней тогда падает (сегфолт, не RuntimeError).
+        # Связанный метод сам запрашивает scrollbar заново при каждом вызове.
+        self.history_scroll.verticalScrollBar().rangeChanged.connect(
+            self._autoscroll_history)
 
         # Текущий промпт
         self.prompt_holder = QWidget(self)
@@ -84,6 +88,9 @@ class InteractiveTaskView(BaseTaskView):
         self.submit_btn.clicked.connect(self._on_submit)
         self.input_field.returnPressed.connect(self._on_submit)
         self.restart_btn.clicked.connect(self._start_session)
+
+    def _autoscroll_history(self, min_val: int, max_val: int) -> None:
+        self.history_scroll.verticalScrollBar().setValue(max_val)
 
     def _start_session(self) -> None:
         self.task = self.generator.generate()
@@ -111,6 +118,10 @@ class InteractiveTaskView(BaseTaskView):
         # уже содержит и условие, и ответ пользователя, и правильный ответ —
         # дублировать вручную не надо.
         self._append_history(result.feedback)
+
+        # Попытка — в outbox синка (per-partition статистика; ортогонально
+        # словарной WordStatsStore, которую генератор пишет сам себе).
+        self.queue_attempt({"input": text}, correct=result.correct)
 
         self.score_total += 1
         if result.correct:

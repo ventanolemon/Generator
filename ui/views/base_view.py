@@ -113,3 +113,33 @@ class BaseTaskView(QWidget):
         """Показать список блоков в прокручиваемом контейнере."""
         clear_layout(self.content_layout)
         self.content_layout.addWidget(render_blocks(blocks, self.content_holder))
+
+    # ---------- статистика попыток (outbox синка) ----------
+
+    def attach_stats(self, *, partition_id: int | None, sync_client) -> None:
+        """
+        Подключить контекст для записи попыток решения. Вызывается владельцем
+        (GeneratorWindow) сразу после конструктора — не часть стабильного
+        контракта __init__(generator, parent) (K4), чтобы не плодить
+        параметры у всех view ради того, что реально использует только один
+        подкласс (InteractiveTaskView — единственный, где вообще есть
+        понятие «правильно/неправильно» на текущий момент).
+        """
+        self._stats_partition_id = partition_id
+        self._stats_sync_client = sync_client
+
+    def queue_attempt(self, payload: dict, *, correct: bool | None) -> None:
+        """
+        Записать попытку в outbox синхронизации (SyncClient.queue_attempt),
+        если attach_stats был вызван. Тихо no-op иначе (учебный режим без
+        подключённого контекста — например, headless-тесты) и на любой сбой
+        записи — статистика не должна ронять сессию решения задания.
+        """
+        client = getattr(self, "_stats_sync_client", None)
+        partition_id = getattr(self, "_stats_partition_id", None)
+        if client is None or partition_id is None:
+            return
+        try:
+            client.queue_attempt(partition_id, payload, correct=correct)
+        except Exception:
+            pass
