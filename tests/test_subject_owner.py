@@ -123,5 +123,72 @@ class OwnerSyncRoundTripTests(unittest.TestCase):
         self.assertTrue(by_id[11].is_builtin)
 
 
+try:
+    import PyQt6  # noqa: F401
+    HAS_QT = True
+except Exception:
+    HAS_QT = False
+
+
+@unittest.skipUnless(HAS_QT, "PyQt6 не установлен")
+class OwnerScopeWindowTests(unittest.TestCase):
+    """generator_window применяет owner-фильтр по роли (id = login)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _window(self, *, login, role):
+        import tempfile as tf
+        from PyQt6.QtCore import QSettings
+        from core.settings import Settings
+        from ui.app_context import AppContext
+        from ui.windows import GeneratorWindow
+
+        db = _db_with_subjects()          # 1 встроенный + предметы alla/boris
+        self._db = db
+        repo = Repository(db)
+
+        class FakeReg:
+            def get(self, *a, **k):
+                raise KeyError("нет")
+
+        s = Settings(QSettings(tf.mktemp(suffix=".ini"),
+                               QSettings.Format.IniFormat))
+        ctx = AppContext(repo=repo, settings=s,
+                         user_id_provider=lambda: login,
+                         user_role_provider=lambda: role)
+        w = GeneratorWindow(context=ctx, registry=FakeReg(),
+                            registry_builder=lambda: FakeReg())
+        self.addCleanup(w.deleteLater)
+        return w
+
+    def tearDown(self):
+        if hasattr(self, "_db") and os.path.exists(self._db):
+            os.remove(self._db)
+
+    def _combo_names(self, w):
+        return {w.subject_combo.itemText(i)
+                for i in range(w.subject_combo.count())}
+
+    def test_teacher_sees_builtin_plus_own(self):
+        w = self._window(login="alla", role="teacher")
+        names = self._combo_names(w)
+        self.assertIn("Встроенный", names)
+        self.assertIn("Аллы", names)
+        self.assertNotIn("Бориса", names)
+
+    def test_admin_sees_all(self):
+        w = self._window(login="root", role="admin")
+        names = self._combo_names(w)
+        self.assertEqual(names, {"Встроенный", "Аллы", "Бориса"})
+
+    def test_guest_no_owner_filter(self):
+        # Гость (login None) — витрина без фильтра владения (всё локальное).
+        w = self._window(login=None, role="student")
+        self.assertEqual(len(self._combo_names(w)), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

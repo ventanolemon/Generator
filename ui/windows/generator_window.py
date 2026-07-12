@@ -371,10 +371,28 @@ class GeneratorWindow(QMainWindow):
     def _show_hidden(self) -> bool:
         return self.show_hidden_cb.isChecked()
 
+    def _owner_scope(self) -> str | None:
+        """
+        Кого показывать в витрине предметов (list_subjects(owned_by=...)).
+        Канонический id пользователя = login (решение об унификации
+        идентичности, см. docs/ui_rework_plan.md).
+          * admin — None: видит все предметы (управление);
+          * гость (login None) — None: локальная витрина, владения нет;
+          * teacher/student — свой login: встроенные (owner NULL) + свои.
+        Пока все предметы встроенные (owner NULL), фильтр ничего не прячет;
+        разграничение оживает, когда сервер начнёт слать владельцев логином.
+        """
+        role = self.user_role_provider() if self.user_role_provider else None
+        uid = self.user_id_provider() if self.user_id_provider else None
+        if role == "admin" or uid is None:
+            return None
+        return uid
+
     def _load_subjects(self) -> None:
         try:
             self.subjects = self.repo.list_subjects(
-                include_hidden=self._show_hidden())
+                include_hidden=self._show_hidden(),
+                owned_by=self._owner_scope())
         except Exception as e:
             QMessageBox.critical(self, "Ошибка БД",
                                  f"Не удалось загрузить предметы: {e}")
