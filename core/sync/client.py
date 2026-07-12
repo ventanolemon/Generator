@@ -236,15 +236,33 @@ class SyncClient:
 
     def _apply_page(self, resp: dict, report: SyncReport) -> None:
         with self.repo._connect() as conn:  # noqa: SLF001
+            # Переносим owner_user_id, только если сервер его прислал И колонка
+            # есть локально — так десктоп совместим и со «старым» сервером (без
+            # владельца), и со «старой» локальной БД (без колонки).
+            has_owner_col = any(
+                r[1] == "owner_user_id" for r in
+                conn.execute("PRAGMA table_info(Subjects)").fetchall())
             for s in resp.get("subjects", []):
-                conn.execute(
-                    "INSERT INTO Subjects (id, subject_name, pra_subject) "
-                    "VALUES (?, ?, ?) "
-                    "ON CONFLICT(id) DO UPDATE SET "
-                    "  subject_name = excluded.subject_name, "
-                    "  pra_subject = excluded.pra_subject",
-                    (s["id"], s["subject_name"], s["pra_subject"]),
-                )
+                if has_owner_col and "owner_user_id" in s:
+                    conn.execute(
+                        "INSERT INTO Subjects (id, subject_name, pra_subject, "
+                        " owner_user_id) VALUES (?, ?, ?, ?) "
+                        "ON CONFLICT(id) DO UPDATE SET "
+                        "  subject_name = excluded.subject_name, "
+                        "  pra_subject = excluded.pra_subject, "
+                        "  owner_user_id = excluded.owner_user_id",
+                        (s["id"], s["subject_name"], s["pra_subject"],
+                         s.get("owner_user_id")),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO Subjects (id, subject_name, pra_subject) "
+                        "VALUES (?, ?, ?) "
+                        "ON CONFLICT(id) DO UPDATE SET "
+                        "  subject_name = excluded.subject_name, "
+                        "  pra_subject = excluded.pra_subject",
+                        (s["id"], s["subject_name"], s["pra_subject"]),
+                    )
                 report.pulled_subjects += 1
             for p in resp.get("partitions", []):
                 params = p.get("generation_parametrs")

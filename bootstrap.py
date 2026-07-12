@@ -84,6 +84,9 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
     # Колонки hidden в Subjects/Partitions — локальное скрытие сущностей.
     repo.ensure_hidden_columns()
 
+    # Колонка owner_user_id в Subjects — владелец предмета с сервера (sync).
+    repo.ensure_owner_column()
+
     for subject_id, gen in CODE_GENERATORS:
         if gen.partition_id is None:
             continue

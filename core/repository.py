@@ -23,6 +23,16 @@ class Subject:
     name: str
     parent_name: str  # значение поля pra_subject
     hidden: bool = False      # локальный флаг видимости (не синкается)
+    # Владелец предмета с сервера (owner_user_id). None = встроенный/системный
+    # предмет (сиды bootstrap), виден всем. Строка/число — сервер назначает;
+    # на десктоп попадает через sync-pull. Access-control по нему — на СЕРВЕРЕ
+    # (pull-scope), а не здесь (см. заметку в docs/ui_rework_plan.md).
+    owner_user_id: str | None = None
+
+    @property
+    def is_builtin(self) -> bool:
+        """Встроенный/системный предмет (без владельца) — общий для всех."""
+        return self.owner_user_id is None
 
 
 @dataclass(frozen=True)
@@ -87,6 +97,30 @@ class Repository:
                         f"hidden INTEGER NOT NULL DEFAULT 0")
             conn.commit()
 
+    def ensure_owner_column(self) -> None:
+        """
+        Гарантировать колонку owner_user_id в Subjects. Идемпотентно. NULL =
+        встроенный предмет (виден всем). Значение приходит с сервера через
+        sync-pull; локально предметы не создаются, поэтому пишет её только
+        синк. Access-control по владельцу — серверный pull-scope, не десктоп.
+        """
+        with self._connect() as conn:
+            cols = [r[1] for r in
+                    conn.execute("PRAGMA table_info(Subjects)").fetchall()]
+            if "owner_user_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE Subjects ADD COLUMN owner_user_id TEXT")
+            conn.commit()
+
+    def set_subject_owner(self, subject_id: int,
+                          owner_user_id: str | None) -> None:
+        """Проставить владельца предмета (используется синком/тестами)."""
+        self.ensure_owner_column()
+        with self._connect() as conn:
+            conn.execute("UPDATE Subjects SET owner_user_id = ? WHERE id = ?",
+                         (owner_user_id, subject_id))
+            conn.commit()
+
     def set_subject_hidden(self, subject_id: int, hidden: bool) -> None:
         self.ensure_hidden_columns()
         with self._connect() as conn:
@@ -103,21 +137,52 @@ class Repository:
 
     # ---------- Subjects ----------
 
-    def list_subjects(self, include_hidden: bool = False) -> List[Subject]:
+    def list_subjects(self, include_hidden: bool = False,
+                      owned_by: str | None = None) -> List[Subject]:
+        """
+        Предметы. include_hidden — показывать скрытые (локальный флаг).
+
+        owned_by — ЕСЛИ задан, вернуть только встроенные (owner IS NULL) +
+        принадлежащие этому пользователю. По умолчанию (None) фильтра нет —
+        видны все. ВАЖНО: этот фильтр НЕ является access-control (локальную
+        БД её владелец всё равно читает как хочет); он лишь для удобного
+        разграничения витрины. Настоящее разграничение доступа — на сервере
+        (pull-scope), и оно требует единой числовой идентичности пользователя
+        (сейчас десктоп знает пользователя как строку-логин, сервер — как
+        число), поэтому в UI фильтр пока НЕ включён. См.
+        docs/ui_rework_plan.md, раздел «Владение и роли».
+        """
         with self._connect() as conn:
-            try:
-                rows = conn.execute(
-                    "SELECT id, subject_name, pra_subject, hidden "
-                    "FROM Subjects" +
-                    ("" if include_hidden else " WHERE hidden = 0")
-                ).fetchall()
-                return [Subject(r[0], r[1], r[2], bool(r[3])) for r in rows]
-            except sqlite3.OperationalError:
-                # БД без колонки hidden (старые копии/тестовые схемы).
-                rows = conn.execute(
-                    "SELECT id, subject_name, pra_subject FROM Subjects"
-                ).fetchall()
-                return [Subject(r[0], r[1], r[2]) for r in rows]
+            # Интроспекция колонок: БД могла пройти миграцию частично (старые
+            # копии, тестовые схемы) — hidden и owner_user_id независимы.
+            cols = {r[1] for r in
+                    conn.execute("PRAGMA table_info(Subjects)").fetchall()}
+            has_hidden = "hidden" in cols
+            has_owner = "owner_user_id" in cols
+
+            select = "SELECT id, subject_name, pra_subject" + \
+                (", hidden" if has_hidden else "") + \
+                (", owner_user_id" if has_owner else "")
+            where, params = [], []
+            if has_hidden and not include_hidden:
+                where.append("hidden = 0")
+            if has_owner and owned_by is not None:
+                where.append("(owner_user_id IS NULL OR owner_user_id = ?)")
+                params.append(owned_by)
+            sql = f"{select} FROM Subjects"
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            rows = conn.execute(sql, params).fetchall()
+
+            out = []
+            for r in rows:
+                i = 3
+                hidden = bool(r[i]) if has_hidden else False
+                if has_hidden:
+                    i += 1
+                owner = r[i] if has_owner else None
+                out.append(Subject(r[0], r[1], r[2], hidden, owner))
+            return out
 
     def get_subject_by_name(self, name: str) -> Optional[Subject]:
         with self._connect() as conn:
