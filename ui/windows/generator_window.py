@@ -80,6 +80,7 @@ class GeneratorWindow(QMainWindow):
         self._sync_window = None
         self._contour_window = None
         self._admin_window = None
+        self._analytics_window = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -129,6 +130,16 @@ class GeneratorWindow(QMainWindow):
                 "Генератор через ИИ: опишите задание — сервер соберёт и "
                 "проверит генератор, вы утвердите результат.",
                 self._open_contour_window,
+                roles={"teacher", "admin"},
+            )
+        if self.ctx.analytics_client is not None:
+            # Аналитика — преподавателям/админам (окно покажет заглушку без
+            # сервера; скоуп данных считает сервер по владению предметами).
+            self.top_bar.add_action(
+                "Аналитика",
+                "Дашборд успеваемости: попытки, доля верных, сложность "
+                "заданий, студенты и группы (только с сервером).",
+                self._open_analytics_window,
                 roles={"teacher", "admin"},
             )
         if self.ctx.admin_client is not None:
@@ -357,6 +368,23 @@ class GeneratorWindow(QMainWindow):
 
     def _on_admin_window_destroyed(self, *_args) -> None:
         self._admin_window = None
+
+    # ---------- Аналитика ----------
+
+    def _open_analytics_window(self) -> None:
+        from ui.windows.analytics_window import AnalyticsWindow
+        if self._analytics_window is None:
+            self._analytics_window = AnalyticsWindow(self.ctx, self)
+            self._analytics_window.destroyed.connect(
+                self._on_analytics_window_destroyed)
+        else:
+            self._analytics_window.refresh()
+        self._analytics_window.show()
+        self._analytics_window.raise_()
+        self._analytics_window.activateWindow()
+
+    def _on_analytics_window_destroyed(self, *_args) -> None:
+        self._analytics_window = None
 
     def _refresh_sync_badge(self) -> None:
         """Обновить статус-бейдж синка в панели (очередь/конфликты)."""

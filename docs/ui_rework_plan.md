@@ -208,7 +208,13 @@ Backend-задача волны — критический путь Opus; пре
    `teacher_groups`/`assignments` (схема уже в GenerationWeb).
 3. Глобальная аналитика: агрегаты по группам/партициям, метрики контура
    (`analytics.md`: `mv_group_progress`/`mv_partition_health`/
-   `mv_contour_funnel`).
+   `mv_contour_funnel`). ✅ MVP: сервер `GET /analytics/overview`
+   (GenerationWeb, скоуп по владению — teacher свои+системные, admin все) +
+   десктоп `AnalyticsWindow` (`core/analytics/AnalyticsClient`,
+   `ui/widgets/bar_chart.py` без QtCharts): KPI с дельтами, динамика по
+   дням, распределение по доле верных, таблицы задач/студентов/групп,
+   селектор периода и группы. Кнопка в TopBar `roles={teacher,admin}`.
+   Тесты: `test_analytics_client` (5), `test_analytics_window` (7).
 4. Встроенный контент: управление системными предметами (owner NULL),
    модерация принятого корпуса контура.
 5. teacher видит и правит только своё; student — только решение и свою

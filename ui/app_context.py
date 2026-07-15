@@ -37,3 +37,4 @@ class AppContext:
     sync_client: object | None = None
     contour_client: object | None = None
     admin_client: object | None = None
+    analytics_client: object | None = None
