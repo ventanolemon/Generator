@@ -227,11 +227,14 @@ Backend-задача волны — критический путь Opus; пре
    Сервер ✅ (GenerationWeb PR #12): `GET /admin/users` + `POST
    /admin/users/{login}/role` (`core/admin_api.py`), guardrails без
    self-elevation и без понижения последнего admin, 12 тестов. Десктоп —
-   не начат: `AdminClient` (по образцу `ContourClient`), `AdminWindow`
-   (PyQt), кнопка в TopBar `roles={"admin"}` только при заданном адресе
-   сервера. Визуальный слой — черновой Fable-артефакт (таблица
-   пользователей + confirm-флоу смены роли + матрица прав по ролям),
-   контракт полей ложится на ответ `/admin/users` почти без изменений.
+   ✅ и десктоп: `core/admin/client.py::AdminClient` (users+groups,
+   транспорт с методом GET/POST/DELETE, `can_use`=сервер+admin, ошибки
+   сервера 401/403/400 → `AdminError` со `status`); `ui/windows/
+   admin_window.py::AdminWindow` — 3 вкладки (пользователи/роли со сменой
+   роли и confirm + откат по guardrail-400; группы: мастер-деталь с
+   составом и преподавателями; статичная матрица прав). Кнопка в TopBar
+   `roles={"admin"}`; окно показывает заглушку, если адрес сервера не задан.
+   Тесты: `test_admin_client` (7), `test_admin_window` (9, offscreen).
 5. **Группы + назначение учителей (задача 2)** — сервер ✅ (GenerationWeb
    PR по группам): групповые FK сведены к логину (миграция 003), структурная
    группа (`groups`+`group_members`) — источник истины членства, засеивается
@@ -240,10 +243,12 @@ Backend-задача волны — критический путь Opus; пре
    (создание, состав, назначение преподавателей с guardrail'ами: непустое
    уникальное имя, существование группы/пользователя, роль teacher/admin для
    назначения) + teacher read-view `/groups/mine`. 15 тестов
-   (`core/groups_api.py`, `core/test_groups_api.py`). Десктоп — read-only
-   витрина групп у преподавателя + admin-управление в `AdminWindow`
-   (следующим шагом). NB: `assignments` (партиция→группа, домашки) — отдельная
-   будущая фича, схема есть, код не подключён.
+   (`core/groups_api.py`, `core/test_groups_api.py`). Десктоп: admin-
+   управление группами — во вкладке «Группы» `AdminWindow` (см. п.4);
+   `AdminClient.my_groups()` (/groups/mine) готов для read-only витрины
+   групп у преподавателя (подключение к главному окну — по необходимости).
+   NB: `assignments` (партиция→группа, домашки) — отдельная будущая фича,
+   схема есть, код не подключён.
 
 ---
 

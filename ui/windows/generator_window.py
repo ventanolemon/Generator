@@ -79,6 +79,7 @@ class GeneratorWindow(QMainWindow):
         self._stats_window: StatsWindow | None = None
         self._sync_window = None
         self._contour_window = None
+        self._admin_window = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -129,6 +130,16 @@ class GeneratorWindow(QMainWindow):
                 "проверит генератор, вы утвердите результат.",
                 self._open_contour_window,
                 roles={"teacher", "admin"},
+            )
+        if self.ctx.admin_client is not None:
+            # Администрирование — только admin (окно само покажет заглушку,
+            # если адрес сервера не задан: права server-authoritative).
+            self.top_bar.add_action(
+                "Администрирование",
+                "Пользователи и роли, группы и назначение преподавателей "
+                "(только с сервером).",
+                self._open_admin_window,
+                roles={"admin"},
             )
 
         # ---- Контент (под панелью) ----
@@ -329,6 +340,23 @@ class GeneratorWindow(QMainWindow):
 
     def _on_contour_window_destroyed(self, *_args) -> None:
         self._contour_window = None
+
+    # ---------- Администрирование ----------
+
+    def _open_admin_window(self) -> None:
+        from ui.windows.admin_window import AdminWindow
+        if self._admin_window is None:
+            self._admin_window = AdminWindow(self.ctx, self)
+            self._admin_window.destroyed.connect(
+                self._on_admin_window_destroyed)
+        else:
+            self._admin_window.refresh()
+        self._admin_window.show()
+        self._admin_window.raise_()
+        self._admin_window.activateWindow()
+
+    def _on_admin_window_destroyed(self, *_args) -> None:
+        self._admin_window = None
 
     def _refresh_sync_badge(self) -> None:
         """Обновить статус-бейдж синка в панели (очередь/конфликты)."""
