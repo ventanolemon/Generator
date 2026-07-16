@@ -20,7 +20,7 @@ from typing import Callable, Optional
 
 from PyQt6.QtCore import QDate, Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QHBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QDialog, QHBoxLayout,
     QHeaderView, QLabel, QPushButton, QStackedWidget, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
@@ -127,8 +127,9 @@ class HomeworkWindow(QWidget):
         lay.addWidget(self.teacher_error)
 
         self.teaching_table = self._make_table(
-            page, ["Задание", "Предмет", "Группа", "Срок", ""])
+            page, ["Задание", "Предмет", "Группа", "Срок", "Сдали", ""])
         lay.addWidget(self.teaching_table, stretch=1)
+        self._progress_dialog: Optional[QDialog] = None
         return page
 
     def _build_student_page(self) -> QWidget:
@@ -226,11 +227,62 @@ class HomeworkWindow(QWidget):
                 row, 2, QTableWidgetItem(str(a.get("group_name", ""))))
             self.teaching_table.setItem(
                 row, 3, QTableWidgetItem(self._fmt_due(a.get("due_at"))))
-            btn = QPushButton("Снять", self.teaching_table)
-            btn.setProperty("class", "danger")
+            self.teaching_table.setItem(
+                row, 4, QTableWidgetItem(
+                    f"{a.get('solved_count', 0)}/{a.get('member_count', 0)}"))
             aid = int(a["id"])
-            btn.clicked.connect(lambda _c=False, i=aid: self._on_delete(i))
-            self.teaching_table.setCellWidget(row, 4, btn)
+            actions = QWidget(self.teaching_table)
+            arow = QHBoxLayout(actions)
+            arow.setContentsMargins(2, 2, 2, 2)
+            arow.setSpacing(4)
+            who_btn = QPushButton("Кто сдал", actions)
+            who_btn.clicked.connect(lambda _c=False, i=aid: self._show_progress(i))
+            arow.addWidget(who_btn)
+            del_btn = QPushButton("Снять", actions)
+            del_btn.setProperty("class", "danger")
+            del_btn.clicked.connect(lambda _c=False, i=aid: self._on_delete(i))
+            arow.addWidget(del_btn)
+            self.teaching_table.setCellWidget(row, 5, actions)
+
+    def _show_progress(self, assignment_id: int) -> None:
+        self.teacher_error.hide()
+        self._start_call(lambda: self.client.progress(assignment_id),
+                         self._on_progress, self._on_teacher_error)
+
+    def _on_progress(self, data: object) -> None:
+        if not isinstance(data, dict):
+            return
+        dlg = self._progress_dialog
+        if dlg is None:
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Кто сдал")
+            dlg.resize(420, 360)
+            dlay = QVBoxLayout(dlg)
+            dlg.summary_label = QLabel("", dlg)
+            dlg.summary_label.setProperty("class", "muted")
+            dlay.addWidget(dlg.summary_label)
+            dlg.table = self._make_table(dlg, ["Студент", "Попыток", "Статус"])
+            dlay.addWidget(dlg.table, stretch=1)
+            self._progress_dialog = dlg
+        summary = data.get("summary") or {}
+        a = data.get("assignment") or {}
+        dlg.summary_label.setText(
+            f"{a.get('partition_name', '')} · {a.get('group_name', '')} — "
+            f"сдали {summary.get('solved', 0)} из {summary.get('members', 0)}")
+        dlg.table.setRowCount(0)
+        for s in (data.get("students") or []):
+            row = dlg.table.rowCount()
+            dlg.table.insertRow(row)
+            fio = str(s.get("fio", "")) or str(s.get("login", ""))
+            dlg.table.setItem(row, 0, QTableWidgetItem(
+                f"{fio}\n{s.get('login', '')}"))
+            dlg.table.setItem(row, 1, QTableWidgetItem(
+                str(s.get("attempts", 0))))
+            status = ("сдал" if s.get("solved")
+                      else "пытался" if s.get("attempts") else "не начал")
+            dlg.table.setItem(row, 2, QTableWidgetItem(status))
+        dlg.show()
+        dlg.raise_()
 
     def _on_assign(self) -> None:
         pid = self.task_combo.currentData()

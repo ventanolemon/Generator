@@ -107,12 +107,30 @@ class HomeworkWindowTests(unittest.TestCase):
         self._spin(lambda: w.teaching_table.rowCount() == 1)
         self._settle(w)
         self.assertEqual(len(self._srv.assignments), 1)
-        # Снять — кнопка в последней колонке.
-        btn = w.teaching_table.cellWidget(0, 4)
-        btn.click()
+        # «Сдали X/Y» из обогащённого teaching.
+        self.assertEqual(w.teaching_table.item(0, 4).text(), "1/2")
+        # Снять — вторая кнопка в ячейке действий (последняя колонка).
+        from PyQt6.QtWidgets import QPushButton
+        actions = w.teaching_table.cellWidget(0, 5)
+        del_btn = actions.findChildren(QPushButton)[-1]
+        del_btn.click()
         self._spin(lambda: w.teaching_table.rowCount() == 0)
         self._settle(w)
         self.assertEqual(self._srv.assignments, {})
+
+    def test_teacher_who_solved_dialog(self):
+        w = self._window(role="teacher")
+        self._settle(w)
+        self._spin(lambda: w.group_combo.count() == 1)
+        w.no_due_check.setChecked(True)
+        w.assign_btn.click()
+        self._spin(lambda: w.teaching_table.rowCount() == 1)
+        self._settle(w)
+        w._show_progress(list(self._srv.assignments)[0])
+        self._settle(w)
+        self._spin(lambda: w._progress_dialog is not None
+                   and w._progress_dialog.table.rowCount() == 2)
+        self.assertIn("сдали 1 из 2", w._progress_dialog.summary_label.text())
 
     def test_teacher_assign_uses_due_epoch(self):
         w = self._window(role="teacher")

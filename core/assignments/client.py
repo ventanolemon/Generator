@@ -80,6 +80,11 @@ class AssignmentsClient:
     def delete(self, assignment_id: int) -> dict:
         return self._call(f"/assignments/{int(assignment_id)}", None, "DELETE")
 
+    def progress(self, assignment_id: int) -> dict:
+        """Пофамильный прогресс по выдаче (автор/admin): кто сдал."""
+        return self._call(f"/assignments/{int(assignment_id)}/progress",
+                          None, "GET")
+
     def my_groups(self) -> list[dict]:
         """Группы преподавателя — для выбора в форме выдачи (/groups/mine)."""
         resp = self._call("/groups/mine", None, "GET")

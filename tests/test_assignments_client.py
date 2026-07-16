@@ -27,9 +27,20 @@ class FakeServer:
             self.assignments[aid] = rec
             return rec
         if path == "/assignments/teaching":
-            return {"assignments": list(self.assignments.values())}
+            items = [{**a, "member_count": 2, "solved_count": 1}
+                     for a in self.assignments.values()]
+            return {"assignments": items}
         if path == "/assignments/mine":
             return {"assignments": list(self.assignments.values())}
+        if path.endswith("/progress") and method == "GET":
+            aid = int(path.split("/")[2])
+            return {"assignment": self.assignments.get(aid, {"id": aid}),
+                    "students": [
+                        {"login": "s1", "fio": "Иванов", "attempts": 2,
+                         "solved": True, "last_at": 1.0},
+                        {"login": "s2", "fio": "Петров", "attempts": 1,
+                         "solved": False, "last_at": 1.0}],
+                    "summary": {"members": 2, "attempted": 2, "solved": 1}}
         if path.startswith("/assignments/") and method == "DELETE":
             aid = int(path.rsplit("/", 1)[1])
             self.assignments.pop(aid, None)
@@ -86,6 +97,22 @@ class ApiTests(unittest.TestCase):
         srv = FakeServer()
         groups = _client(srv).my_groups()
         self.assertEqual([g["name"] for g in groups], ["Г1"])
+
+    def test_teaching_carries_completion_counts(self):
+        srv = FakeServer()
+        c = _client(srv)
+        c.create(10, 1)
+        item = c.teaching()[0]
+        self.assertEqual(item["member_count"], 2)
+        self.assertEqual(item["solved_count"], 1)
+
+    def test_progress(self):
+        srv = FakeServer()
+        c = _client(srv)
+        out = c.create(10, 1)
+        prog = c.progress(out["id"])
+        self.assertEqual(prog["summary"]["solved"], 1)
+        self.assertEqual(len(prog["students"]), 2)
 
     def test_error_wrapped(self):
         def boom(path, payload, method):
