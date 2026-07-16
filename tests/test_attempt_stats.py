@@ -66,10 +66,12 @@ if HAS_QT:
             self.calls: list[tuple[int, dict, bool | None]] = []
             self._raises = raises
 
-        def queue_attempt(self, partition_id, payload, correct=None):
+        def queue_attempt(self, partition_id, payload, correct=None,
+                          assignment_id=None):
             if self._raises:
                 raise RuntimeError("диск переполнен")
             self.calls.append((partition_id, dict(payload), correct))
+            self.last_assignment_id = assignment_id
 
 
 @unittest.skipUnless(HAS_QT, "PyQt6 не установлен")

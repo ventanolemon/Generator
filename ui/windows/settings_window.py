@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 
 from ui.app_context import AppContext
 from ui.theme import apply_theme
+from ui.widgets.password_field import make_password_field
 
 # Метки тем для комбобокса ↔ внутренние имена палитр.
 _THEMES = [("Тёмная", "dark"), ("Светлая", "light")]
@@ -124,9 +125,9 @@ class SettingsWindow(QDialog):
         self.old_pass_edit = QLineEdit(w)
         self.old_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
         form.addRow("Текущий пароль:", self.old_pass_edit)
-        self.new_pass_edit = QLineEdit(w)
-        self.new_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        form.addRow("Новый пароль:", self.new_pass_edit)
+        new_pass_row = make_password_field(w)
+        self.new_pass_edit = new_pass_row.edit
+        form.addRow("Новый пароль:", new_pass_row)
         self.repeat_pass_edit = QLineEdit(w)
         self.repeat_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
         form.addRow("Ещё раз:", self.repeat_pass_edit)

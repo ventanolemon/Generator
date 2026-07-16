@@ -277,6 +277,22 @@ Backend-задача волны — критический путь Opus; пре
    (автор/admin) + `GET /assignments/{id}/progress`. Десктоп: колонка
    «Сдали» в списке выдач + кнопка «Кто сдал» → диалог с пофамильным
    статусом (сдал/пытался/не начал). Тесты: +4 сервер, +2 клиент/окно.
+8. **Доработки по мелочи** ✅
+   - **Показ пароля**: `ui/widgets/password_field.make_password_field`
+     (поле + переключатель Показать/Скрыть) во входе, регистрации и смене
+     пароля; `AuthWindow` запоминает последний удачный логин
+     (`Settings.get/set_last_login`) и подставляет его, фокус — на пароль.
+   - **«Мои группы»** (read-only у преподавателя): `MyGroupsWindow`
+     (список групп + состав) поверх `/groups/mine`, кнопка в TopBar.
+   - **Решать домашку из окна** + привязка попытки к выдаче:
+     `SyncClient.queue_attempt(..., assignment_id)` →
+     `BaseTaskView.attach_stats(..., assignment_id)`;
+     `GeneratorWindow.open_partition(pid, assignment_id)` (реестр держит
+     генераторы независимо от owner-фильтра, поэтому выданная из чужого
+     предмета задача открывается); студент запускает задание двойным кликом
+     по строке домашки (`open_task` → generator_window). NB: per-row
+     cellWidget-кнопки в таблице роняли teardown Qt — заменены на
+     `cellDoubleClicked` + id в данных ячейки.
 
 ---
 

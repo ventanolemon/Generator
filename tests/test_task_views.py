@@ -179,5 +179,42 @@ class TestExportViewTests(unittest.TestCase):
         self.assertEqual(v.tabs.count(), 3)
 
 
+@unittest.skipUnless(HAS_QT, "PyQt6 не установлен")
+class AttemptAttributionTests(unittest.TestCase):
+    """attach_stats(assignment_id) → попытка тегируется выдачей."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    class _FakeSync:
+        def __init__(self):
+            self.calls = []
+
+        def queue_attempt(self, partition_id, payload, correct=None,
+                          assignment_id=None):
+            self.calls.append((partition_id, correct, assignment_id))
+
+    def test_attempt_tagged_with_assignment_id(self):
+        v = InteractiveTaskView(FakeInteractiveGen())
+        sync = self._FakeSync()
+        v.attach_stats(partition_id=5, sync_client=sync, assignment_id=42)
+        v.input_field.setText("ok")
+        v.submit_btn.click()
+        self.assertTrue(sync.calls)
+        partition_id, _correct, assignment_id = sync.calls[0]
+        self.assertEqual(partition_id, 5)
+        self.assertEqual(assignment_id, 42)
+
+    def test_attempt_without_assignment_id_is_none(self):
+        v = InteractiveTaskView(FakeInteractiveGen())
+        sync = self._FakeSync()
+        v.attach_stats(partition_id=5, sync_client=sync)
+        v.input_field.setText("ok")
+        v.submit_btn.click()
+        self.assertTrue(sync.calls)
+        self.assertIsNone(sync.calls[0][2])
+
+
 if __name__ == "__main__":
     unittest.main()

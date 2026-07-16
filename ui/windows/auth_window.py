@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core import Repository
+from ui.widgets.password_field import make_password_field
 
 
 def _field_label(text: str, parent: QWidget) -> QLabel:
@@ -72,11 +73,15 @@ class AuthWindow(QWidget):
         repository: Repository,
         on_success: Callable[[Optional[tuple]], None],
         on_register: Optional[Callable[[], None]] = None,
+        settings: object | None = None,
     ):
         super().__init__()
         self.repo = repository
         self.on_success = on_success
         self.on_register = on_register
+        # Settings (опц.) — запоминаем последний удачный логин и подставляем
+        # его при следующем входе (мелкое удобство).
+        self.settings = settings
 
         self.setWindowTitle("Вход — Генератор заданий")
         self.resize(720, 440)
@@ -116,11 +121,17 @@ class AuthWindow(QWidget):
         col.addSpacing(8)
 
         col.addWidget(_field_label("Пароль", right))
-        self.password_edit = QLineEdit(right)
-        self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_edit.setPlaceholderText("••••••••")
-        col.addWidget(self.password_edit)
+        pwd_row = make_password_field(right, placeholder="••••••••")
+        self.password_edit = pwd_row.edit
+        col.addWidget(pwd_row)
         col.addSpacing(18)
+
+        # Подставляем последний удачный логин (если знаем) и фокус — на пароль.
+        last_login = ""
+        if self.settings is not None and hasattr(self.settings, "get_last_login"):
+            last_login = self.settings.get_last_login()
+        if last_login:
+            self.login_edit.setText(last_login)
 
         login_btn = QPushButton("Войти", right)
         login_btn.setProperty("class", "primary")
@@ -153,7 +164,13 @@ class AuthWindow(QWidget):
         login_btn.clicked.connect(self._on_login)
         guest_btn.clicked.connect(self._on_guest)
         self.password_edit.returnPressed.connect(self._on_login)
-        self.login_edit.setFocus()
+        self.login_edit.returnPressed.connect(
+            lambda: self.password_edit.setFocus())
+        # Логин уже подставлен — курсор сразу на пароль, иначе на логин.
+        if self.login_edit.text():
+            self.password_edit.setFocus()
+        else:
+            self.login_edit.setFocus()
 
     def _on_login(self) -> None:
         login = self.login_edit.text().strip()
@@ -169,6 +186,8 @@ class AuthWindow(QWidget):
         if user is None:
             QMessageBox.warning(self, "Ошибка", "Неверный логин или пароль.")
             return
+        if self.settings is not None and hasattr(self.settings, "set_last_login"):
+            self.settings.set_last_login(login)
         self.on_success(user)
         self.close()
 

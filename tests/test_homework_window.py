@@ -148,13 +148,28 @@ class HomeworkWindowTests(unittest.TestCase):
 
     def test_student_lists_homework(self):
         srv = FakeServer()
-        srv.assignments[1] = {"id": 1, "partition_name": "Сила F=ma",
+        srv.assignments[1] = {"id": 1, "partition_id": 10,
+                              "partition_name": "Сила F=ma",
                               "subject_name": "Физика", "group_name": "Г1",
                               "due_at": None}
         w = self._window(role="student", server=srv)
         self._settle(w)
         self._spin(lambda: w.mine_table.rowCount() == 1)
         self.assertEqual(w.mine_table.item(0, 3).text(), "без срока")
+
+    def test_student_solve_emits_open_task(self):
+        srv = FakeServer()
+        srv.assignments[1] = {"id": 1, "partition_id": 10,
+                              "partition_name": "Сила F=ma",
+                              "subject_name": "Физика", "group_name": "Г1",
+                              "due_at": None}
+        w = self._window(role="student", server=srv)
+        self._settle(w)
+        self._spin(lambda: w.mine_table.rowCount() == 1)
+        emitted = []
+        w.open_task.connect(lambda p, a: emitted.append((p, a)))
+        w.mine_table.cellDoubleClicked.emit(0, 0)   # двойной клик — «решать»
+        self.assertEqual(emitted, [(10, 1)])
 
 
 if __name__ == "__main__":
