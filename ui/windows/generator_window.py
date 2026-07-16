@@ -79,6 +79,9 @@ class GeneratorWindow(QMainWindow):
         self._stats_window: StatsWindow | None = None
         self._sync_window = None
         self._contour_window = None
+        self._admin_window = None
+        self._analytics_window = None
+        self._homework_window = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -129,6 +132,36 @@ class GeneratorWindow(QMainWindow):
                 "проверит генератор, вы утвердите результат.",
                 self._open_contour_window,
                 roles={"teacher", "admin"},
+            )
+        if self.ctx.analytics_client is not None:
+            # Аналитика — преподавателям/админам (окно покажет заглушку без
+            # сервера; скоуп данных считает сервер по владению предметами).
+            self.top_bar.add_action(
+                "Аналитика",
+                "Дашборд успеваемости: попытки, доля верных, сложность "
+                "заданий, студенты и группы (только с сервером).",
+                self._open_analytics_window,
+                roles={"teacher", "admin"},
+            )
+        if self.ctx.assignments_client is not None:
+            # Домашки — вошедшему пользователю (teacher/admin выдают, student
+            # смотрит; ветвление и заглушки — внутри окна).
+            self.top_bar.add_action(
+                "Домашки",
+                "Выдача заданий группам (преподаватель) и просмотр выданных "
+                "домашек (студент). Требует сервера.",
+                self._open_homework_window,
+                roles={"teacher", "admin", "student"},
+            )
+        if self.ctx.admin_client is not None:
+            # Администрирование — только admin (окно само покажет заглушку,
+            # если адрес сервера не задан: права server-authoritative).
+            self.top_bar.add_action(
+                "Администрирование",
+                "Пользователи и роли, группы и назначение преподавателей "
+                "(только с сервером).",
+                self._open_admin_window,
+                roles={"admin"},
             )
 
         # ---- Контент (под панелью) ----
@@ -329,6 +362,57 @@ class GeneratorWindow(QMainWindow):
 
     def _on_contour_window_destroyed(self, *_args) -> None:
         self._contour_window = None
+
+    # ---------- Администрирование ----------
+
+    def _open_admin_window(self) -> None:
+        from ui.windows.admin_window import AdminWindow
+        if self._admin_window is None:
+            self._admin_window = AdminWindow(self.ctx, self)
+            self._admin_window.destroyed.connect(
+                self._on_admin_window_destroyed)
+        else:
+            self._admin_window.refresh()
+        self._admin_window.show()
+        self._admin_window.raise_()
+        self._admin_window.activateWindow()
+
+    def _on_admin_window_destroyed(self, *_args) -> None:
+        self._admin_window = None
+
+    # ---------- Аналитика ----------
+
+    def _open_analytics_window(self) -> None:
+        from ui.windows.analytics_window import AnalyticsWindow
+        if self._analytics_window is None:
+            self._analytics_window = AnalyticsWindow(self.ctx, self)
+            self._analytics_window.destroyed.connect(
+                self._on_analytics_window_destroyed)
+        else:
+            self._analytics_window.refresh()
+        self._analytics_window.show()
+        self._analytics_window.raise_()
+        self._analytics_window.activateWindow()
+
+    def _on_analytics_window_destroyed(self, *_args) -> None:
+        self._analytics_window = None
+
+    # ---------- Домашки ----------
+
+    def _open_homework_window(self) -> None:
+        from ui.windows.homework_window import HomeworkWindow
+        if self._homework_window is None:
+            self._homework_window = HomeworkWindow(self.ctx, self)
+            self._homework_window.destroyed.connect(
+                self._on_homework_window_destroyed)
+        else:
+            self._homework_window.refresh()
+        self._homework_window.show()
+        self._homework_window.raise_()
+        self._homework_window.activateWindow()
+
+    def _on_homework_window_destroyed(self, *_args) -> None:
+        self._homework_window = None
 
     def _refresh_sync_badge(self) -> None:
         """Обновить статус-бейдж синка в панели (очередь/конфликты)."""

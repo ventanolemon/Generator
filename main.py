@@ -17,6 +17,9 @@ from PyQt6.QtWidgets import QApplication
 
 from const import DB_PATH, WORDS_DIR
 from core import Repository, WordStatsStore
+from core.admin import AdminClient
+from core.analytics import AnalyticsClient
+from core.assignments import AssignmentsClient
 from core.contour import ContourClient
 from core.session import Session
 from core.settings import Settings
@@ -76,6 +79,24 @@ def main() -> int:
                                    user_id_provider=user_id_provider,
                                    user_role_provider=user_role_provider)
 
+    # Клиент администрирования (пользователи/роли, группы): тот же web_layer.
+    # Кнопка окна гейтится admin + заданным адресом сервера (can_use).
+    admin_client = AdminClient(base_url=settings.get_base_url(),
+                               user_id_provider=user_id_provider,
+                               user_role_provider=user_role_provider)
+
+    # Клиент аналитики (дашборд успеваемости): тот же web_layer. Кнопка
+    # гейтится teacher/admin + заданным адресом сервера (can_use).
+    analytics_client = AnalyticsClient(base_url=settings.get_base_url(),
+                                       user_id_provider=user_id_provider,
+                                       user_role_provider=user_role_provider)
+
+    # Клиент домашек (выдача заданий группам / просмотр студентом): тот же
+    # web_layer. Кнопка видна вошедшему пользователю (гейтинг ролью в окне).
+    assignments_client = AssignmentsClient(base_url=settings.get_base_url(),
+                                           user_id_provider=user_id_provider,
+                                           user_role_provider=user_role_provider)
+
     def make_registry():
         return build_registry(
             repo, WORDS_DIR,
@@ -90,6 +111,9 @@ def main() -> int:
         user_role_provider=user_role_provider,
         sync_client=sync_client,
         contour_client=contour_client,
+        admin_client=admin_client,
+        analytics_client=analytics_client,
+        assignments_client=assignments_client,
     )
 
     registry = make_registry()

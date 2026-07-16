@@ -205,8 +205,10 @@ class SettingsWindow(QDialog):
     def _on_save(self) -> None:
         url = self.base_url_edit.text().strip()
         self.settings.set_base_url(url)
-        # Клиенты (синк и контур) подхватывают новый адрес без перезапуска.
-        for client in (self.ctx.sync_client, self.ctx.contour_client):
+        # Клиенты (синк, контур, админ, аналитика, домашки) — адрес.
+        for client in (self.ctx.sync_client, self.ctx.contour_client,
+                       self.ctx.admin_client, self.ctx.analytics_client,
+                       self.ctx.assignments_client):
             if client is not None and hasattr(client, "set_base_url"):
                 client.set_base_url(url)
         name = self.theme_combo.currentData()

@@ -11,7 +11,8 @@ docs/ui_rework_plan.md).
   * user_role_provider  — роль сессии (student|teacher|admin); ею гейтятся
                           ролевые действия (например, кнопка контура);
   * sync_client         — клиент офлайн-синхронизации (None, пока не настроен);
-  * contour_client      — клиент LLM-контура (None, пока не настроен).
+  * contour_client      — клиент LLM-контура (None, пока не настроен);
+  * admin_client        — клиент администрирования (None, пока не настроен).
 
 Оконно-специфичное (реестр генераторов, хранилище словарной статистики,
 каталог слов) остаётся отдельными аргументами конкретных окон — это не
@@ -35,3 +36,6 @@ class AppContext:
     user_role_provider: Callable[[], str]
     sync_client: object | None = None
     contour_client: object | None = None
+    admin_client: object | None = None
+    analytics_client: object | None = None
+    assignments_client: object | None = None

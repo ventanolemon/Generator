@@ -394,40 +394,99 @@ class ContourWindow(QWidget):
         self.stack.setCurrentIndex(STAGE_DECISION)
 
     def _build_approval_ui(self, job: dict) -> None:
-        head = QLabel("Превью готовы — нужно ваше решение", self._decision_host)
+        head = QLabel("Приёмка задания", self._decision_host)
         head.setProperty("class", "subtitle")
         self._add_decision(head)
 
-        # warn-флаги петли — чипы badge-warn.
         flags = [str(f) for f in (job.get("flags") or [])]
-        if flags:
-            flags_row = QHBoxLayout()
-            flags_row.setSpacing(6)
-            for flag in flags:
-                chip = QLabel(flag, self._decision_host)
-                chip.setProperty("class", "badge-warn")
-                flags_row.addWidget(chip)
-            flags_row.addStretch(1)
-            self._add_decision_layout(flags_row)
-
-        # Вердикт критика (если сервер его вернул).
         critic = job.get("critic") or {}
-        summary = str(critic.get("summary", "")).strip()
-        if summary:
-            text = f"Критик: {summary}"
-            confidence = critic.get("confidence")
-            if confidence is not None:
-                text += f" (уверенность {confidence})"
-            critic_label = QLabel(text, self._decision_host)
-            critic_label.setProperty("class", "muted")
-            critic_label.setWordWrap(True)
-            self._add_decision(critic_label)
 
-        for preview in (job.get("previews") or []):
-            self._add_decision(self._make_preview_card(preview))
-
-        # Имя будущей партиции — предзаполняем началом описания.
+        # --- Шапка-карточка: описание + чип типа + статус-пилюля S6 ---
+        header_card, hlay = self._decision_card()
         description = str(job.get("description") or self._job_description)
+        desc_label = QLabel(description, header_card)
+        desc_label.setWordWrap(True)
+        hlay.addWidget(desc_label)
+        chips = QHBoxLayout()
+        chips.setSpacing(6)
+        task_type = (job.get("constraints") or {}).get("task_type")
+        type_label = {"static": "статическое",
+                      "interactive": "интерактивное"}.get(task_type, "задание")
+        chips.addWidget(self._chip(type_label, "chip", header_card))
+        chips.addWidget(self._chip("на утверждении · S6", "badge", header_card))
+        chips.addStretch(1)
+        hlay.addLayout(chips)
+        self._add_decision(header_card)
+
+        # --- Карточка критика: вердикт-бейдж + метр уверенности + текст ---
+        summary = str(critic.get("summary", "")).strip()
+        confidence = critic.get("confidence")
+        if summary or confidence is not None or flags:
+            critic_card, clay = self._decision_card()
+            vrow = QHBoxLayout()
+            vrow.setSpacing(8)
+            vrow.addWidget(self._verdict_badge(critic, flags, critic_card))
+            title = QLabel("Критик", critic_card)
+            title.setProperty("class", "accent")
+            vrow.addWidget(title)
+            vrow.addStretch(1)
+            clay.addLayout(vrow)
+
+            if confidence is not None:
+                meter = QProgressBar(critic_card)
+                meter.setRange(0, 100)
+                try:
+                    meter.setValue(int(round(float(confidence) * 100)))
+                except (TypeError, ValueError):
+                    meter.setValue(0)
+                meter.setFormat("уверенность %p%")
+                clay.addWidget(meter)
+
+            # Текстовая строка критика — несёт «Критик:» и сырую уверенность
+            # (инвариант: сводка критика читается и без визуального метра).
+            if summary or confidence is not None:
+                conf_txt = "" if confidence is None \
+                    else f" (уверенность {confidence})"
+                critic_label = QLabel(
+                    (f"Критик: {summary}" if summary else "Критик:") + conf_txt,
+                    critic_card)
+                critic_label.setProperty("class", "muted")
+                critic_label.setWordWrap(True)
+                clay.addWidget(critic_label)
+
+            # warn-флаги проб — не блокируют приёмку.
+            if flags:
+                flags_cap = QLabel(
+                    "Предупреждения проб — не блокируют приёмку:", critic_card)
+                flags_cap.setProperty("class", "muted")
+                clay.addWidget(flags_cap)
+                frow = QHBoxLayout()
+                frow.setSpacing(6)
+                for flag in flags:
+                    chip = QLabel(flag, critic_card)
+                    chip.setProperty("class", "badge-warn")
+                    chip.setWordWrap(True)
+                    frow.addWidget(chip)
+                frow.addStretch(1)
+                clay.addLayout(frow)
+            self._add_decision(critic_card)
+
+        # --- Превью заданий (разные seed) ---
+        previews = job.get("previews") or []
+        if previews:
+            pv_head = QLabel("Примеры заданий (разные seed)",
+                             self._decision_host)
+            pv_head.setProperty("class", "muted")
+            self._add_decision(pv_head)
+            for preview in previews:
+                self._add_decision(self._make_preview_card(preview))
+
+        # --- Раунды контура (компактный таймлайн) ---
+        rounds = job.get("rounds") or []
+        if rounds:
+            self._add_decision(self._make_rounds_card(rounds))
+
+        # --- Имя партиции + действия ---
         name_row = QHBoxLayout()
         name_cap = QLabel("Название партиции:", self._decision_host)
         name_cap.setProperty("class", "muted")
@@ -444,7 +503,8 @@ class ContourWindow(QWidget):
         self._add_decision(self.decision_error_label)
 
         buttons = QHBoxLayout()
-        self.approve_btn = QPushButton("Утвердить", self._decision_host)
+        self.approve_btn = QPushButton("Принять задание", self._decision_host)
+        self.approve_btn.setProperty("class", "primary")
         self.approve_btn.clicked.connect(self._on_approve)
         buttons.addWidget(self.approve_btn)
         self.reject_btn = QPushButton("Отклонить", self._decision_host)
@@ -471,6 +531,56 @@ class ContourWindow(QWidget):
         reject_lay.addWidget(self.reject_confirm_btn)
         self._reject_row.hide()
         self._add_decision(self._reject_row)
+
+    # --- визуальные помощники экрана приёмки ---
+
+    def _decision_card(self):
+        """Карточка (QFrame class=card) с вертикальным лейаутом."""
+        card = QFrame(self._decision_host)
+        card.setProperty("class", "card")
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(6)
+        return card, lay
+
+    def _chip(self, text: str, cls: str, parent: QWidget) -> QLabel:
+        lbl = QLabel(text, parent)
+        lbl.setProperty("class", cls)
+        return lbl
+
+    def _verdict_badge(self, critic: dict, flags: list,
+                       parent: QWidget) -> QLabel:
+        """Бейдж вердикта критика. НЕ использует badge-warn (та зарезервирована
+        под флаги проб): принять — badge-ok, отклонить — badge-error,
+        доработать/с замечаниями — нейтральный chip."""
+        verdict = str(critic.get("verdict", "")).strip().lower()
+        if verdict in ("reject", "отклонить"):
+            text, cls = "отклонить", "badge-error"
+        elif verdict in ("revise", "repair", "доработать"):
+            text, cls = "доработать", "chip"
+        elif verdict in ("accept", "pass", "принять"):
+            text, cls = "принять", "badge-ok"
+        else:  # явного вердикта нет: с флагами — «с замечаниями», иначе «принять»
+            text, cls = ("с замечаниями", "chip") if flags \
+                else ("принять", "badge-ok")
+        return self._chip(text, cls, parent)
+
+    def _make_rounds_card(self, rounds: list) -> QFrame:
+        card, lay = self._decision_card()
+        cap = QLabel("Раунды контура", card)
+        cap.setProperty("class", "muted")
+        lay.addWidget(cap)
+        for i, rnd in enumerate(rounds, 1):
+            stage = str(rnd.get("stage") or rnd.get("kind") or "раунд")
+            verdict = str(rnd.get("verdict") or "").strip()
+            line = QLabel(f"{i}. {stage}" + (f" — {verdict}" if verdict else ""),
+                          card)
+            vl = verdict.lower()
+            cls = ("accent" if vl in ("accept", "pass") else
+                   "danger" if vl == "reject" else "muted")
+            line.setProperty("class", cls)
+            lay.addWidget(line)
+        return card
 
     def _make_preview_card(self, preview: dict) -> QFrame:
         card = QFrame(self._decision_host)
