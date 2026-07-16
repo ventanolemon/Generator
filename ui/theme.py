@@ -142,6 +142,7 @@ def build_qss(palette: Palette) -> str:
     # Тонированные подложки статус-бейджей.
     warn_bg = _rgba(p.warning, 42)
     error_bg = _rgba(p.danger, 40)
+    ok_bg = _rgba(p.success, 40)
     badge_bg = _rgba(p.text_muted, 32)
     accent_soft = _rgba(p.accent, 60)
     # Hero-панель: диагональный градиент с ирисовым подтоном.
@@ -501,6 +502,17 @@ QWidget[class="badge-error"] {{
     border-radius: 9px;
     padding: 2px 10px;
     font-size: 9pt;
+}}
+
+/* успешный вердикт (например, критик «принять») */
+QWidget[class="badge-ok"] {{
+    background-color: {ok_bg};
+    color: {p.success};
+    border: 1px solid {_rgba(p.success, 170)};
+    border-radius: 9px;
+    padding: 2px 10px;
+    font-size: 9pt;
+    font-weight: 600;
 }}
 
 QWidget[class="danger"] {{

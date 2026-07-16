@@ -19,7 +19,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 try:
     import PyQt6  # noqa: F401
     from PyQt6.QtCore import QSettings
-    from PyQt6.QtWidgets import QApplication, QFrame
+    from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QProgressBar
     HAS_QT = True
 except Exception:
     HAS_QT = False
@@ -233,6 +233,30 @@ class DecisionStageTests(ContourWindowTestBase):
         # Имя партиции предзаполнено началом описания.
         self.assertEqual(w.partition_name_edit.text(),
                          "Предел рациональной дроби")
+
+    def test_decision_shows_verdict_badge_meter_and_rounds(self):
+        # Апгрейд экрана приёмки: вердикт-бейдж, метр уверенности, таймлайн.
+        w = self._window()
+        job_id = self._submit(w)
+        self._settle(
+            w, job_id, status=AWAITING_HUMAN, previews=_PREVIEWS,
+            critic={"summary": "Ок.", "confidence": 0.9, "verdict": "accept"},
+            rounds=[{"stage": "генерация", "verdict": "accept"},
+                    {"stage": "критик", "verdict": "accept"}])
+        # Метр уверенности = 90.
+        meters = w._decision_host.findChildren(QProgressBar)
+        self.assertTrue(any(m.value() == 90 for m in meters))
+        # Вердикт-бейдж «принять» с классом badge-ok (НЕ badge-warn).
+        oks = [lbl for lbl in w._decision_host.findChildren(QLabel)
+               if lbl.property("class") == "badge-ok"]
+        self.assertEqual([b.text() for b in oks], ["принять"])
+        # Таймлайн раундов — есть строки со стадиями.
+        all_text = " ".join(lbl.text()
+                             for lbl in w._decision_host.findChildren(QLabel))
+        self.assertIn("Раунды контура", all_text)
+        self.assertIn("генерация", all_text)
+        # Кнопка приёмки — первичная.
+        self.assertEqual(w.approve_btn.property("class"), "primary")
 
     def test_approve_calls_api_and_emits_partition_created(self):
         w = self._window()
