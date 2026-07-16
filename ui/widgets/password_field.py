@@ -34,6 +34,9 @@ def make_password_field(parent: QWidget | None = None, *,
     toggle.setText("Показать")
     toggle.setToolTip("Показать пароль")
     toggle.setProperty("class", "reveal")
+    # Кнопку ОБЯЗАТЕЛЬНО кладём в лейаут, иначе она остаётся дочерней к row
+    # в позиции (0,0) и наезжает на поле ввода (визуальный баг наложения).
+    lay.addWidget(toggle)
 
     def _on_toggle(shown: bool) -> None:
         edit.setEchoMode(QLineEdit.EchoMode.Normal if shown
