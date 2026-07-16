@@ -414,6 +414,7 @@ class GeneratorWindow(QMainWindow):
         from ui.windows.homework_window import HomeworkWindow
         if self._homework_window is None:
             self._homework_window = HomeworkWindow(self.ctx, self)
+            self._homework_window.open_task.connect(self._on_open_homework_task)
             self._homework_window.destroyed.connect(
                 self._on_homework_window_destroyed)
         else:
@@ -424,6 +425,12 @@ class GeneratorWindow(QMainWindow):
 
     def _on_homework_window_destroyed(self, *_args) -> None:
         self._homework_window = None
+
+    def _on_open_homework_task(self, partition_id: int,
+                               assignment_id: int) -> None:
+        """Студент нажал «Решать» на домашке — открыть раздел как задание с
+        привязкой попыток к выдаче (attempts.assignment_id)."""
+        self.open_partition(partition_id, assignment_id=assignment_id)
 
     # ---------- Мои группы ----------
 
@@ -637,6 +644,12 @@ class GeneratorWindow(QMainWindow):
 
     def _on_partition_clicked(self, item: QListWidgetItem) -> None:
         partition_id = item.data(Qt.ItemDataRole.UserRole)
+        self._open_partition_view(partition_id)
+
+    def _open_partition_view(self, partition_id: int,
+                             assignment_id: int | None = None) -> None:
+        """Открыть раздел как задание. assignment_id (опц.) привязывает
+        попытки к выданной домашке (передаётся во view.attach_stats)."""
         partition = self.repo.get_partition(partition_id)
         if partition is None:
             QMessageBox.warning(self, "Ошибка", f"Раздел {partition_id} не найден.")
@@ -659,9 +672,36 @@ class GeneratorWindow(QMainWindow):
         # используется только теми view, у которых есть проверяемый ответ
         # (сейчас — InteractiveTaskView), остальные его тихо игнорируют.
         view.attach_stats(partition_id=partition_id,
-                          sync_client=self.ctx.sync_client)
+                          sync_client=self.ctx.sync_client,
+                          assignment_id=assignment_id)
         clear_layout(self.view_layout)
         self.view_layout.addWidget(view)
+
+    def open_partition(self, partition_id: int,
+                       assignment_id: int | None = None) -> None:
+        """Публичная навигация к разделу (из окна домашек): по возможности
+        выделить его в сайдбаре и открыть как задание. Реестр держит
+        генераторы всех разделов независимо от owner-фильтра витрины, поэтому
+        задание открывается, даже если раздел студенту в сайдбаре не показан
+        (выдан из чужого предмета)."""
+        partition = self.repo.get_partition(partition_id)
+        if partition is None:
+            QMessageBox.warning(self, "Домашка",
+                                "Задание не найдено или было удалено.")
+            return
+        # Best-effort: переключиться на предмет раздела и выделить раздел.
+        idx = self.subject_combo.findData(partition.subject_id)
+        if idx >= 0:
+            if idx != self.subject_combo.currentIndex():
+                self.subject_combo.setCurrentIndex(idx)  # → _on_subject_changed
+            for i in range(self.partition_list.count()):
+                if self.partition_list.item(i).data(Qt.ItemDataRole.UserRole) \
+                        == partition_id:
+                    self.partition_list.setCurrentRow(i)
+                    break
+        self._open_partition_view(partition_id, assignment_id=assignment_id)
+        self.raise_()
+        self.activateWindow()
 
     def _pick_view(self, generator: TaskGenerator, view_kind: str) -> QWidget:
         if Capability.INTERACTIVE in generator.capabilities:

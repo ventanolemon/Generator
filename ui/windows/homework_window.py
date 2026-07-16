@@ -53,6 +53,10 @@ class _CallWorker(QThread):
 class HomeworkWindow(QWidget):
     """Окно домашек: выдача (teacher) / просмотр (student)."""
 
+    # Студент нажал «Решать» на домашке — владелец (generator_window)
+    # открывает раздел как задание с привязкой попыток к выдаче.
+    open_task = pyqtSignal(int, int)   # (partition_id, assignment_id)
+
     def __init__(self, context: AppContext, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowFlag(Qt.WindowType.Window, True)
@@ -136,8 +140,10 @@ class HomeworkWindow(QWidget):
         page = QWidget(self)
         lay = QVBoxLayout(page)
         lay.setSpacing(8)
-        cap = QLabel("Выданные вам задания по вашим группам.", page)
+        cap = QLabel("Выданные вам задания по вашим группам. "
+                     "Двойной клик по заданию — решать.", page)
         cap.setProperty("class", "muted")
+        cap.setWordWrap(True)
         lay.addWidget(cap)
         self.student_empty = QLabel("Пока ничего не выдано.", page)
         self.student_empty.setProperty("class", "muted")
@@ -145,6 +151,7 @@ class HomeworkWindow(QWidget):
         lay.addWidget(self.student_empty)
         self.mine_table = self._make_table(
             page, ["Задание", "Предмет", "Группа", "Срок"])
+        self.mine_table.cellDoubleClicked.connect(self._on_mine_activated)
         lay.addWidget(self.mine_table, stretch=1)
         return page
 
@@ -329,8 +336,14 @@ class HomeworkWindow(QWidget):
         for a in items:
             row = self.mine_table.rowCount()
             self.mine_table.insertRow(row)
-            self.mine_table.setItem(
-                row, 0, QTableWidgetItem(str(a.get("partition_name", ""))))
+            # partition_id и id выдачи храним в данных первой ячейки —
+            # двойной клик по строке открывает задание (без per-row кнопок:
+            # cellWidget'ы в таблице роняли teardown Qt из-за порядка
+            # уничтожения виджетов ячейки и связанных лямбд).
+            name_item = QTableWidgetItem(str(a.get("partition_name", "")))
+            name_item.setData(Qt.ItemDataRole.UserRole, a.get("partition_id"))
+            name_item.setData(Qt.ItemDataRole.UserRole + 1, a.get("id"))
+            self.mine_table.setItem(row, 0, name_item)
             self.mine_table.setItem(
                 row, 1, QTableWidgetItem(str(a.get("subject_name", ""))))
             self.mine_table.setItem(
@@ -338,6 +351,15 @@ class HomeworkWindow(QWidget):
             self.mine_table.setItem(
                 row, 3, QTableWidgetItem(self._fmt_due(a.get("due_at"))))
         self.student_empty.setVisible(not items)
+
+    def _on_mine_activated(self, row: int, _col: int) -> None:
+        item = self.mine_table.item(row, 0)
+        if item is None:
+            return
+        pid = item.data(Qt.ItemDataRole.UserRole)
+        aid = item.data(Qt.ItemDataRole.UserRole + 1)
+        if pid is not None and aid is not None:
+            self.open_task.emit(int(pid), int(aid))
 
     # ---------- утилиты ----------
 

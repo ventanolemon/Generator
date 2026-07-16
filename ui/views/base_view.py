@@ -116,7 +116,8 @@ class BaseTaskView(QWidget):
 
     # ---------- статистика попыток (outbox синка) ----------
 
-    def attach_stats(self, *, partition_id: int | None, sync_client) -> None:
+    def attach_stats(self, *, partition_id: int | None, sync_client,
+                     assignment_id: int | None = None) -> None:
         """
         Подключить контекст для записи попыток решения. Вызывается владельцем
         (GeneratorWindow) сразу после конструктора — не часть стабильного
@@ -124,9 +125,13 @@ class BaseTaskView(QWidget):
         параметры у всех view ради того, что реально использует только один
         подкласс (InteractiveTaskView — единственный, где вообще есть
         понятие «правильно/неправильно» на текущий момент).
+
+        assignment_id (опц.) задаётся, когда задание открыто как выданная
+        домашка — попытка привязывается к выдаче (attempts.assignment_id).
         """
         self._stats_partition_id = partition_id
         self._stats_sync_client = sync_client
+        self._stats_assignment_id = assignment_id
 
     def queue_attempt(self, payload: dict, *, correct: bool | None) -> None:
         """
@@ -140,6 +145,8 @@ class BaseTaskView(QWidget):
         if client is None or partition_id is None:
             return
         try:
-            client.queue_attempt(partition_id, payload, correct=correct)
+            client.queue_attempt(
+                partition_id, payload, correct=correct,
+                assignment_id=getattr(self, "_stats_assignment_id", None))
         except Exception:
             pass

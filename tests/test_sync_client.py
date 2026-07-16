@@ -225,6 +225,24 @@ class OutboxPersistenceTests(SyncClientTestBase):
         self.assertEqual(self.store.pending(), [])
 
 
+class AttemptAttributionTests(SyncClientTestBase):
+    """Привязка попытки к выданной домашке (attempts.assignment_id)."""
+
+    def test_attempt_carries_assignment_id(self):
+        self.client.queue_attempt(7, {"answer": "42"}, correct=True,
+                                  assignment_id=99)
+        report = self.client.sync()
+        self.assertTrue(report.ok, report.errors)
+        a = next(iter(self.server.attempts.values()))
+        self.assertEqual(a.get("assignment_id"), 99)
+
+    def test_attempt_without_assignment_omits_key(self):
+        self.client.queue_attempt(7, {"answer": "x"})
+        self.client.sync()
+        a = next(iter(self.server.attempts.values()))
+        self.assertNotIn("assignment_id", a)
+
+
 class IdempotencyTests(SyncClientTestBase):
     """§3: повторная отправка после потерянного ответа не дублирует."""
 

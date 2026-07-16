@@ -109,13 +109,19 @@ class SyncClient:
     # ---------- Публичное API постановки в очередь ----------
 
     def queue_attempt(self, partition_id: int, payload: dict,
-                      correct: Optional[bool] = None) -> None:
-        """Записать попытку в outbox (уйдёт при первом успешном sync)."""
-        self.store.enqueue_attempt({
+                      correct: Optional[bool] = None,
+                      assignment_id: Optional[int] = None) -> None:
+        """Записать попытку в outbox (уйдёт при первом успешном sync).
+        assignment_id (опц.) привязывает попытку к выданной домашке — сервер
+        сохраняет его в attempts.assignment_id."""
+        attempt = {
             "partition_id": partition_id,
             "payload": payload,
             "correct": correct,
-        })
+        }
+        if assignment_id is not None:
+            attempt["assignment_id"] = int(assignment_id)
+        self.store.enqueue_attempt(attempt)
 
     def queue_partition_change(self, partition_id: Optional[int],
                                data: dict, *, deleted: bool = False,
