@@ -150,7 +150,7 @@ def main() -> int:
     def show_auth() -> None:
         from ui.windows import AuthWindow as _Auth
         auth = _Auth(repository=repo, on_success=on_auth,
-                     on_register=show_register)
+                     on_register=show_register, settings=settings)
         apply_theme(app, settings.get_theme())  # на случай смены темы в сессии
         windows["auth"] = auth
         auth.show()

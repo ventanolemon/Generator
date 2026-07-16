@@ -463,6 +463,23 @@ QWidget[class="toolbar"] {{
     border-bottom: 1px solid {p.border};
 }}
 
+/* переключатель видимости пароля — приглушённая ссылка-кнопка */
+QToolButton[class="reveal"] {{
+    color: {p.text_muted};
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 9pt;
+}}
+QToolButton[class="reveal"]:hover {{
+    color: {p.accent};
+    border-color: {_rgba(p.accent, 120)};
+}}
+QToolButton[class="reveal"]:checked {{
+    color: {p.accent};
+}}
+
 QWidget[class="toolbtn"] {{
     background-color: transparent;
     border: 1px solid transparent;

@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core import Repository
+from ui.widgets.password_field import make_password_field
 from ui.windows.auth_window import build_hero_panel, _field_label
 
 MIN_PASSWORD_LEN = 4
@@ -100,10 +101,10 @@ class RegisterWindow(QWidget):
         pw_col = QVBoxLayout()
         pw_col.setSpacing(6)
         pw_col.addWidget(_field_label("Пароль", right))
-        self.password_edit = QLineEdit(right)
-        self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_edit.setPlaceholderText(f"от {MIN_PASSWORD_LEN} символов")
-        pw_col.addWidget(self.password_edit)
+        pwd_row = make_password_field(
+            right, placeholder=f"от {MIN_PASSWORD_LEN} символов")
+        self.password_edit = pwd_row.edit
+        pw_col.addWidget(pwd_row)
         pw_row.addLayout(pw_col, 1)
         rp_col = QVBoxLayout()
         rp_col.setSpacing(6)
