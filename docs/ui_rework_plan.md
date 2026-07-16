@@ -253,8 +253,17 @@ Backend-задача волны — критический путь Opus; пре
    управление группами — во вкладке «Группы» `AdminWindow` (см. п.4);
    `AdminClient.my_groups()` (/groups/mine) готов для read-only витрины
    групп у преподавателя (подключение к главному окну — по необходимости).
-   NB: `assignments` (партиция→группа, домашки) — отдельная будущая фича,
-   схема есть, код не подключён.
+6. **Домашки (assignments: партиция→группа)** ✅ — сервер `/assignments`
+   (GenerationWeb: `core/assignments_api.py`, guardrails над
+   visible_subject_ids/teacher_group_ids — teacher выдаёт видимую задачу
+   своей группе, admin любую, снять автор/admin; upsert срока; 18 тестов) +
+   десктоп `core/assignments/AssignmentsClient` и `ui/windows/
+   homework_window.py` (роль-зависимо: teacher/admin — форма выдачи
+   задача+группа+срок и список своих выдач со «снять»; student — список
+   домашек по своим группам; заглушки гость/без сервера). Кнопка в TopBar.
+   Тесты: `test_assignments_client` (6), `test_homework_window` (8).
+   NB: связывание `attempts.assignment_id` с выдачей (учёт выполнения) —
+   отдельный будущий шаг.
 
 ---
 

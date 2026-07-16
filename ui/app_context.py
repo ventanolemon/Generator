@@ -38,3 +38,4 @@ class AppContext:
     contour_client: object | None = None
     admin_client: object | None = None
     analytics_client: object | None = None
+    assignments_client: object | None = None

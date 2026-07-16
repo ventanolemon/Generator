@@ -81,6 +81,7 @@ class GeneratorWindow(QMainWindow):
         self._contour_window = None
         self._admin_window = None
         self._analytics_window = None
+        self._homework_window = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -141,6 +142,16 @@ class GeneratorWindow(QMainWindow):
                 "заданий, студенты и группы (только с сервером).",
                 self._open_analytics_window,
                 roles={"teacher", "admin"},
+            )
+        if self.ctx.assignments_client is not None:
+            # Домашки — вошедшему пользователю (teacher/admin выдают, student
+            # смотрит; ветвление и заглушки — внутри окна).
+            self.top_bar.add_action(
+                "Домашки",
+                "Выдача заданий группам (преподаватель) и просмотр выданных "
+                "домашек (студент). Требует сервера.",
+                self._open_homework_window,
+                roles={"teacher", "admin", "student"},
             )
         if self.ctx.admin_client is not None:
             # Администрирование — только admin (окно само покажет заглушку,
@@ -385,6 +396,23 @@ class GeneratorWindow(QMainWindow):
 
     def _on_analytics_window_destroyed(self, *_args) -> None:
         self._analytics_window = None
+
+    # ---------- Домашки ----------
+
+    def _open_homework_window(self) -> None:
+        from ui.windows.homework_window import HomeworkWindow
+        if self._homework_window is None:
+            self._homework_window = HomeworkWindow(self.ctx, self)
+            self._homework_window.destroyed.connect(
+                self._on_homework_window_destroyed)
+        else:
+            self._homework_window.refresh()
+        self._homework_window.show()
+        self._homework_window.raise_()
+        self._homework_window.activateWindow()
+
+    def _on_homework_window_destroyed(self, *_args) -> None:
+        self._homework_window = None
 
     def _refresh_sync_badge(self) -> None:
         """Обновить статус-бейдж синка в панели (очередь/конфликты)."""
