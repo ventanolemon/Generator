@@ -82,6 +82,7 @@ class GeneratorWindow(QMainWindow):
         self._admin_window = None
         self._analytics_window = None
         self._homework_window = None
+        self._my_groups_window = None
 
         self.setWindowTitle("Генератор заданий")
         self.resize(1100, 720)
@@ -131,6 +132,16 @@ class GeneratorWindow(QMainWindow):
                 "Генератор через ИИ: опишите задание — сервер соберёт и "
                 "проверит генератор, вы утвердите результат.",
                 self._open_contour_window,
+                roles={"teacher", "admin"},
+            )
+        if self.ctx.assignments_client is not None:
+            # Мои группы — read-only витрина для преподавателя (состав ведёт
+            # админ). Окно покажет заглушку без сервера/входа.
+            self.top_bar.add_action(
+                "Мои группы",
+                "Группы, которые вы ведёте, и их состав (только просмотр; "
+                "состав меняет администратор).",
+                self._open_my_groups_window,
                 roles={"teacher", "admin"},
             )
         if self.ctx.analytics_client is not None:
@@ -413,6 +424,23 @@ class GeneratorWindow(QMainWindow):
 
     def _on_homework_window_destroyed(self, *_args) -> None:
         self._homework_window = None
+
+    # ---------- Мои группы ----------
+
+    def _open_my_groups_window(self) -> None:
+        from ui.windows.my_groups_window import MyGroupsWindow
+        if self._my_groups_window is None:
+            self._my_groups_window = MyGroupsWindow(self.ctx, self)
+            self._my_groups_window.destroyed.connect(
+                self._on_my_groups_window_destroyed)
+        else:
+            self._my_groups_window.refresh()
+        self._my_groups_window.show()
+        self._my_groups_window.raise_()
+        self._my_groups_window.activateWindow()
+
+    def _on_my_groups_window_destroyed(self, *_args) -> None:
+        self._my_groups_window = None
 
     def _refresh_sync_badge(self) -> None:
         """Обновить статус-бейдж синка в панели (очередь/конфликты)."""
