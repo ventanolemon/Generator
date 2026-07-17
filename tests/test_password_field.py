@@ -47,6 +47,17 @@ class PasswordFieldTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_toggle_is_in_layout_not_overlapping(self):
+        # Регрессия: кнопка «Показать» должна быть В лейауте (иначе наезжает
+        # на поле в позиции (0,0)). Оба виджета — элементы лейаута строки.
+        row = make_password_field()
+        self.addCleanup(row.deleteLater)
+        self.assertEqual(row.layout().count(), 2)
+        widgets = {row.layout().itemAt(i).widget()
+                   for i in range(row.layout().count())}
+        self.assertIn(row.edit, widgets)
+        self.assertIn(row.toggle, widgets)
+
     def test_starts_hidden_and_toggles(self):
         row = make_password_field(placeholder="пароль")
         self.addCleanup(row.deleteLater)
