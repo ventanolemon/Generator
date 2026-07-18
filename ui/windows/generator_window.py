@@ -52,6 +52,7 @@ class GeneratorWindow(QMainWindow):
         *,
         stats_store: WordStatsStore | None = None,
         words_dir: Path | None = None,
+        on_logout: Callable[[], None] | None = None,
     ):
         """
         context — кросс-сквозная инфраструктура и сессия (репозиторий,
@@ -63,6 +64,10 @@ class GeneratorWindow(QMainWindow):
         stats_store — если передан, в шапке появляется кнопка «Моя
         статистика», открывающая StatsWindow. words_dir нужен окну
         статистики, чтобы рядом с термином показывать перевод.
+
+        on_logout — колбэк выхода из аккаунта (main.py: сбрасывает сессию
+        в гостя, обновляет identity клиента синка, прячет это окно и снова
+        показывает AuthWindow). Без него кнопка «Выйти» не добавляется.
         """
         super().__init__()
         self.ctx = context
@@ -73,6 +78,7 @@ class GeneratorWindow(QMainWindow):
         self.registry_builder = registry_builder
         self.stats_store = stats_store
         self.words_dir = words_dir
+        self._on_logout = on_logout
         self.subjects: list[Subject] = []
         self.partitions: list[Partition] = []
         self._editor_window: PartitionEditor | None = None
@@ -174,6 +180,16 @@ class GeneratorWindow(QMainWindow):
                 self._open_admin_window,
                 roles={"admin"},
             )
+        if self._on_logout is not None:
+            # Выход доступен всегда (в т.ч. гостю — просто возврат к входу).
+            self.top_bar.add_action(
+                "Выйти",
+                "Выйти из текущего аккаунта и вернуться к экрану входа.",
+                self._on_logout_clicked,
+            )
+            # Бейдж-плашка "логин · роль" в правой зоне — видно, из-под кого
+            # выходишь. Обновляется при каждом показе окна (showEvent).
+            self.top_bar.add_badge("whoami")
 
         # ---- Контент (под панелью) ----
         content = QWidget(central)
@@ -320,9 +336,78 @@ class GeneratorWindow(QMainWindow):
 
     def showEvent(self, event) -> None:
         # Окно показывается после авторизации — роль сессии уже известна,
-        # пересматриваем видимость ролевых кнопок панели (кнопка контура и т.п.).
+        # пересматриваем видимость ролевых кнопок панели (кнопка контура и т.п.)
+        # и обновляем плашку "логин · роль" (актуальна и при повторном входе).
         super().showEvent(event)
         self.top_bar.refresh_roles()
+        self._refresh_identity_badge()
+
+    def _refresh_identity_badge(self) -> None:
+        if self._on_logout is None:
+            return
+        login = self.user_id_provider()
+        role = self.user_role_provider()
+        role_ru = {"admin": "администратор", "teacher": "преподаватель",
+                  "student": "студент"}.get(role, role)
+        text = f"{login} · {role_ru}" if login else "Гость"
+        self.top_bar.set_badge("whoami", text)
+
+    def _on_logout_clicked(self) -> None:
+        if self._on_logout is None:
+            return
+        reply = QMessageBox.question(
+            self, "Выход",
+            "Выйти из аккаунта и вернуться к экрану входа?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._close_sub_windows()
+        self._on_logout()
+
+    def _close_sub_windows(self) -> None:
+        """Закрыть немодальные окна-синглтоны перед выходом.
+
+        Три отдельных повода, не один:
+          1. Виджеты с флагом Qt.WindowType.Window не прячутся вместе с
+             родителем (они самостоятельные top-level окна) — без явного
+             close() остались бы открытыми поверх экрана входа.
+          2. Ни у одного из них не выставлен WA_DeleteOnClose, поэтому
+             close() их не уничтожает — это специально, чтобы повторное
+             открытие переиспользовало виджет (refresh() вместо пересборки).
+             Но часть состояния (например, AdminWindow._viewer_login)
+             захватывается один раз в конструкторе и refresh() её не
+             обновляет. Без deleteLater() окно пережило бы logout и при
+             входе другим пользователем показывало бы самозащиту от смены
+             роли для уже вышедшего логина.
+          3. deleteLater() уничтожает объект не сразу, а на следующей
+             итерации цикла событий — а self._admin_window и т.п. должны
+             стать None немедленно, иначе _open_admin_window() между
+             logout и фактическим уничтожением вернёт СТАРЫЙ виджет
+             (`else: self._admin_window.refresh()`). Поэтому обнуляем
+             атрибут сами и отключаем destroyed — иначе он позже обнулил
+             бы уже НОВОЕ окно, открытое после повторного входа."""
+        slots = {
+            "_stats_window": self._on_stats_window_destroyed,
+            "_sync_window": self._on_sync_window_destroyed,
+            "_contour_window": self._on_contour_window_destroyed,
+            "_admin_window": self._on_admin_window_destroyed,
+            "_analytics_window": self._on_analytics_window_destroyed,
+            "_homework_window": self._on_homework_window_destroyed,
+            "_my_groups_window": self._on_my_groups_window_destroyed,
+        }
+        for attr, handler in slots.items():
+            win = getattr(self, attr)
+            if win is None:
+                continue
+            try:
+                win.destroyed.disconnect(handler)
+            except TypeError:
+                pass  # уже отключён/не был подключён
+            win.close()
+            win.deleteLater()
+            setattr(self, attr, None)
         self._refresh_sync_badge()
 
     # ---------- Настройки ----------

@@ -116,6 +116,17 @@ def main() -> int:
         assignments_client=assignments_client,
     )
 
+    def do_logout() -> None:
+        # Сброс идентичности к гостю и возврат к экрану входа. hide() (не
+        # close()) — иначе QApplication.quitOnLastWindowClosed завершил бы
+        # приложение, ведь на момент выхода это единственное окно.
+        # show_auth определена ниже — доступна по замыканию к моменту вызова.
+        session.set_guest()
+        sync_client.user_id = None
+        sync_client.user_role = session.role
+        generator_window.hide()
+        show_auth()
+
     registry = make_registry()
     generator_window = GeneratorWindow(
         context=context,
@@ -123,6 +134,7 @@ def main() -> int:
         registry_builder=make_registry,
         stats_store=stats_store,
         words_dir=WORDS_DIR,
+        on_logout=do_logout,
     )
 
     def on_auth(user_info):
