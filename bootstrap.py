@@ -67,6 +67,9 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
     Гарантировать существование всех subjects и code-only разделов в БД.
     Вызывать при старте приложения, перед build_registry.
     """
+    # WAL — до первых записей: UI-поток и фоновый sync пишут в один файл.
+    repo.ensure_wal_mode()
+
     repo.ensure_subject(1, "Линейная алгебра",       "Линейная алгебра")
     repo.ensure_subject(2, "Английский",             "Английский")
     repo.ensure_subject(3, "Физика",                 "Физика")

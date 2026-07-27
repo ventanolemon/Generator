@@ -73,10 +73,32 @@ class Repository:
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(str(self.db_path))
+        # foreign_keys — настройка соединения, не файла: без неё SQLite
+        # разбирает объявленные REFERENCES, но не проверяет их.
+        conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn
         finally:
             conn.close()
+
+    def ensure_wal_mode(self) -> None:
+        """
+        Перевести файл БД в WAL. Идемпотентно, вызывать один раз на старте.
+
+        На одном файле работают два писателя: UI-поток (правки разделов,
+        попытки) и фоновый _SyncWorker (QThread), который ведёт outbox через
+        SyncStore(DB_PATH) — ту же самую БД. В журнале по умолчанию (delete)
+        читатель и писатель блокируют друг друга, и параллельный синк ловит
+        SQLITE_BUSY «database is locked». В WAL читатели не ждут писателя.
+
+        Режим хранится в самом файле, поэтому SyncStore его наследует.
+        На сетевых ФС WAL не поддерживается — там остаёмся на delete.
+        """
+        try:
+            with self._connect() as conn:
+                conn.execute("PRAGMA journal_mode = WAL")
+        except sqlite3.DatabaseError:
+            pass
 
     # ---------- Скрытие (локальный флаг видимости, D3) ----------
     #
