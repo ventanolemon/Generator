@@ -156,7 +156,9 @@ class HideDeleteWindowTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(self.win.partition_list.count(), 1)
 
-        self.repo.set_partition_hidden(self.pid, True)
+        # Скрываем в бакете того же пользователя, от чьего имени построено
+        # окно (user_id_provider → "u"): скрытие персональное.
+        self.repo.set_partition_hidden(self.pid, True, user_login="u")
         self.win._refresh_current_subject()
         self.assertEqual(self.win.partition_list.count(), 0,
                          "скрытый раздел пропал из списка")
@@ -167,7 +169,7 @@ class HideDeleteWindowTests(unittest.TestCase):
         self.assertIn("скрыт", self.win.partition_list.item(0).text())
 
     def test_hidden_subject_disappears_until_checkbox(self):
-        self.repo.set_subject_hidden(1, True)
+        self.repo.set_subject_hidden(1, True, user_login="u")
         self.win._load_subjects()
         self.assertEqual(self.win.subject_combo.count(), 0)
         self.win.show_hidden_cb.setChecked(True)
@@ -179,14 +181,18 @@ class HideDeleteWindowTests(unittest.TestCase):
         self.win.subject_combo.setCurrentIndex(0)
         self.app.processEvents()
         self.win._on_toggle_subject_hidden()
-        self.assertTrue(self.repo.list_subjects(include_hidden=True)[0].hidden)
+        self.assertTrue(self.repo.list_subjects(
+            include_hidden=True, user_login="u")[0].hidden)
+        # Скрытие персональное: у другого аккаунта предмет остался видимым.
+        self.assertFalse(self.repo.list_subjects(
+            include_hidden=True, user_login="другой")[0].hidden)
         # Повторный вызов при включённом показе скрытых — разскрытие.
         self.win.show_hidden_cb.setChecked(True)
         self.app.processEvents()
         self.win.subject_combo.setCurrentIndex(0)
         self.win._on_toggle_subject_hidden()
-        self.assertFalse(
-            self.repo.list_subjects(include_hidden=True)[0].hidden)
+        self.assertFalse(self.repo.list_subjects(
+            include_hidden=True, user_login="u")[0].hidden)
 
 
 if __name__ == "__main__":
