@@ -79,6 +79,8 @@ class GeneratorWindow(QMainWindow):
         self.stats_store = stats_store
         self.words_dir = words_dir
         self._on_logout = on_logout
+        # Кнопка возврата к экрану входа; None, если on_logout не передан.
+        self._logout_btn = None
         self.subjects: list[Subject] = []
         self.partitions: list[Partition] = []
         self._editor_window: PartitionEditor | None = None
@@ -94,6 +96,9 @@ class GeneratorWindow(QMainWindow):
         self.resize(1100, 720)
         self._build_ui()
         self._load_subjects()
+        # Роль известна уже на этом этапе (окно строится после входа либо
+        # переиспользуется при перелогине) — не ждём showEvent.
+        self._refresh_subject_actions()
 
     # ---------- UI ----------
 
@@ -181,8 +186,13 @@ class GeneratorWindow(QMainWindow):
                 roles={"admin"},
             )
         if self._on_logout is not None:
-            # Выход доступен всегда (в т.ч. гостю — просто возврат к входу).
-            self.top_bar.add_action(
+            # Кнопка возврата к экрану входа. Гостю она подписана «Войти»:
+            # выходить ему не из чего, а нужен ему ровно вход — раньше
+            # единственный путь к экрану авторизации был подписан «Выйти»
+            # и спрашивал «Выйти из аккаунта?», из-за чего гость его не
+            # находил и перезапускал приложение. Подпись пересчитывается
+            # в _refresh_identity_badge при каждом показе окна.
+            self._logout_btn = self.top_bar.add_action(
                 "Выйти",
                 "Выйти из текущего аккаунта и вернуться к экрану входа.",
                 self._on_logout_clicked,
@@ -222,9 +232,19 @@ class GeneratorWindow(QMainWindow):
         self.subject_menu_btn.setPopupMode(
             QToolButton.ToolButtonPopupMode.InstantPopup)
         subj_menu = QMenu(self.subject_menu_btn)
+        # Тултипы в меню по умолчанию не показываются, а нам нужно объяснить
+        # неактивный пункт удаления.
+        subj_menu.setToolTipsVisible(True)
         self._subj_hide_action = subj_menu.addAction(
             "Скрыть предмет", self._on_toggle_subject_hidden)
-        subj_menu.addAction("Удалить предмет…", self._on_delete_subject)
+        # Удаление предмета из БД — только администратору. Предметы общие:
+        # их создаёт не тот, кто на них смотрит, и удаление уносит вместе с
+        # предметом все его разделы, у всех и навсегда (в синк уходит
+        # tombstone). Рядовому пользователю нужно не это, а «чтобы у меня не
+        # мозолило глаза» — для этого есть персональное «Скрыть предмет».
+        # Доступность пересчитывается в _refresh_subject_actions.
+        self._subj_delete_action = subj_menu.addAction(
+            "Удалить предмет…", self._on_delete_subject)
         self.subject_menu_btn.setMenu(subj_menu)
         subj_row.addWidget(self.subject_menu_btn)
         left.addLayout(subj_row)
@@ -341,6 +361,20 @@ class GeneratorWindow(QMainWindow):
         super().showEvent(event)
         self.top_bar.refresh_roles()
         self._refresh_identity_badge()
+        self._refresh_subject_actions()
+
+    def _is_admin(self) -> bool:
+        return bool(self.user_role_provider
+                    and self.user_role_provider() == "admin")
+
+    def _refresh_subject_actions(self) -> None:
+        """Доступность пунктов меню предмета под роль текущей сессии."""
+        allowed = self._is_admin()
+        self._subj_delete_action.setEnabled(allowed)
+        self._subj_delete_action.setToolTip(
+            "" if allowed else
+            "Удалить предмет из базы может только администратор.\n"
+            "Чтобы предмет не показывался у вас — «Скрыть предмет».")
 
     def _refresh_identity_badge(self) -> None:
         if self._on_logout is None:
@@ -351,18 +385,29 @@ class GeneratorWindow(QMainWindow):
                   "student": "студент"}.get(role, role)
         text = f"{login} · {role_ru}" if login else "Гость"
         self.top_bar.set_badge("whoami", text)
+        # Подпись кнопки — под текущую идентичность: гостю «Войти».
+        if self._logout_btn is not None:
+            self._logout_btn.setText("Выйти" if login else "Войти")
+            self._logout_btn.setToolTip(
+                "Выйти из текущего аккаунта и вернуться к экрану входа."
+                if login else
+                "Вернуться к экрану входа, чтобы войти в аккаунт.")
 
     def _on_logout_clicked(self) -> None:
         if self._on_logout is None:
             return
-        reply = QMessageBox.question(
-            self, "Выход",
-            "Выйти из аккаунта и вернуться к экрану входа?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
+        # Подтверждение спрашиваем только у вошедшего: ему есть что терять
+        # (сессия, открытые окна). Гостю подтверждать нечего — он просто
+        # идёт на экран входа, лишний диалог был бы шумом.
+        if self.user_id_provider() is not None:
+            reply = QMessageBox.question(
+                self, "Выход",
+                "Выйти из аккаунта и вернуться к экрану входа?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
         self._close_sub_windows()
         self._on_logout()
 
@@ -575,6 +620,14 @@ class GeneratorWindow(QMainWindow):
     def _show_hidden(self) -> bool:
         return self.show_hidden_cb.isChecked()
 
+    def _visibility_login(self) -> str | None:
+        """Чей набор скрытий применяем — текущего пользователя (None у гостя).
+
+        Скрытие персонально: гость, скрывший предмет, прячет его только у
+        себя, а не у всех аккаунтов машины (см. Repository, раздел «Скрытие»).
+        """
+        return self.user_id_provider() if self.user_id_provider else None
+
     def _owner_scope(self) -> str | None:
         """
         Кого показывать в витрине предметов (list_subjects(owned_by=...)).
@@ -596,7 +649,8 @@ class GeneratorWindow(QMainWindow):
         try:
             self.subjects = self.repo.list_subjects(
                 include_hidden=self._show_hidden(),
-                owned_by=self._owner_scope())
+                owned_by=self._owner_scope(),
+                user_login=self._visibility_login())
         except Exception as e:
             QMessageBox.critical(self, "Ошибка БД",
                                  f"Не удалось загрузить предметы: {e}")
@@ -612,7 +666,8 @@ class GeneratorWindow(QMainWindow):
         subject_id = self.subject_combo.itemData(idx)
         try:
             self.partitions = self.repo.list_partitions_for_subject(
-                subject_id, include_hidden=self._show_hidden())
+                subject_id, include_hidden=self._show_hidden(),
+                user_login=self._visibility_login())
         except Exception as e:
             QMessageBox.critical(self, "Ошибка БД",
                                  f"Не удалось загрузить разделы: {e}")
@@ -661,15 +716,27 @@ class GeneratorWindow(QMainWindow):
         subj = self._current_subject()
         if subj is None:
             return
-        self.repo.set_subject_hidden(subj.id, not subj.hidden)
+        self.repo.set_subject_hidden(subj.id, not subj.hidden,
+                                     user_login=self._visibility_login())
         self._on_show_hidden_toggled(self._show_hidden())
 
     def _on_delete_subject(self) -> None:
         subj = self._current_subject()
         if subj is None:
             return
-        n = len(self.repo.list_partitions_for_subject(subj.id,
-                                                      include_hidden=True))
+        # Пункт меню неактивен у не-админа, но проверку дублируем здесь:
+        # это единственное место, где удаление реально запускается, и
+        # полагаться на состояние виджета как на разграничение нельзя.
+        if not self._is_admin():
+            QMessageBox.information(
+                self, "Недостаточно прав",
+                "Удалить предмет из базы может только администратор.\n\n"
+                "Чтобы предмет не показывался лично у вас, выберите "
+                "«Скрыть предмет» — на других пользователей это не влияет.")
+            return
+        n = len(self.repo.list_partitions_for_subject(
+            subj.id, include_hidden=True,
+            user_login=self._visibility_login()))
         ok = QMessageBox.question(
             self, "Удаление предмета",
             f"Необратимо удалить предмет «{subj.name}» и все его разделы "
@@ -709,7 +776,8 @@ class GeneratorWindow(QMainWindow):
         menu.exec(self.partition_list.mapToGlobal(pos))
 
     def _toggle_partition_hidden(self, partition: Partition) -> None:
-        self.repo.set_partition_hidden(partition.id, not partition.hidden)
+        self.repo.set_partition_hidden(partition.id, not partition.hidden,
+                                       user_login=self._visibility_login())
         self._refresh_current_subject()
 
     def _refresh_current_subject(self, select_partition_id: int | None = None) -> None:

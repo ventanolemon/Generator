@@ -17,12 +17,18 @@ from pathlib import Path
 from typing import Iterator, List, Optional
 
 
+# Ключ бакета видимости для гостя (login = None). Пустая строка, а не NULL:
+# user_login входит в первичный ключ, а NULL в SQLite не равен сам себе —
+# на NULL-ключе PRIMARY KEY не защитил бы от дублей.
+GUEST_VISIBILITY_KEY = ""
+
+
 @dataclass(frozen=True)
 class Subject:
     id: int
     name: str
     parent_name: str  # значение поля pra_subject
-    hidden: bool = False      # локальный флаг видимости (не синкается)
+    hidden: bool = False      # скрыт ЛИЧНО у текущего зрителя (не синкается)
     # Владелец предмета с сервера (owner_user_id). None = встроенный/системный
     # предмет (сиды bootstrap), виден всем. Строка/число — сервер назначает;
     # на десктоп попадает через sync-pull. Access-control по нему — на СЕРВЕРЕ
@@ -42,7 +48,7 @@ class Partition:
     name: str
     constracted: int          # 0=одиночный, 1=конструктор, 2=группа, 3=тест
     generation_params: dict   # распарсенный JSON или {}
-    hidden: bool = False      # локальный флаг видимости (не синкается)
+    hidden: bool = False      # скрыт ЛИЧНО у текущего зрителя (не синкается)
 
 
 # Какой view_kind использовать для каждого constracted:
@@ -69,6 +75,9 @@ class Repository:
         # записи outbox синхронизации. None у тестов/офлайн-сборок. Ставится в
         # main.py ПОСЛЕ стартовых сидов, чтобы они не сыпались в очередь.
         self.sync_listener = sync_listener
+        # Таблицы персональной видимости созданы в этом процессе (кэш, чтобы
+        # не ходить в БД на каждую выборку). См. ensure_visibility_tables.
+        self._visibility_ready = False
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -100,15 +109,96 @@ class Repository:
         except sqlite3.DatabaseError:
             pass
 
-    # ---------- Скрытие (локальный флаг видимости, D3) ----------
+    # ---------- Скрытие (локальная видимость, D3) ----------
     #
-    # hidden — колонка в Subjects/Partitions, ЛОКАЛЬНАЯ настройка видимости
-    # этой копии БД: sync-протокол её не знает и не передаёт (скрытие ≠
-    # удаление; tombstones — только про настоящие удаления). Скрытая
-    # сущность остаётся в БД, генераторы по ней продолжают работать.
+    # Скрытие — ЛОКАЛЬНАЯ настройка витрины этой копии БД: sync-протокол её
+    # не знает и не передаёт (скрытие ≠ удаление; tombstones — только про
+    # настоящие удаления). Скрытая сущность остаётся в БД, генераторы по ней
+    # продолжают работать.
+    #
+    # Настройка эта — ПЕРСОНАЛЬНАЯ, хранится в таблицах SubjectVisibility /
+    # PartitionVisibility с ключом (логин, сущность). Раньше она жила
+    # колонкой `hidden` прямо в Subjects/Partitions, то есть одной строкой на
+    # весь файл БД: гость скрывал предмет — предмет пропадал и у всех
+    # преподавателей, работающих на этой же машине. Колонки оставлены на
+    # месте как legacy (их значения разово перенесены, см.
+    # _migrate_legacy_hidden), но фильтрация по ним больше не идёт.
+    #
+    # Гость — не «никто»: у него свой бакет с ключом GUEST_VISIBILITY_KEY,
+    # общий для всех гостевых сеансов машины. Его выбор так же переживает
+    # перезапуск и так же не влияет на вошедших пользователей.
+
+    def _visibility_key(self, user_login: str | None) -> str:
+        """Ключ бакета видимости: логин пользователя или гостевой sentinel."""
+        return GUEST_VISIBILITY_KEY if not user_login else user_login
+
+    def ensure_visibility_tables(self) -> None:
+        """
+        Гарантировать таблицы персональной видимости. Идемпотентно; результат
+        кэшируется на экземпляр, чтобы не открывать соединение на каждый
+        list_subjects (он зовётся на каждую смену предмета).
+        """
+        if self._visibility_ready:
+            return
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS SubjectVisibility ("
+                "  user_login TEXT NOT NULL,"
+                "  subject_id INTEGER NOT NULL,"
+                "  hidden INTEGER NOT NULL DEFAULT 0,"
+                "  PRIMARY KEY (user_login, subject_id))")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS PartitionVisibility ("
+                "  user_login TEXT NOT NULL,"
+                "  partition_id INTEGER NOT NULL,"
+                "  hidden INTEGER NOT NULL DEFAULT 0,"
+                "  PRIMARY KEY (user_login, partition_id))")
+            conn.commit()
+            self._migrate_legacy_hidden(conn)
+        self._visibility_ready = True
+
+    @staticmethod
+    def _migrate_legacy_hidden(conn: sqlite3.Connection) -> None:
+        """
+        Разово перенести общий на файл флаг `hidden` в персональные таблицы.
+
+        Кому отдать унаследованные скрытия — вопрос без верного ответа: кто
+        именно их проставил, БД не помнит. Отдаём ГОСТЮ и обнуляем колонку.
+        Это ровно тот сценарий, из-за которого настройку и разделяют: скрытое
+        гостем перестаёт быть скрытым у преподавателей, а сам гость своих
+        скрытий не теряет. Вошедший пользователь, если что-то скрывал раньше,
+        увидит это снова — и скроет заново уже только у себя.
+
+        Идемпотентно: после переноса колонка обнулена, переносить нечего.
+        """
+        for table, column, target, key in (
+            ("Subjects", "subject_id", "SubjectVisibility", "id"),
+            ("Partitions", "partition_id", "PartitionVisibility", "id"),
+        ):
+            cols = {r[1] for r in
+                    conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if "hidden" not in cols:
+                continue
+            rows = [r[0] for r in conn.execute(
+                f"SELECT {key} FROM {table} WHERE hidden = 1").fetchall()]
+            if not rows:
+                continue
+            conn.executemany(
+                f"INSERT OR IGNORE INTO {target} "
+                f"(user_login, {column}, hidden) VALUES (?, ?, 1)",
+                [(GUEST_VISIBILITY_KEY, r) for r in rows])
+            conn.execute(f"UPDATE {table} SET hidden = 0 WHERE hidden = 1")
+        conn.commit()
 
     def ensure_hidden_columns(self) -> None:
-        """Гарантировать колонки hidden в Subjects и Partitions. Идемпотентно."""
+        """
+        Гарантировать legacy-колонки hidden в Subjects и Partitions, а также
+        таблицы персональной видимости. Идемпотентно.
+
+        Колонки больше не читаются при выборках, но создаются по-прежнему:
+        старые копии БД и внешние инструменты могут на них рассчитывать, а
+        _migrate_legacy_hidden опирается на их наличие при переносе.
+        """
         with self._connect() as conn:
             for table in ("Subjects", "Partitions"):
                 cols = [r[1] for r in conn.execute(
@@ -118,6 +208,7 @@ class Repository:
                         f"ALTER TABLE {table} ADD COLUMN "
                         f"hidden INTEGER NOT NULL DEFAULT 0")
             conn.commit()
+        self.ensure_visibility_tables()
 
     def ensure_owner_column(self) -> None:
         """
@@ -143,26 +234,49 @@ class Repository:
                          (owner_user_id, subject_id))
             conn.commit()
 
-    def set_subject_hidden(self, subject_id: int, hidden: bool) -> None:
-        self.ensure_hidden_columns()
-        with self._connect() as conn:
-            conn.execute("UPDATE Subjects SET hidden = ? WHERE id = ?",
-                         (1 if hidden else 0, subject_id))
-            conn.commit()
+    def set_subject_hidden(self, subject_id: int, hidden: bool, *,
+                           user_login: str | None = None) -> None:
+        """Скрыть/показать предмет ЛИЧНО у user_login (None — у гостя)."""
+        self._set_hidden("SubjectVisibility", "subject_id", subject_id,
+                         hidden, user_login)
 
-    def set_partition_hidden(self, partition_id: int, hidden: bool) -> None:
-        self.ensure_hidden_columns()
+    def set_partition_hidden(self, partition_id: int, hidden: bool, *,
+                             user_login: str | None = None) -> None:
+        """Скрыть/показать раздел ЛИЧНО у user_login (None — у гостя)."""
+        self._set_hidden("PartitionVisibility", "partition_id", partition_id,
+                         hidden, user_login)
+
+    def _set_hidden(self, table: str, column: str, entity_id: int,
+                    hidden: bool, user_login: str | None) -> None:
+        self.ensure_visibility_tables()
+        key = self._visibility_key(user_login)
         with self._connect() as conn:
-            conn.execute("UPDATE Partitions SET hidden = ? WHERE id = ?",
-                         (1 if hidden else 0, partition_id))
+            if hidden:
+                conn.execute(
+                    f"INSERT INTO {table} (user_login, {column}, hidden) "
+                    f"VALUES (?, ?, 1) "
+                    f"ON CONFLICT(user_login, {column}) DO UPDATE SET hidden = 1",
+                    (key, entity_id))
+            else:
+                # Показать = убрать запись, а не хранить hidden=0: бакет
+                # держит только осознанные скрытия, «показано» — умолчание.
+                conn.execute(
+                    f"DELETE FROM {table} WHERE user_login = ? AND {column} = ?",
+                    (key, entity_id))
             conn.commit()
 
     # ---------- Subjects ----------
 
     def list_subjects(self, include_hidden: bool = False,
-                      owned_by: str | None = None) -> List[Subject]:
+                      owned_by: str | None = None, *,
+                      user_login: str | None = None) -> List[Subject]:
         """
-        Предметы. include_hidden — показывать скрытые (локальный флаг).
+        Предметы. include_hidden — показывать скрытые.
+
+        user_login — ЧЬЮ витрину собираем: скрытия персональны, у каждого
+        аккаунта свой набор (None — гостевой бакет). На состав предметов в
+        БД это не влияет, только на то, какие из них помечены hidden и
+        отфильтрованы.
 
         owned_by — ЕСЛИ задан, вернуть только встроенные (owner IS NULL) +
         принадлежащие этому пользователю. По умолчанию (None) фильтра нет —
@@ -174,37 +288,36 @@ class Repository:
         число), поэтому в UI фильтр пока НЕ включён. См.
         docs/ui_rework_plan.md, раздел «Владение и роли».
         """
+        self.ensure_visibility_tables()
         with self._connect() as conn:
             # Интроспекция колонок: БД могла пройти миграцию частично (старые
-            # копии, тестовые схемы) — hidden и owner_user_id независимы.
+            # копии, тестовые схемы), owner_user_id может отсутствовать.
             cols = {r[1] for r in
                     conn.execute("PRAGMA table_info(Subjects)").fetchall()}
-            has_hidden = "hidden" in cols
             has_owner = "owner_user_id" in cols
 
-            select = "SELECT id, subject_name, pra_subject" + \
-                (", hidden" if has_hidden else "") + \
-                (", owner_user_id" if has_owner else "")
-            where, params = [], []
-            if has_hidden and not include_hidden:
-                where.append("hidden = 0")
+            # Скрытость берём из персонального бакета: LEFT JOIN, потому что
+            # у большинства предметов записи в нём нет — это и есть «видно».
+            select = ("SELECT s.id, s.subject_name, s.pra_subject, "
+                      "COALESCE(v.hidden, 0)" +
+                      (", s.owner_user_id" if has_owner else ""))
+            params: list = [self._visibility_key(user_login)]
+            where = []
+            if not include_hidden:
+                where.append("COALESCE(v.hidden, 0) = 0")
             if has_owner and owned_by is not None:
-                where.append("(owner_user_id IS NULL OR owner_user_id = ?)")
+                where.append("(s.owner_user_id IS NULL OR s.owner_user_id = ?)")
                 params.append(owned_by)
-            sql = f"{select} FROM Subjects"
+            sql = (f"{select} FROM Subjects s "
+                   f"LEFT JOIN SubjectVisibility v "
+                   f"  ON v.subject_id = s.id AND v.user_login = ?")
             if where:
                 sql += " WHERE " + " AND ".join(where)
             rows = conn.execute(sql, params).fetchall()
 
-            out = []
-            for r in rows:
-                i = 3
-                hidden = bool(r[i]) if has_hidden else False
-                if has_hidden:
-                    i += 1
-                owner = r[i] if has_owner else None
-                out.append(Subject(r[0], r[1], r[2], hidden, owner))
-            return out
+            return [Subject(r[0], r[1], r[2], bool(r[3]),
+                            r[4] if has_owner else None)
+                    for r in rows]
 
     def get_subject_by_name(self, name: str) -> Optional[Subject]:
         with self._connect() as conn:
@@ -222,6 +335,7 @@ class Repository:
         пересоздаются сидами при следующем запуске (bootstrap.sync_database)
         — для них уместнее скрытие; предупреждение — забота UI.
         """
+        self.ensure_visibility_tables()
         with self._connect() as conn:
             partition_ids = [r[0] for r in conn.execute(
                 "SELECT id FROM Partitions WHERE subject_id = ?",
@@ -229,6 +343,13 @@ class Repository:
             conn.execute("DELETE FROM Partitions WHERE subject_id = ?",
                          (subject_id,))
             conn.execute("DELETE FROM Subjects WHERE id = ?", (subject_id,))
+            # Персональные скрытия удалённого — за ним же (см. delete_partition).
+            conn.execute("DELETE FROM SubjectVisibility WHERE subject_id = ?",
+                         (subject_id,))
+            if partition_ids:
+                conn.executemany(
+                    "DELETE FROM PartitionVisibility WHERE partition_id = ?",
+                    [(pid,) for pid in partition_ids])
             conn.commit()
         if self.sync_listener is not None:
             for pid in partition_ids:
@@ -238,25 +359,23 @@ class Repository:
     # ---------- Partitions ----------
 
     def list_partitions_for_subject(
-        self, subject_id: int, include_hidden: bool = False,
+        self, subject_id: int, include_hidden: bool = False, *,
+        user_login: str | None = None,
     ) -> List[Partition]:
+        """Разделы предмета. Скрытость — персональная (см. list_subjects)."""
+        self.ensure_visibility_tables()
+        sql = ("SELECT p.id, p.subject_id, p.partition_name, p.constracted, "
+               "       p.generation_parametrs, COALESCE(v.hidden, 0) "
+               "FROM Partitions p "
+               "LEFT JOIN PartitionVisibility v "
+               "  ON v.partition_id = p.id AND v.user_login = ? "
+               "WHERE p.subject_id = ?")
+        if not include_hidden:
+            sql += " AND COALESCE(v.hidden, 0) = 0"
+        sql += " ORDER BY p.id"
         with self._connect() as conn:
-            try:
-                rows = conn.execute(
-                    "SELECT id, subject_id, partition_name, constracted, "
-                    "       generation_parametrs, hidden "
-                    "FROM Partitions WHERE subject_id = ?" +
-                    ("" if include_hidden else " AND hidden = 0") +
-                    " ORDER BY id",
-                    (subject_id,),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                rows = conn.execute(
-                    "SELECT id, subject_id, partition_name, constracted, "
-                    "       generation_parametrs "
-                    "FROM Partitions WHERE subject_id = ? ORDER BY id",
-                    (subject_id,),
-                ).fetchall()
+            rows = conn.execute(
+                sql, (self._visibility_key(user_login), subject_id)).fetchall()
         return [self._row_to_partition(r) for r in rows]
 
     def get_partition(self, partition_id: int) -> Optional[Partition]:
@@ -447,10 +566,17 @@ class Repository:
         return pid
 
     def delete_partition(self, partition_id: int) -> None:
+        self.ensure_visibility_tables()
         with self._connect() as conn:
             conn.execute(
                 "DELETE FROM Partitions WHERE id = ?", (partition_id,)
             )
+            # Чужие персональные скрытия этого раздела больше не на что
+            # ссылаться: без уборки они достались бы новому разделу, если
+            # id переиспользуется (а он переиспользуется — см. upsert).
+            conn.execute(
+                "DELETE FROM PartitionVisibility WHERE partition_id = ?",
+                (partition_id,))
             conn.commit()
         if self.sync_listener is not None:
             self.sync_listener.partition_deleted(partition_id)
