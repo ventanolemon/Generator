@@ -69,6 +69,9 @@ class SyncReport:
     pulled_subjects: int = 0
     pulled_partitions: int = 0
     deleted_applied: int = 0
+    # Сущности, убранные пересборкой скоупа (отозванный доступ), — считаются
+    # отдельно от deleted_applied: это не удаление контента, а потеря прав.
+    scope_swept: int = 0
     pages: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -225,20 +228,119 @@ class SyncClient:
 
     def _pull(self, report: SyncReport) -> None:
         cursors = self.store.get_cursors()
+        scope_version = self.store.get_scope_version(self.user_id)
+        # Пересборка скоупа: сервер объявляет её, когда набор доступных
+        # пользователю предметов изменился (выдали/отозвали, переключили режим
+        # умолчания). Обычный диф по row_version такое не переносит — при
+        # выдаче версия старая и курсор её прошёл, при отзыве версия не
+        # менялась вовсе. См. docs/subject_grants.md.
+        resyncing = False
+        seen: dict[str, set[int]] = {"subject": set(), "partition": set()}
+        server_scope: Optional[int] = None
+
         while True:
             resp = self._transport("/sync/pull", {
                 "device_id": self.store.device_id(),
-                "cursors": cursors,
+                # В режиме пересборки курсоры не шлём: набор идёт с нуля.
+                "cursors": {} if resyncing else cursors,
                 "limit": PULL_PAGE_LIMIT,
+                "scope_version": scope_version,
             })
+            if resp.get("resync"):
+                # Сервер УЖЕ проигнорировал курсоры в этом ответе — страница
+                # перед нами начало полного набора, перезапрашивать нечего.
+                resyncing = True
+            if "scope_version" in resp:
+                server_scope = int(resp["scope_version"] or 0)
+
             self._apply_page(resp, report)
+            if resyncing:
+                for s in resp.get("subjects", []):
+                    seen["subject"].add(int(s["id"]))
+                for p in resp.get("partitions", []):
+                    seen["partition"].add(int(p["id"]))
+
             cursors = resp.get("new_cursors") or cursors
             # Курсор сохраняется после ПРИМЕНЕНИЯ страницы — обрыв между
             # страницами безопасен.
             self.store.set_cursors(cursors)
             report.pages += 1
             if not resp.get("has_more"):
-                return
+                break
+
+        # Порядок важен: сначала подчистить лишнее, и только потом запомнить
+        # эпоху. Обрыв до этой точки оставит эпоху старой — следующий sync
+        # начнёт пересборку заново, ничего не потеряв.
+        if resyncing:
+            self._sweep(seen, report)
+        if server_scope is not None:
+            self.store.set_scope_version(self.user_id, server_scope)
+
+    def _sweep(self, seen: dict[str, set[int]], report: SyncReport) -> None:
+        """
+        Удалить локально то, что при пересборке скоупа сервер НЕ прислал, —
+        то есть отозванное. Диф-события об этом не приходят: у сущности не
+        менялась версия, изменились права.
+
+        Два ограничителя, оба намеренные:
+
+        * **Только подтверждённое сервером** (есть строка в sync_versions).
+          Сущность без версии сервер никогда не принимал — это может быть
+          локальная работа, и стирать её из-за прав нельзя.
+        * **Никогда встроенные предметы** (owner_user_id IS NULL). Их всё
+          равно пересоздаст bootstrap.sync_database на следующем старте, а
+          удаление увело бы за собой разделы вместе с правками. Витрину для
+          них ограничивает фильтр выдач (Repository.list_subjects).
+
+        Удаляем ПРЯМЫМ SQL, а не repo.delete_*: те дёргают sync_listener, и
+        в outbox ушёл бы tombstone — потеря доступа превратилась бы в
+        удаление предмета у всех. Персональные скрытия не трогаем: id
+        сохраняет смысл, вернут доступ — вернётся и прежний выбор.
+        """
+        swept: dict[str, list[int]] = {"subject": [], "partition": []}
+        with self.repo._connect() as conn:  # noqa: SLF001 — слой данных
+            has_owner = any(
+                r[1] == "owner_user_id" for r in
+                conn.execute("PRAGMA table_info(Subjects)").fetchall())
+
+            builtin: set[int] = set()
+            if has_owner:
+                builtin = {r[0] for r in conn.execute(
+                    "SELECT id FROM Subjects WHERE owner_user_id IS NULL"
+                ).fetchall()}
+            else:
+                # Старая БД без колонки владельца: отличить встроенный предмет
+                # от серверного нечем, поэтому предметы не трогаем вовсе.
+                builtin = {r[0] for r in conn.execute(
+                    "SELECT id FROM Subjects").fetchall()}
+
+            local_subjects = {r[0] for r in
+                              conn.execute("SELECT id FROM Subjects").fetchall()}
+            for sid in sorted(local_subjects - seen["subject"] - builtin):
+                if self.store.get_version("subject", sid) == 0:
+                    continue
+                conn.execute("DELETE FROM Partitions WHERE subject_id = ?",
+                             (sid,))
+                conn.execute("DELETE FROM Subjects WHERE id = ?", (sid,))
+                swept["subject"].append(sid)
+
+            # Разделы выживших предметов: раздел могли отозвать отдельно
+            # (например, он уехал в другой предмет вне скоупа).
+            rows = conn.execute(
+                "SELECT id, subject_id FROM Partitions").fetchall()
+            for pid, sid in rows:
+                if pid in seen["partition"] or sid in builtin:
+                    continue
+                if self.store.get_version("partition", pid) == 0:
+                    continue
+                conn.execute("DELETE FROM Partitions WHERE id = ?", (pid,))
+                swept["partition"].append(pid)
+            conn.commit()
+
+        for kind, ids in swept.items():
+            for entity_id in ids:
+                self.store.drop_version(kind, entity_id)
+        report.scope_swept = len(swept["subject"]) + len(swept["partition"])
 
     def _apply_page(self, resp: dict, report: SyncReport) -> None:
         with self.repo._connect() as conn:  # noqa: SLF001

@@ -21,6 +21,7 @@ from core.admin import AdminClient
 from core.analytics import AnalyticsClient
 from core.assignments import AssignmentsClient
 from core.contour import ContourClient
+from core.grants import GrantsClient
 from core.session import Session
 from core.settings import Settings
 from core.sync import RepositorySyncListener, SyncClient, SyncStore
@@ -97,6 +98,13 @@ def main() -> int:
                                            user_id_provider=user_id_provider,
                                            user_role_provider=user_role_provider)
 
+    # Клиент выдач предметов: тот же web_layer. Читают его двое — витрина
+    # преподавателя (снимок обновляется вместе с синком) и вкладка матрицы в
+    # окне администрирования (она гейтится admin, can_manage).
+    grants_client = GrantsClient(base_url=settings.get_base_url(),
+                                 user_id_provider=user_id_provider,
+                                 user_role_provider=user_role_provider)
+
     def make_registry():
         return build_registry(
             repo, WORDS_DIR,
@@ -114,6 +122,7 @@ def main() -> int:
         admin_client=admin_client,
         analytics_client=analytics_client,
         assignments_client=assignments_client,
+        grants_client=grants_client,
     )
 
     def do_logout() -> None:
