@@ -645,12 +645,27 @@ class GeneratorWindow(QMainWindow):
             return None
         return uid
 
+    def _apply_grants(self) -> bool:
+        """
+        Ограничивать ли витрину выданными админом предметами
+        (docs/subject_grants.md).
+
+        Гостя и админа не ограничиваем: гостю нечего — он не преподаватель,
+        админ по определению видит всё. Для остальных решение принимает сам
+        Repository: нет локального снимка выдач — витрина полная, потому что
+        «сервер ещё не ответил» не должно выглядеть как «права отозвали».
+        """
+        role = self.user_role_provider() if self.user_role_provider else None
+        uid = self.user_id_provider() if self.user_id_provider else None
+        return uid is not None and role != "admin"
+
     def _load_subjects(self) -> None:
         try:
             self.subjects = self.repo.list_subjects(
                 include_hidden=self._show_hidden(),
                 owned_by=self._owner_scope(),
-                user_login=self._visibility_login())
+                user_login=self._visibility_login(),
+                apply_grants=self._apply_grants())
         except Exception as e:
             QMessageBox.critical(self, "Ошибка БД",
                                  f"Не удалось загрузить предметы: {e}")

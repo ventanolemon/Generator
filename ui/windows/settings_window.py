@@ -205,11 +205,20 @@ class SettingsWindow(QDialog):
 
     def _on_save(self) -> None:
         url = self.base_url_edit.text().strip()
+        url_changed = url != (self.settings.get_base_url() or "").strip()
         self.settings.set_base_url(url)
-        # Клиенты (синк, контур, админ, аналитика, домашки) — адрес.
+        if url_changed:
+            # Сменили сервер — снимок выдач относится к прежнему. Забываем
+            # его: до первого синка с новым сервером витрина будет полной,
+            # и это верная сторона ошибки (чужие права не должны запирать).
+            try:
+                self.ctx.repo.clear_grants(self.ctx.user_id_provider() or "")
+            except Exception:
+                pass
+        # Клиенты (синк, контур, админ, аналитика, домашки, выдачи) — адрес.
         for client in (self.ctx.sync_client, self.ctx.contour_client,
                        self.ctx.admin_client, self.ctx.analytics_client,
-                       self.ctx.assignments_client):
+                       self.ctx.assignments_client, self.ctx.grants_client):
             if client is not None and hasattr(client, "set_base_url"):
                 client.set_base_url(url)
         name = self.theme_combo.currentData()

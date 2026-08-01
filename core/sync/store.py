@@ -107,6 +107,24 @@ class SyncStore:
     def set_cursors(self, cursors: dict) -> None:
         self._set("cursors", json.dumps(cursors))
 
+    # ---------- scope-эпоха (выдачи предметов) ----------
+    #
+    # Ключуется ЛОГИНОМ, а не одним значением на устройство: скоуп у каждого
+    # пользователя свой, и на общей машине эпоха предыдущего пользователя
+    # случайно совпала бы с эпохой следующего — сервер не объявил бы resync, и
+    # тот унаследовал бы чужую витрину. См. docs/subject_grants.md.
+
+    @staticmethod
+    def _scope_key(user_login: Optional[str]) -> str:
+        return f"scope_version:{user_login or ''}"
+
+    def get_scope_version(self, user_login: Optional[str]) -> int:
+        raw = self._get(self._scope_key(user_login))
+        return int(raw) if raw else 0
+
+    def set_scope_version(self, user_login: Optional[str], version: int) -> None:
+        self._set(self._scope_key(user_login), str(int(version)))
+
     # ---------- outbox ----------
 
     def enqueue_attempt(self, attempt: dict) -> int:

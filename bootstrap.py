@@ -90,6 +90,9 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
     # Колонка owner_user_id в Subjects — владелец предмета с сервера (sync).
     repo.ensure_owner_column()
 
+    # Кэш выданных админом предметов — витрина преподавателя (subject_grants).
+    repo.ensure_grants_tables()
+
     for subject_id, gen in CODE_GENERATORS:
         if gen.partition_id is None:
             continue

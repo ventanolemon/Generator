@@ -1,7 +1,7 @@
 """
 AdminWindow — окно «Администрирование» (docs/ui_rework_plan.md, п.4–5).
 
-Три вкладки в QTabWidget:
+Четыре вкладки в QTabWidget:
 
   1. Пользователи и роли — таблица пользователей; роль меняется комбобоксом
      в строке с подтверждением. Серверные guardrail'ы (нельзя менять свою
@@ -11,7 +11,12 @@ AdminWindow — окно «Администрирование» (docs/ui_rework_
   2. Группы — мастер-деталь: список групп (+ создание) слева, состав и
      назначенные преподаватели выбранной группы справа (добавить/убрать по
      логину). Отражает /admin/groups.
-  3. Права по ролям — статичная справочная матрица (student|teacher|admin):
+  3. Предметы преподавателям — матрица «преподаватель × предмет» с
+     чекбоксами (docs/subject_grants.md). Правится целиком и сохраняется
+     кнопкой: строки уходят на сервер по одной и последовательно, потому что
+     _start_call держит один вызов в полёте. Здесь же переключатель режима
+     по умолчанию (видно всё / ничего) для преподавателей без выдач.
+  4. Права по ролям — статичная справочная матрица (student|teacher|admin):
      что кому доступно. Информационная, серверных вызовов не делает.
 
 Управление доступно только admin и только при заданном адресе сервера
@@ -33,6 +38,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.admin import AdminError
+from core.grants import GrantsError
 from ui.app_context import AppContext
 
 ROLES = ("student", "teacher", "admin")
@@ -59,6 +65,7 @@ _CAPABILITIES = [
     ("Администрирование", [
         ("Список пользователей, смена ролей", False, False, True),
         ("Группы и назначение преподавателей", False, False, True),
+        ("Выдача предметов преподавателям", False, False, True),
     ]),
 ]
 _CELL = {True: "✓", False: "—", "own": "только своё", "soon": "скоро"}
@@ -78,7 +85,9 @@ class _CallWorker(QThread):
     def run(self) -> None:  # noqa: D102 — контракт QThread
         try:
             self.done.emit(self._fn())
-        except AdminError as e:
+        except (AdminError, GrantsError) as e:
+            # Оба клиента несут HTTP-код — он нужен окну, чтобы отличить
+            # «не хватает прав» от «нарушено доменное правило».
             self.failed.emit((str(e), getattr(e, "status", None)))
         except Exception as e:
             self.failed.emit((f"администрирование: {e}", None))
@@ -92,7 +101,15 @@ class AdminWindow(QWidget):
         self.setWindowFlag(Qt.WindowType.Window, True)
         self.ctx = context
         self.client = getattr(context, "admin_client", None)
+        self.grants_client = getattr(context, "grants_client", None)
         self._worker: Optional[_CallWorker] = None
+        # Матрица выдач: канон с сервера, рабочая копия и очередь сохранения.
+        self._grants_teachers: list[dict] = []
+        self._grants_subjects: list[dict] = []
+        self._grants_loaded: dict[str, set[int]] = {}
+        self._grants_draft: dict[str, set[int]] = {}
+        self._grants_save_queue: list[str] = []
+        self._refresh_queue: list[Callable[[], None]] = []
         # Подтверждение смены роли: по умолчанию модальный диалог; тесты
         # подменяют на предикат без UI.
         self._confirm: Callable[[str], bool] = self._default_confirm
@@ -116,6 +133,7 @@ class AdminWindow(QWidget):
         self.tabs = QTabWidget(self)
         self.tabs.addTab(self._build_users_tab(), "Пользователи и роли")
         self.tabs.addTab(self._build_groups_tab(), "Группы")
+        self.tabs.addTab(self._build_grants_tab(), "Предметы преподавателям")
         self.tabs.addTab(self._build_matrix_tab(), "Права по ролям")
         root.addWidget(self.tabs, stretch=1)
 
@@ -242,7 +260,238 @@ class AdminWindow(QWidget):
         outer.addLayout(right, stretch=2)
         return page
 
-    # --- вкладка 3: матрица прав ---
+    # --- вкладка 3: предметы преподавателям ---
+
+    def _build_grants_tab(self) -> QWidget:
+        page = QWidget(self)
+        lay = QVBoxLayout(page)
+        lay.setSpacing(8)
+
+        intro = QLabel(
+            "Отметьте, какие предметы доступны преподавателю. Изменения "
+            "применяются кнопкой — правьте матрицу целиком и сохраняйте одним "
+            "действием. Преподаватель увидит новый набор при следующей "
+            "синхронизации.\n"
+            "Для встроенных предметов это витрина, а не защита: их генераторы "
+            "входят в само приложение, и локальную базу её владелец правит как "
+            "хочет. Полноценно закрывается только серверный контент.", page)
+        intro.setProperty("class", "muted")
+        intro.setWordWrap(True)
+        lay.addWidget(intro)
+
+        self.grants_error = QLabel("", page)
+        self.grants_error.setProperty("class", "danger")
+        self.grants_error.setWordWrap(True)
+        self.grants_error.hide()
+        lay.addWidget(self.grants_error)
+
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Без выдач преподаватель видит:", page))
+        self.grants_default_combo = QComboBox(page)
+        self.grants_default_combo.addItem("все предметы", "all")
+        self.grants_default_combo.addItem("ничего", "none")
+        self.grants_default_combo.setToolTip(
+            "«Все предметы» — безопасное умолчание: пока админ не раздал "
+            "доступы, никто не остаётся с пустым экраном. Переключайте в "
+            "«ничего», когда выдачи проставлены.")
+        self.grants_default_combo.currentIndexChanged.connect(
+            self._on_default_access_changed)
+        top.addWidget(self.grants_default_combo)
+        top.addSpacing(16)
+        self.grants_filter_edit = QLineEdit(page)
+        self.grants_filter_edit.setPlaceholderText("Поиск преподавателя")
+        self.grants_filter_edit.textChanged.connect(
+            lambda *_: self._render_grants_table())
+        top.addWidget(self.grants_filter_edit, stretch=1)
+        lay.addLayout(top)
+
+        self.grants_table = QTableWidget(0, 0, page)
+        self.grants_table.verticalHeader().setVisible(False)
+        self.grants_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection)
+        self.grants_table.itemChanged.connect(self._on_grant_cell_changed)
+        lay.addWidget(self.grants_table, stretch=1)
+
+        row = QHBoxLayout()
+        self.grants_apply_btn = QPushButton("Применить", page)
+        self.grants_apply_btn.clicked.connect(self._on_apply_grants)
+        self.grants_apply_btn.setEnabled(False)
+        row.addWidget(self.grants_apply_btn)
+        self.grants_revert_btn = QPushButton("Сбросить", page)
+        self.grants_revert_btn.clicked.connect(self._on_revert_grants)
+        self.grants_revert_btn.setEnabled(False)
+        row.addWidget(self.grants_revert_btn)
+        row.addStretch(1)
+        self.grants_dirty_label = QLabel("", page)
+        self.grants_dirty_label.setProperty("class", "muted")
+        row.addWidget(self.grants_dirty_label)
+        self.grants_reload_btn = QPushButton("Обновить", page)
+        self.grants_reload_btn.clicked.connect(self._load_grants)
+        row.addWidget(self.grants_reload_btn)
+        lay.addLayout(row)
+        return page
+
+    # ---------- выдачи предметов ----------
+
+    def _load_grants(self) -> None:
+        if self.grants_client is None:
+            return
+        self.grants_error.hide()
+        self._start_call(self.grants_client.matrix, self._on_grants_loaded,
+                         self._on_grants_error)
+
+    def _on_grants_loaded(self, matrix: dict) -> None:
+        self._grants_teachers = list(matrix.get("teachers") or [])
+        self._grants_subjects = list(matrix.get("subjects") or [])
+        loaded = matrix.get("grants") or {}
+        # Снимок «как на сервере» и рабочая копия — раздельно: разница между
+        # ними и есть то, что уйдёт на сервер по «Применить».
+        self._grants_loaded = {
+            str(t["login"]): set(loaded.get(str(t["login"])) or set())
+            for t in self._grants_teachers}
+        self._grants_draft = {k: set(v) for k, v in self._grants_loaded.items()}
+
+        combo = self.grants_default_combo
+        combo.blockSignals(True)
+        idx = combo.findData(matrix.get("default_access", "all"))
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+        combo.blockSignals(False)
+
+        self._render_grants_table()
+
+    def _visible_teachers(self) -> list[dict]:
+        needle = self.grants_filter_edit.text().strip().lower()
+        teachers = getattr(self, "_grants_teachers", [])
+        if not needle:
+            return list(teachers)
+        return [t for t in teachers
+                if needle in str(t.get("login", "")).lower()
+                or needle in str(t.get("fio", "")).lower()]
+
+    def _render_grants_table(self) -> None:
+        subjects = getattr(self, "_grants_subjects", [])
+        teachers = self._visible_teachers()
+        table = self.grants_table
+        # Заполнение шлёт itemChanged на каждую ячейку — иначе рисование
+        # выглядело бы как правка пользователя и пачкало черновик.
+        table.blockSignals(True)
+        table.clear()
+        table.setRowCount(len(teachers))
+        table.setColumnCount(len(subjects) + 1)
+        table.setHorizontalHeaderLabels(
+            ["Преподаватель"] + [str(s.get("subject_name", "")) for s in subjects])
+        hh = table.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for col in range(1, len(subjects) + 1):
+            hh.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        for col, subject in enumerate(subjects, start=1):
+            header = table.horizontalHeaderItem(col)
+            if header is not None and subject.get("is_builtin"):
+                header.setToolTip(
+                    "Встроенный предмет: ограничение действует на витрину, "
+                    "но генераторы входят в приложение")
+
+        for r, teacher in enumerate(teachers):
+            login = str(teacher.get("login", ""))
+            fio = str(teacher.get("fio", "")) or "—"
+            who = QTableWidgetItem(f"{fio}\n{login}")
+            who.setData(Qt.ItemDataRole.UserRole, login)
+            who.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            table.setItem(r, 0, who)
+            granted = self._grants_draft.get(login, set())
+            for c, subject in enumerate(subjects, start=1):
+                sid = int(subject["id"])
+                cell = QTableWidgetItem("")
+                cell.setFlags(Qt.ItemFlag.ItemIsEnabled
+                              | Qt.ItemFlag.ItemIsUserCheckable)
+                cell.setCheckState(Qt.CheckState.Checked if sid in granted
+                                   else Qt.CheckState.Unchecked)
+                cell.setData(Qt.ItemDataRole.UserRole, (login, sid))
+                cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                table.setItem(r, c, cell)
+        table.blockSignals(False)
+        self._update_grants_dirty()
+
+    def _on_grant_cell_changed(self, item: QTableWidgetItem) -> None:
+        payload = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(payload, tuple):
+            return
+        login, sid = payload
+        bucket = self._grants_draft.setdefault(login, set())
+        if item.checkState() == Qt.CheckState.Checked:
+            bucket.add(int(sid))
+        else:
+            bucket.discard(int(sid))
+        self._update_grants_dirty()
+
+    def _dirty_logins(self) -> list[str]:
+        loaded = getattr(self, "_grants_loaded", {})
+        draft = getattr(self, "_grants_draft", {})
+        return sorted(login for login, ids in draft.items()
+                      if ids != loaded.get(login, set()))
+
+    def _update_grants_dirty(self) -> None:
+        dirty = self._dirty_logins()
+        self.grants_apply_btn.setEnabled(bool(dirty))
+        self.grants_revert_btn.setEnabled(bool(dirty))
+        self.grants_dirty_label.setText(
+            f"Не сохранено: {len(dirty)}" if dirty else "")
+
+    def _on_revert_grants(self) -> None:
+        self._grants_draft = {k: set(v)
+                              for k, v in getattr(self, "_grants_loaded", {}).items()}
+        self._render_grants_table()
+
+    def _on_apply_grants(self) -> None:
+        # Правки сохраняются по одному преподавателю и ПОСЛЕДОВАТЕЛЬНО:
+        # _start_call держит один вызов в полёте, параллельные молча пропали
+        # бы. Каждая строка отправляется целым набором — идемпотентно.
+        self.grants_error.hide()
+        self._grants_save_queue = self._dirty_logins()
+        self._save_next_grant_row()
+
+    def _save_next_grant_row(self) -> None:
+        queue = getattr(self, "_grants_save_queue", [])
+        if not queue:
+            self._load_grants()      # перечитать канон после записи
+            return
+        login = queue.pop(0)
+        ids = sorted(self._grants_draft.get(login, set()))
+
+        def _done(_resp: object) -> None:
+            # Строка легла на сервер — двигаем канон, чтобы обрыв на середине
+            # очереди не выглядел как «ничего не сохранилось».
+            self._grants_loaded[login] = set(ids)
+            self._update_grants_dirty()
+            self._save_next_grant_row()
+
+        self._start_call(
+            lambda: self.grants_client.set_teacher_grants(login, ids),
+            _done, self._on_grants_error)
+
+    def _on_default_access_changed(self) -> None:
+        if self.grants_client is None:
+            return
+        value = self.grants_default_combo.currentData()
+        if not self._confirm(
+                "Переключить режим по умолчанию на "
+                f"«{self.grants_default_combo.currentText()}»? Это меняет "
+                "витрину у всех преподавателей без явных выдач."):
+            self._load_grants()      # откат — перечитать актуальный режим
+            return
+        self.grants_error.hide()
+        self._start_call(
+            lambda: self.grants_client.set_default_access(value),
+            lambda _r: self._load_grants(), self._on_grants_error)
+
+    def _on_grants_error(self, err) -> None:
+        message, _status = err
+        # Очередь сохранения рвём: продолжать вслепую после отказа нельзя.
+        self._grants_save_queue = []
+        self.grants_error.setText(message)
+        self.grants_error.show()
+
+    # --- вкладка 4: матрица прав ---
 
     def _build_matrix_tab(self) -> QWidget:
         page = QWidget(self)
@@ -285,8 +534,18 @@ class AdminWindow(QWidget):
             return
         self.disabled_label.hide()
         self.tabs.show()
-        self._load_users()
-        self._load_groups()
+        # Последовательно, а не тремя вызовами подряд: _start_call держит один
+        # вызов в полёте и МОЛЧА роняет остальные — подряд загрузились бы
+        # только пользователи, а группы и выдачи остались бы пустыми.
+        self._refresh_queue = [self._load_users, self._load_groups,
+                               self._load_grants]
+        self._drain_refresh_queue()
+
+    def _drain_refresh_queue(self) -> None:
+        """Запустить следующий шаг обновления, когда воркер освободился."""
+        if self._worker is not None or not self._refresh_queue:
+            return
+        self._refresh_queue.pop(0)()
 
     def _disabled_reason(self) -> str:
         if self.client is None or not self.client.has_server():
@@ -525,10 +784,14 @@ class AdminWindow(QWidget):
         def _on_done(result: object) -> None:
             self._worker = None
             on_done(result)
+            self._drain_refresh_queue()
 
         def _on_failed(err: object) -> None:
             self._worker = None
             on_failed(err)
+            # Шаг упал — остальные всё равно нужны: неудача с группами не
+            # повод оставить вкладку выдач пустой.
+            self._drain_refresh_queue()
 
         worker.done.connect(_on_done)
         worker.failed.connect(_on_failed)

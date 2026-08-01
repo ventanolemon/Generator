@@ -21,7 +21,7 @@ SyncWindow — окно офлайн-синхронизации (B3 плана d
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -77,16 +77,26 @@ class _SyncWorker(QThread):
     """
 
     finished_report = pyqtSignal(object)  # SyncReport
+    # after — необязательный пост-шаг в том же фоне (обновление снимка выдач
+    # предметов). Его ошибка не отменяет сам синк: контент уже приехал, просто
+    # права остались прежними — это попадает в errors отчёта отдельной строкой.
 
-    def __init__(self, client, parent: QWidget | None = None):
+    def __init__(self, client, parent: QWidget | None = None, *,
+                 after: Optional[Callable[[], None]] = None):
         super().__init__(parent)
         self._client = client
+        self._after = after
 
     def run(self) -> None:  # noqa: D102 — контракт QThread
         try:
             report = self._client.sync()
         except Exception as e:  # sync() сам ловит сеть; это страховка
             report = SyncReport(errors=[f"sync: {e}"])
+        if self._after is not None:
+            try:
+                self._after()
+            except Exception as e:
+                report.errors.append(f"выдачи предметов: {e}")
         self.finished_report.emit(report)
 
 
@@ -231,9 +241,24 @@ class SyncWindow(QWidget):
         self.last_sync_label.setText("выполняется…")
         _set_class(self.last_sync_label, "accent")
 
-        self._worker = _SyncWorker(self.client, self)
+        self._worker = _SyncWorker(self.client, self,
+                                   after=self._refresh_grants)
         self._worker.finished_report.connect(self._on_sync_finished)
         self._worker.start()
+
+    def _refresh_grants(self) -> None:
+        """
+        Подтянуть выданные админом предметы — тем же фоном, что и синк.
+
+        Синк уже привёз контент и scope-эпоху; здесь обновляется локальный
+        снимок прав, которым фильтруется витрина встроенных предметов.
+        Гостю и без адреса сервера обновлять нечего — refresh_into вернёт
+        None, не ходя в сеть.
+        """
+        client = getattr(self.ctx, "grants_client", None)
+        if client is None:
+            return
+        client.refresh_into(self.ctx.repo, self.ctx.user_id_provider())
 
     def _on_sync_finished(self, report: SyncReport) -> None:
         """Слот результата воркера — выполняется в UI-потоке."""

@@ -42,6 +42,39 @@ class Subject:
 
 
 @dataclass(frozen=True)
+class GrantsSnapshot:
+    """
+    Снимок выданных пользователю предметов (см. docs/subject_grants.md).
+
+    Права раздаёт админ, живут они на сервере; это лишь локальный кэш, чтобы
+    витрина офлайн была той же, что онлайн. ОТСУТСТВИЕ снимка (None вместо
+    объекта) и пустой снимок — разные вещи: первое значит «мы ещё не знаем»
+    и витрину не ограничивает, второе — осознанное «ничего не выдано».
+    """
+
+    subject_ids: frozenset[int] = frozenset()
+    default_access: str = "all"        # "all" | "none"
+    scope_version: int = 0
+
+    @property
+    def restricts(self) -> bool:
+        """
+        Ограничивает ли снимок витрину.
+
+        При default_access="all" преподаватель без единой выдачи видит всё —
+        это делает выкатку безопасной (никто не остаётся с пустым экраном,
+        пока админ не прошёл по списку). Но как только ему выдали хоть один
+        предмет, набор становится исчерпывающим: разграничение включается по
+        мере раздачи. При default_access="none" ограничение действует всегда,
+        включая пустой список — это и есть строгий режим.
+        """
+        return self.default_access == "none" or bool(self.subject_ids)
+
+    def allows(self, subject_id: int) -> bool:
+        return not self.restricts or subject_id in self.subject_ids
+
+
+@dataclass(frozen=True)
 class Partition:
     id: int
     subject_id: int
@@ -78,6 +111,8 @@ class Repository:
         # Таблицы персональной видимости созданы в этом процессе (кэш, чтобы
         # не ходить в БД на каждую выборку). См. ensure_visibility_tables.
         self._visibility_ready = False
+        # То же для таблиц кэша выдач (см. ensure_grants_tables).
+        self._grants_ready = False
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -265,11 +300,102 @@ class Repository:
                     (key, entity_id))
             conn.commit()
 
+    # ---------- Выдачи предметов (кэш серверных прав) ----------
+    #
+    # Отдельное от скрытия измерение: выдача — «что мне позволено видеть»
+    # (решает админ, истина на сервере), скрытие — «что я убрал с глаз»
+    # (решаю я, истина локальна). Предмет показывается, когда выдан И не
+    # скрыт. Отзыв выдачи не трогает персональные скрытия: вернут доступ —
+    # вернётся и прежний выбор. Подробно: docs/subject_grants.md.
+
+    def ensure_grants_tables(self) -> None:
+        """Гарантировать таблицы кэша выдач. Идемпотентно, результат кэширован."""
+        if self._grants_ready:
+            return
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS SubjectGrants ("
+                "  user_login TEXT NOT NULL,"
+                "  subject_id INTEGER NOT NULL,"
+                "  PRIMARY KEY (user_login, subject_id))")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS GrantsMeta ("
+                "  user_login TEXT NOT NULL PRIMARY KEY,"
+                "  scope_version INTEGER NOT NULL DEFAULT 0,"
+                "  default_access TEXT NOT NULL DEFAULT 'all')")
+            conn.commit()
+        self._grants_ready = True
+
+    def save_grants(self, user_login: str, subject_ids, *,
+                    scope_version: int = 0,
+                    default_access: str = "all") -> None:
+        """
+        Заменить снимок выдач пользователя целиком (не дельта).
+
+        Сервер отдаёт полный набор, и заменять целиком — единственный способ
+        отработать ОТЗЫВ: дельта-обновление не знает, что запись пропала.
+        Одна транзакция, чтобы витрина не увидела снимок наполовину стёртым.
+        """
+        if not user_login:
+            raise ValueError("выдачи ключуются логином; гостю их не хранят")
+        if default_access not in ("all", "none"):
+            raise ValueError(f"default_access: 'all'|'none', не {default_access!r}")
+        self.ensure_grants_tables()
+        ids = sorted({int(s) for s in subject_ids})
+        with self._connect() as conn:
+            conn.execute("DELETE FROM SubjectGrants WHERE user_login = ?",
+                         (user_login,))
+            conn.executemany(
+                "INSERT INTO SubjectGrants (user_login, subject_id) VALUES (?, ?)",
+                [(user_login, sid) for sid in ids])
+            conn.execute(
+                "INSERT INTO GrantsMeta (user_login, scope_version, default_access) "
+                "VALUES (?, ?, ?) ON CONFLICT(user_login) DO UPDATE SET "
+                "  scope_version = excluded.scope_version, "
+                "  default_access = excluded.default_access",
+                (user_login, int(scope_version), default_access))
+            conn.commit()
+
+    def get_grants(self, user_login: str | None) -> Optional[GrantsSnapshot]:
+        """
+        Снимок выдач пользователя или None, если снимка нет.
+
+        None — не «ничего не выдано», а «мы ещё не спрашивали сервер»: в этом
+        случае витрину не ограничивают (иначе отказ сети выглядел бы как
+        отзыв прав). У гостя снимка нет по определению.
+        """
+        if not user_login:
+            return None
+        self.ensure_grants_tables()
+        with self._connect() as conn:
+            meta = conn.execute(
+                "SELECT scope_version, default_access FROM GrantsMeta "
+                "WHERE user_login = ?", (user_login,)).fetchone()
+            if meta is None:
+                return None
+            ids = [r[0] for r in conn.execute(
+                "SELECT subject_id FROM SubjectGrants WHERE user_login = ?",
+                (user_login,)).fetchall()]
+        return GrantsSnapshot(frozenset(ids), meta[1], int(meta[0]))
+
+    def clear_grants(self, user_login: str) -> None:
+        """Забыть снимок (разлогин/смена сервера) — витрина снова без ограничений."""
+        if not user_login:
+            return
+        self.ensure_grants_tables()
+        with self._connect() as conn:
+            conn.execute("DELETE FROM SubjectGrants WHERE user_login = ?",
+                         (user_login,))
+            conn.execute("DELETE FROM GrantsMeta WHERE user_login = ?",
+                         (user_login,))
+            conn.commit()
+
     # ---------- Subjects ----------
 
     def list_subjects(self, include_hidden: bool = False,
                       owned_by: str | None = None, *,
-                      user_login: str | None = None) -> List[Subject]:
+                      user_login: str | None = None,
+                      apply_grants: bool = False) -> List[Subject]:
         """
         Предметы. include_hidden — показывать скрытые.
 
@@ -278,17 +404,25 @@ class Repository:
         БД это не влияет, только на то, какие из них помечены hidden и
         отфильтрованы.
 
+        apply_grants — применить выданные админом права (см.
+        docs/subject_grants.md). Ограничение действует, ТОЛЬКО если для
+        user_login есть локальный снимок выдач и снимок ограничивает; нет
+        снимка — витрина полная, потому что «сервер ещё не ответил» не должно
+        выглядеть как «права отозвали». Кого ограничивать (преподавателя, но
+        не гостя и не админа) решает вызывающий, а не этот слой.
+
+        Оговорка о природе фильтра: для встроенных предметов это UI-уровень,
+        а не защита — bootstrap.sync_database пересоздаёт их из
+        CODE_GENERATORS на каждом старте, что бы сервер ни отдал, а локальную
+        БД её владелец правит как хочет. Честно withhold можно только
+        серверный контент — это делает скоуп pull'а.
+
         owned_by — ЕСЛИ задан, вернуть только встроенные (owner IS NULL) +
-        принадлежащие этому пользователю. По умолчанию (None) фильтра нет —
-        видны все. ВАЖНО: этот фильтр НЕ является access-control (локальную
-        БД её владелец всё равно читает как хочет); он лишь для удобного
-        разграничения витрины. Настоящее разграничение доступа — на сервере
-        (pull-scope), и оно требует единой числовой идентичности пользователя
-        (сейчас десктоп знает пользователя как строку-логин, сервер — как
-        число), поэтому в UI фильтр пока НЕ включён. См.
-        docs/ui_rework_plan.md, раздел «Владение и роли».
+        принадлежащие этому пользователю. По умолчанию (None) фильтра нет.
+        Тоже удобство витрины, не access-control.
         """
         self.ensure_visibility_tables()
+        grants = self.get_grants(user_login) if apply_grants else None
         with self._connect() as conn:
             # Интроспекция колонок: БД могла пройти миграцию частично (старые
             # копии, тестовые схемы), owner_user_id может отсутствовать.
@@ -308,6 +442,16 @@ class Repository:
             if has_owner and owned_by is not None:
                 where.append("(s.owner_user_id IS NULL OR s.owner_user_id = ?)")
                 params.append(owned_by)
+            if grants is not None and grants.restricts:
+                allowed = sorted(grants.subject_ids)
+                if allowed:
+                    placeholders = ", ".join("?" for _ in allowed)
+                    where.append(f"s.id IN ({placeholders})")
+                    params.extend(allowed)
+                else:
+                    # Строгий режим без единой выдачи: не видно ничего.
+                    # «s.id IN ()» — синтаксическая ошибка в SQLite.
+                    where.append("0 = 1")
             sql = (f"{select} FROM Subjects s "
                    f"LEFT JOIN SubjectVisibility v "
                    f"  ON v.subject_id = s.id AND v.user_login = ?")
