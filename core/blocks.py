@@ -6,22 +6,34 @@ FormulaBlock   — LaTeX-формула, рендерится через matplot
 ImageBlock     — растровое изображение (PIL.Image, bytes или путь)
 CodeBlock      — листинг кода с моноширинным шрифтом
 TableBlock     — табличные данные
+
+Все Qt- и docx-зависимости импортируются ЛЕНИВО (внутри методов
+render_qt/render_docx). Это позволяет тащить блоки в headless-окружения
+(FastAPI, серверная сборка) без установленного PyQt6.
+
+to_dict() — четвёртый метод полиморфного рендеринга. Возвращает
+JSON-совместимый dict для веб-API. Бинарные данные кодируются в base64.
 """
 
 from __future__ import annotations
+import base64
 import io
 from pathlib import Path
-from typing import Sequence
-
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap, QImage, QFont
-from PyQt6.QtWidgets import (
-    QWidget, QLabel, QPlainTextEdit, QTableWidget, QTableWidgetItem
-)
+from typing import Sequence, TYPE_CHECKING
 
 from .content import Block
-from .rendering import latex_to_pixmap, latex_to_docx_image, pil_to_qpixmap
 
+if TYPE_CHECKING:
+    from PyQt6.QtWidgets import QWidget
+
+
+# ---------- Вспомогательное ----------
+
+def _b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+# ---------- Блоки ----------
 
 class TextBlock(Block):
     """Обычный текстовый абзац."""
@@ -29,7 +41,9 @@ class TextBlock(Block):
     def __init__(self, text: str):
         self.text = text
 
-    def render_qt(self, parent: QWidget) -> QWidget:
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QLabel
         lbl = QLabel(self.text, parent)
         lbl.setWordWrap(True)
         lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -41,6 +55,9 @@ class TextBlock(Block):
     def render_docx(self, doc) -> None:
         doc.add_paragraph(self.text)
 
+    def to_dict(self) -> dict:
+        return {"type": "text", "content": self.text}
+
 
 class FormulaBlock(Block):
     """LaTeX-формула."""
@@ -48,13 +65,14 @@ class FormulaBlock(Block):
     def __init__(self, latex: str):
         self.latex = latex
 
-    def render_qt(self, parent: QWidget) -> QWidget:
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        from PyQt6.QtWidgets import QLabel
+        from .rendering import latex_to_pixmap
         pix = latex_to_pixmap(self.latex)
         lbl = QLabel(parent)
         if pix is not None:
             lbl.setPixmap(pix)
         else:
-            # fallback: показать как текст с долларами
             lbl.setText(f"${self.latex}$")
             lbl.setWordWrap(True)
         return lbl
@@ -63,8 +81,24 @@ class FormulaBlock(Block):
         return f"${self.latex}$"
 
     def render_docx(self, doc) -> None:
-        # Вставляем формулу как картинку — гарантированно отображается
+        from .rendering import latex_to_docx_image
         latex_to_docx_image(doc, self.latex)
+
+    def to_dict(self) -> dict:
+        """Отдаём LaTeX-исходник и base64-PNG. При неудаче рендера —
+        только LaTeX, фронт покажет фолбэк."""
+        from .rendering import latex_to_png_bytes
+        image_b64: str | None = None
+        try:
+            png = latex_to_png_bytes(self.latex)
+            image_b64 = _b64(png)
+        except Exception:
+            image_b64 = None
+        return {
+            "type": "formula",
+            "latex": self.latex,
+            "image_b64": image_b64,
+        }
 
 
 class ImageBlock(Block):
@@ -74,7 +108,10 @@ class ImageBlock(Block):
         self.image = image
         self.caption = caption
 
-    def render_qt(self, parent: QWidget) -> QWidget:
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QLabel
+        from .rendering import pil_to_qpixmap
         pix = pil_to_qpixmap(self.image)
         lbl = QLabel(parent)
         if pix is not None:
@@ -89,7 +126,6 @@ class ImageBlock(Block):
 
     def render_docx(self, doc) -> None:
         from PIL import Image as PILImage
-        # Приводим к BytesIO, чтобы python-docx был счастлив
         if isinstance(self.image, (str, Path)):
             doc.add_picture(str(self.image))
         elif isinstance(self.image, (bytes, bytearray)):
@@ -102,6 +138,15 @@ class ImageBlock(Block):
         else:
             doc.add_paragraph(f"[не удалось вставить изображение: {self.caption}]")
 
+    def to_dict(self) -> dict:
+        from .rendering import image_to_png_bytes
+        png = image_to_png_bytes(self.image)
+        return {
+            "type": "image",
+            "image_b64": _b64(png) if png is not None else None,
+            "caption": self.caption,
+        }
+
 
 class CodeBlock(Block):
     """Листинг кода."""
@@ -110,7 +155,9 @@ class CodeBlock(Block):
         self.code = code
         self.language = language
 
-    def render_qt(self, parent: QWidget) -> QWidget:
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        from PyQt6.QtGui import QFont
+        from PyQt6.QtWidgets import QPlainTextEdit
         edit = QPlainTextEdit(parent)
         edit.setPlainText(self.code)
         edit.setReadOnly(True)
@@ -128,6 +175,13 @@ class CodeBlock(Block):
         run = p.add_run(self.code)
         run.font.name = "Consolas"
 
+    def to_dict(self) -> dict:
+        return {
+            "type": "code",
+            "code": self.code,
+            "language": self.language,
+        }
+
 
 class TableBlock(Block):
     """Таблица."""
@@ -140,7 +194,8 @@ class TableBlock(Block):
         self.rows = [list(r) for r in rows]
         self.header = list(header) if header else None
 
-    def render_qt(self, parent: QWidget) -> QWidget:
+    def render_qt(self, parent: "QWidget") -> "QWidget":
+        from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem
         cols = len(self.header) if self.header else (len(self.rows[0]) if self.rows else 0)
         tbl = QTableWidget(len(self.rows), cols, parent)
         if self.header:
@@ -174,3 +229,10 @@ class TableBlock(Block):
         for r, row in enumerate(self.rows):
             for c, val in enumerate(row):
                 tbl.rows[r + ofs].cells[c].text = str(val)
+
+    def to_dict(self) -> dict:
+        return {
+            "type": "table",
+            "rows": [[str(c) for c in row] for row in self.rows],
+            "header": list(self.header) if self.header else None,
+        }

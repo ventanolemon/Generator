@@ -9,11 +9,17 @@ from __future__ import annotations
 import io
 import re
 from pathlib import Path
-from typing import Optional
-
-from PyQt6.QtGui import QPixmap, QImage
+from typing import Optional, TYPE_CHECKING
 
 from .latex import canonical_latex
+
+# Qt импортируется ЛЕНИВО — внутри функций, которые его действительно
+# используют. Иначе ядро не получится импортировать в headless-окружении
+# (FastAPI-микросервис, тесты, серверная сборка) без установленного PyQt6, а
+# оно там и не нужно: сервер отдаёт блоки через to_dict(), а не рисует их.
+# Аннотации остаются строками благодаря `from __future__ import annotations`.
+if TYPE_CHECKING:
+    from PyQt6.QtGui import QPixmap
 
 
 # ============================================================
@@ -196,6 +202,10 @@ def latex_to_pixmap(latex: str, fontsize: int = 14, dpi: int = 130) -> Optional[
     Матрицы (\\begin{...matrix}) рисуются сеткой отдельно — mathtext их не умеет.
     Возвращает None при ошибке (формула некорректна или matplotlib недоступен).
     """
+    try:
+        from PyQt6.QtGui import QImage, QPixmap
+    except ImportError:
+        return None          # headless-окружение: предпросмотра нет и не надо
     png = _matrix_png(latex, fontsize, dpi)
     if png is not None:
         img = QImage()
@@ -254,6 +264,10 @@ def latex_to_docx_image(doc, latex: str, fontsize: int = 14, dpi: int = 200) -> 
 
 def pil_to_qpixmap(image) -> Optional[QPixmap]:
     """Конвертировать PIL.Image / bytes / путь в QPixmap."""
+    try:
+        from PyQt6.QtGui import QImage, QPixmap
+    except ImportError:
+        return None          # см. latex_to_pixmap
     from PIL import Image as PILImage
 
     try:
