@@ -3,8 +3,9 @@
 
 Сборка приложения:
   1. Repository (БД)
-  2. GeneratorRegistry со всеми зарегистрированными модулями
-  3. AuthWindow → GeneratorWindow
+  2. установленные пакеты узлов → общий реестр узлов
+  3. GeneratorRegistry со всеми зарегистрированными модулями
+  4. AuthWindow → GeneratorWindow
 
 GeneratorWindow получает фабрику build_registry — чтобы пересобирать
 реестр после изменений в БД (создание/правка/удаление разделов).
@@ -25,6 +26,7 @@ from core.grants import GrantsClient
 from core.session import Session
 from core.settings import Settings
 from core.sync import RepositorySyncListener, SyncClient, SyncStore
+from core.updates import load_installed
 from bootstrap import build_registry, sync_database
 from ui.app_context import AppContext
 from ui.theme import apply_theme
@@ -34,6 +36,17 @@ from ui.windows import AuthWindow, GeneratorWindow
 def main() -> int:
     app = QApplication(sys.argv)
     repo = Repository(DB_PATH)
+
+    # Установленные пакеты узлов — ДО всего остального: они дополняют общий
+    # реестр узлов, а тот стоит умолчанием у исполнителя, документа и
+    # палитры, причём часть кода берёт его ленивым импортом. Подключишь
+    # позже — половина приложения увидит пакеты, половина нет.
+    #
+    # Ничего не бросает: пакеты — дополнение, и приложение обязано
+    # подниматься без них (и с одним битым пакетом тоже).
+    packages_report = load_installed()
+    for name, reason in sorted(packages_report["failed"].items()):
+        print(f"[пакеты] {name}: не подключён — {reason}", file=sys.stderr)
 
     # При старте гарантируем структуру БД: subjects, code-only разделы,
     # таблица WordStats. После этого build_registry соберёт всё корректно.
