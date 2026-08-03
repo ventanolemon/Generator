@@ -86,6 +86,7 @@ class GeneratorWindow(QMainWindow):
         self._editor_window: PartitionEditor | None = None
         self._stats_window: StatsWindow | None = None
         self._sync_window = None
+        self._updates_window = None
         self._contour_window = None
         self._admin_window = None
         self._analytics_window = None
@@ -127,6 +128,17 @@ class GeneratorWindow(QMainWindow):
             "Технические настройки среды: адрес сервера, оформление, аккаунт.",
             self._open_settings,
         )
+        if self.ctx.updater is not None:
+            # Ролью не гейтится намеренно: обновление безопасности должно
+            # доезжать до всех, а пакеты узлов нужны, чтобы граф вообще
+            # открылся, — запирать их за ролью значило бы ломать работу
+            # тому, кто просто решает задачи.
+            self.top_bar.add_action(
+                "Обновления",
+                "Версия приложения и дополнительные пакеты узлов графа: "
+                "проверка, скачивание, установка.",
+                self._open_updates_window,
+            )
         if self.ctx.sync_client is not None:
             self.top_bar.add_action(
                 "Синхронизация",
@@ -436,6 +448,7 @@ class GeneratorWindow(QMainWindow):
         slots = {
             "_stats_window": self._on_stats_window_destroyed,
             "_sync_window": self._on_sync_window_destroyed,
+            "_updates_window": self._on_updates_window_destroyed,
             "_contour_window": self._on_contour_window_destroyed,
             "_admin_window": self._on_admin_window_destroyed,
             "_analytics_window": self._on_analytics_window_destroyed,
@@ -460,6 +473,23 @@ class GeneratorWindow(QMainWindow):
     def _open_settings(self) -> None:
         from ui.windows.settings_window import SettingsWindow
         SettingsWindow(self.ctx, self).exec()
+
+    # ---------- Обновления и пакеты узлов ----------
+
+    def _open_updates_window(self) -> None:
+        from ui.windows.updates_window import UpdatesWindow
+        if self._updates_window is None:
+            self._updates_window = UpdatesWindow(self.ctx, self)
+            self._updates_window.destroyed.connect(
+                self._on_updates_window_destroyed)
+        else:
+            self._updates_window.refresh()
+        self._updates_window.show()
+        self._updates_window.raise_()
+        self._updates_window.activateWindow()
+
+    def _on_updates_window_destroyed(self, *_args) -> None:
+        self._updates_window = None
 
     # ---------- Синхронизация ----------
 

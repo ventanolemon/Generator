@@ -26,7 +26,9 @@ from core.grants import GrantsClient
 from core.session import Session
 from core.settings import Settings
 from core.sync import RepositorySyncListener, SyncClient, SyncStore
-from core.updates import load_installed
+from core.updates import (
+    PackageInstaller, Updater, default_home, load_installed,
+)
 from bootstrap import build_registry, sync_database
 from ui.app_context import AppContext
 from ui.theme import apply_theme
@@ -118,6 +120,19 @@ def main() -> int:
                                  user_id_provider=user_id_provider,
                                  user_role_provider=user_role_provider)
 
+    # Обновление приложения и пакеты узлов. Один управляемый каталог на
+    # машину (core.updates.home), общий keyring и состояние — иначе две
+    # половины считали бы установленным разное.
+    #
+    # Идентичность сюда не пробрасывается намеренно: /updates/* и /packages
+    # открыты, потому что обновление безопасности должно доезжать и до того,
+    # у кого протух токен. Подлинность даёт подпись, а не заголовок.
+    update_home = default_home()
+    updater = Updater(update_home, base_url=settings.get_base_url())
+    package_installer = PackageInstaller(
+        update_home, base_url=settings.get_base_url(),
+        keyring=updater.keyring, state=updater.state)
+
     def make_registry():
         return build_registry(
             repo, WORDS_DIR,
@@ -136,6 +151,8 @@ def main() -> int:
         analytics_client=analytics_client,
         assignments_client=assignments_client,
         grants_client=grants_client,
+        updater=updater,
+        package_installer=package_installer,
     )
 
     def do_logout() -> None:

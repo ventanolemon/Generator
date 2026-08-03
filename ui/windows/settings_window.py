@@ -215,10 +215,12 @@ class SettingsWindow(QDialog):
                 self.ctx.repo.clear_grants(self.ctx.user_id_provider() or "")
             except Exception:
                 pass
-        # Клиенты (синк, контур, админ, аналитика, домашки, выдачи) — адрес.
+        # Клиенты (синк, контур, админ, аналитика, домашки, выдачи,
+        # обновления и пакеты узлов) — адрес.
         for client in (self.ctx.sync_client, self.ctx.contour_client,
                        self.ctx.admin_client, self.ctx.analytics_client,
-                       self.ctx.assignments_client, self.ctx.grants_client):
+                       self.ctx.assignments_client, self.ctx.grants_client,
+                       self.ctx.updater, self.ctx.package_installer):
             if client is not None and hasattr(client, "set_base_url"):
                 client.set_base_url(url)
         name = self.theme_combo.currentData()

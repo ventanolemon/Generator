@@ -89,6 +89,47 @@ def release_manifest_bytes(manifest: dict) -> bytes:
     return canonical_manifest(manifest, SIGNED_FIELDS, INT_FIELDS)
 
 
+def http_transport(base_url: Callable[[], str],
+                   timeout: int = 30) -> Transport:
+    """
+    Боевой транспорт канала обновлений. Общий с установщиком пакетов: путь
+    один и тот же (`/updates/*`, `/packages/*` на web_layer), и две копии
+    разошлись бы в мелочи вроде разбора ошибки.
+
+    Адрес берётся ВЫЗОВОМ, а не значением: пользователь меняет его в
+    настройках, и транспорт обязан подхватить это без пересоздания клиента.
+
+    Без заголовков идентичности — намеренно: этот канал открыт, потому что
+    обновление безопасности должно доезжать и до того, у кого протух токен.
+    Подлинность даёт подпись, проверяемая клиентом, а не заголовок.
+    """
+    def call(path: str, params: Optional[dict], method: str) -> dict:
+        url = base_url().rstrip("/") + path
+        body = None
+        if method == "GET" and params:
+            url += "?" + urllib.parse.urlencode(params)
+        elif params is not None:
+            body = json.dumps(params, ensure_ascii=False).encode()
+        req = urllib.request.Request(
+            url, data=body, method=method,
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read().decode()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as exc:
+            # Сообщение сервиса важнее статуса: «подпись не соответствует
+            # действующему ключу» объясняет всё, «HTTP 400» — ничего.
+            detail = ""
+            try:
+                detail = json.loads(exc.read().decode()).get("detail", "")
+            except Exception:
+                pass
+            raise UpdateError(
+                f"HTTP {exc.code}: {detail or exc.reason}") from exc
+    return call
+
+
 class UpdateHome:
     """
     Раскладка управляемого каталога. Всё служебное — рядом с деревом
@@ -509,32 +550,7 @@ class Updater:
             raise UpdateError(f"обновление: {exc}") from exc
 
     def _http_transport(self) -> Transport:
-        def call(path: str, params: Optional[dict], method: str) -> dict:
-            url = self._base_url.rstrip("/") + path
-            body = None
-            if method == "GET" and params:
-                url += "?" + urllib.parse.urlencode(params)
-            elif params is not None:
-                body = json.dumps(params, ensure_ascii=False).encode()
-            # Без заголовков идентичности: /updates/* намеренно открыты —
-            # обновление безопасности должно доезжать и до того, у кого
-            # протух токен.
-            req = urllib.request.Request(
-                url, data=body, method=method,
-                headers={"Content-Type": "application/json"})
-            try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    raw = resp.read().decode()
-                    return json.loads(raw) if raw else {}
-            except urllib.error.HTTPError as exc:
-                detail = ""
-                try:
-                    detail = json.loads(exc.read().decode()).get("detail", "")
-                except Exception:
-                    pass
-                raise UpdateError(
-                    f"HTTP {exc.code}: {detail or exc.reason}") from exc
-        return call
+        return http_transport(lambda: self._base_url)
 
 
 def _clear(path: Path) -> None:

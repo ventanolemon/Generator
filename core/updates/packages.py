@@ -54,7 +54,9 @@ from .fetch import Downloader, DownloadError, fetch_verified
 from .keyring import Keyring
 from .state import InstallState
 from .trust import TrustError, canonical_manifest
-from .updater import Transport, UpdateHome, _clear, safe_extract
+from .updater import (
+    Transport, UpdateHome, _clear, http_transport, safe_extract,
+)
 
 # СОСТАВ подписанного манифеста пакета. Зеркало серверного
 # `node_packages.SIGNED_FIELDS`. `node_types` входит НАМЕРЕННО: иначе кто
@@ -97,6 +99,7 @@ class PackageInstaller:
     """Один экземпляр = один управляемый каталог."""
 
     def __init__(self, home: UpdateHome, *,
+                 base_url: str = "",
                  keyring: Optional[Keyring] = None,
                  state: Optional[InstallState] = None,
                  transport: Optional[Transport] = None,
@@ -105,9 +108,19 @@ class PackageInstaller:
         self.home = home
         self.keyring = keyring or Keyring(home.keyring_path)
         self.state = state or InstallState(home.state_path)
-        self._transport = transport
+        self._base_url = base_url
+        # Транспорт тот же, что у обновления приложения, — канал один.
+        # Собирается лениво и по вызову читает адрес, поэтому смена адреса в
+        # настройках подхватывается без пересоздания установщика.
+        self._transport = transport or http_transport(lambda: self._base_url)
         self._downloader = downloader
         self._call_impl = call
+
+    def set_base_url(self, url: str) -> None:
+        self._base_url = url or ""
+
+    def has_server(self) -> bool:
+        return bool(self._base_url.strip())
 
     # ---------- каталог ----------
 
