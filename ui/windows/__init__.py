@@ -5,8 +5,10 @@ from .register_window import RegisterWindow
 from .settings_window import SettingsWindow
 from .stats_window import StatsWindow
 from .sync_window import SyncWindow, pending_badge_text
+from .updates_window import UpdatesWindow
 
 __all__ = [
     "AuthWindow", "ContourWindow", "GeneratorWindow", "RegisterWindow",
-    "SettingsWindow", "StatsWindow", "SyncWindow", "pending_badge_text",
+    "SettingsWindow", "StatsWindow", "SyncWindow", "UpdatesWindow",
+    "pending_badge_text",
 ]
