@@ -55,6 +55,15 @@ _EXPORTS: dict[str, str] = {
     "Widget": ".widgets",
     "widgets_for": ".widgets",
     "resolve_widget": ".widgets",
+    # сценарий прохождения (headless)
+    "Scenario": ".scenarios",
+    "SessionMode": ".scenarios",
+    "Layer": ".scenarios",
+    "Setting": ".scenarios",
+    "default_scenario": ".scenarios",
+    # модель попытки (headless; запись — серверная)
+    "AttemptRecord": ".attempts",
+    "attempts_from_session": ".attempts",
     # общая интерактивная сессия (тянет blocks → Qt)
     "Question": ".interactive",
     "Outcome": ".interactive",
