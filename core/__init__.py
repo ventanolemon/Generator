@@ -26,6 +26,8 @@ _EXPORTS: dict[str, str] = {
     "ImageBlock": ".blocks",
     "CodeBlock": ".blocks",
     "TableBlock": ".blocks",
+    "block_from_dict": ".blocks",
+    "blocks_from_dicts": ".blocks",
     # dynamic blocks (Qt)
     "FillInTheBlankBlock": ".dynamic_blocks",
     "WordCorrectionBlock": ".dynamic_blocks",
@@ -38,6 +40,27 @@ _EXPORTS: dict[str, str] = {
     "TaskGenerator": ".generator",
     "Capability": ".generator",
     "STATIC_DEFAULT": ".generator",
+    "CHECKABLE_DEFAULT": ".generator",
+    # спецификация ответа (headless: ни Qt, ни БД)
+    "AnswerSpec": ".answers",
+    "CheckMode": ".answers",
+    "NumberSpec": ".answers",
+    "TextSpec": ".answers",
+    "ExpressionSpec": ".answers",
+    "SlotsSpec": ".answers",
+    "Tolerance": ".answers",
+    "ToleranceKind": ".answers",
+    "Verdict": ".answers",
+    # реестр виджетов ответа
+    "Widget": ".widgets",
+    "widgets_for": ".widgets",
+    "resolve_widget": ".widgets",
+    # общая интерактивная сессия (тянет blocks → Qt)
+    "Question": ".interactive",
+    "Outcome": ".interactive",
+    "SpecSession": ".interactive",
+    "session_from_task": ".interactive",
+    "session_from_tasks": ".interactive",
     # registry
     "GeneratorRegistry": ".registry",
     "GeneratorFactory": ".registry",
