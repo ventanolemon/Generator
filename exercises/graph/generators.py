@@ -11,7 +11,7 @@
 from __future__ import annotations
 import json
 
-from core import STATIC_DEFAULT, Task, TaskGenerator
+from core import CHECKABLE_DEFAULT, STATIC_DEFAULT, Task, TaskGenerator
 from core.graph import GraphExecutor, GraphSpec
 
 
@@ -26,6 +26,7 @@ class GraphConstructorGenerator(TaskGenerator):
         self.name = name
         self._spec = self._to_spec(config)
         self._executor: GraphExecutor | None = None
+        self.capabilities = self._capabilities()
 
     def configure(self, params: dict) -> None:
         """Обновить описание графа из БД (зовётся реестром при выдаче)."""
@@ -36,6 +37,29 @@ class GraphConstructorGenerator(TaskGenerator):
         else:
             self._spec = self._to_spec(params)
         self._executor = None
+        self.capabilities = self._capabilities()
+
+    def _capabilities(self):
+        """
+        CHECKABLE — свойство КОНКРЕТНОГО графа, а не класса генератора.
+
+        Один и тот же класс обслуживает все графы сразу, и объявить его
+        проверяемым целиком нельзя: граф на `static_task` отдаёт
+        отрендеренные блоки, проверять в них нечего. Витрина же должна
+        ответить ДО генерации — по ней выбирается экран, — поэтому
+        читаем объявление, а не результат.
+
+        Смотрим на объявленные слоты финального узла, а не исполняем
+        граф: исполнение даёт лишь ОДИН случайный вариант, тогда как
+        слоты у графа фиксированы.
+        """
+        for node in getattr(self._spec, "nodes", None) or ():
+            if getattr(node, "type", "") != "task":
+                continue
+            slots = (getattr(node, "params", None) or {}).get("slots") or []
+            if any(str(s).strip() for s in slots):
+                return CHECKABLE_DEFAULT
+        return STATIC_DEFAULT
 
     def generate(self) -> Task:
         # Сборка/валидация графа кэшируется: spec статичен между configure().

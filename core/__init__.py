@@ -51,6 +51,7 @@ _EXPORTS: dict[str, str] = {
     "Tolerance": ".answers",
     "ToleranceKind": ".answers",
     "Verdict": ".answers",
+    "InputField": ".answers",
     # реестр виджетов ответа
     "Widget": ".widgets",
     "widgets_for": ".widgets",
