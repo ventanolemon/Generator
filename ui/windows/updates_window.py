@@ -50,6 +50,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.app_context import AppContext
+from ui.qt_worker import run_detached
 
 # Уровень → значение свойства class для QSS (см. ui/theme.py).
 _MUTED = "muted"
@@ -68,9 +69,10 @@ class _Worker(QThread):
 
     done = pyqtSignal(object, object)          # (результат, текст ошибки)
 
-    def __init__(self, fn: Callable[[], object],
-                 parent: Optional[QWidget] = None):
-        super().__init__(parent)
+    def __init__(self, fn: Callable[[], object]):
+        # Родителя нет и быть не может: владелец-виджет, умерев раньше
+        # потока, снёс бы его на ходу (см. ui/qt_worker.py).
+        super().__init__()
         self._fn = fn
 
     def run(self) -> None:                     # noqa: D102 — контракт QThread
@@ -460,7 +462,9 @@ class UpdatesWindow(QWidget):
         работы, и падение будет выглядеть случайным.
         """
         button.setEnabled(False)
-        worker = _Worker(fn, self)
+        # Без родителя и через run_detached: поток, принадлежащий окну,
+        # умирает вместе с ним прямо на ходу (см. ui/qt_worker.py).
+        worker = _Worker(fn)
         self._worker = worker
 
         def finish(result, error) -> None:
@@ -468,5 +472,4 @@ class UpdatesWindow(QWidget):
             button.setEnabled(self._ready() is None)
             slot(result, error)
 
-        worker.done.connect(finish)
-        worker.start()
+        run_detached(self, worker, finish)

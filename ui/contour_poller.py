@@ -24,6 +24,8 @@ from typing import Optional
 
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 
+from ui.qt_worker import run_detached
+
 from core.contour import ContourClient, ContourError
 from core.contour.client import SETTLED_STATUSES
 
@@ -37,9 +39,10 @@ class _FetchWorker(QThread):
     fetched = pyqtSignal(dict)
     failed = pyqtSignal(str)
 
-    def __init__(self, client: ContourClient, job_id: str,
-                 parent: Optional[QObject] = None):
-        super().__init__(parent)
+    def __init__(self, client: ContourClient, job_id: str):
+        # Родителя нет и быть не может: владелец, умерев раньше потока,
+        # снёс бы его на ходу (см. ui/qt_worker.py).
+        super().__init__()
         self._client = client
         self._job_id = job_id
 
@@ -92,11 +95,12 @@ class ContourJobPoller(QObject):
     def _tick(self) -> None:
         if self._job_id is None or self._worker is not None:
             return  # нет джобы или предыдущий опрос ещё в полёте
-        self._worker = _FetchWorker(self._client, self._job_id, self)
-        self._worker.fetched.connect(self._on_fetched)
-        self._worker.failed.connect(self._on_failed)
+        # Без родителя и через run_detached: поток, принадлежащий
+        # владельцу, умирает вместе с ним прямо на ходу (ui/qt_worker.py).
+        self._worker = _FetchWorker(self._client, self._job_id)
         self._worker.finished.connect(self._on_worker_done)
-        self._worker.start()
+        run_detached(self, self._worker, self._on_fetched, self._on_failed,
+                     done_signal="fetched")
 
     def _on_worker_done(self) -> None:
         if self._worker is not None:

@@ -230,7 +230,8 @@ class WorkerOutlivesTheWindowTests(unittest.TestCase):
         """
         w = self._window()
         w.refresh()
-        w._alive.mark_dead()          # как если бы окно уничтожили
+        from ui.qt_worker import alive_guard
+        alive_guard(w).mark_dead()    # как если бы окно уничтожили
         deadline = time.monotonic() + 6.0
         while w._worker is not None and time.monotonic() < deadline:
             self.app.processEvents()
@@ -250,3 +251,41 @@ class WorkerOutlivesTheWindowTests(unittest.TestCase):
         self.assertIsNotNone(w._worker)
         self.assertIsNone(w._worker.parent())
         w.deleteLater()
+
+
+@unittest.skipUnless(HAS_QT, "PyQt6 не установлен")
+class WorkerDisciplineIsSharedTests(unittest.TestCase):
+    """
+    Дисциплина одна на все окна.
+
+    Схема «воркер с окном в родителях» была скопирована в семь мест почти
+    дословно, и вместе с копиями разъехалось одно и то же падение. Тест
+    сторожит не поведение, а отсутствие копий: следующий, кто напишет
+    восьмое окно, споткнётся здесь, а не у пользователя.
+    """
+
+    def test_no_window_parents_its_worker(self):
+        import pathlib
+        import re
+        root = pathlib.Path(__file__).resolve().parent.parent / "ui"
+        # `Worker(что-нибудь, self)` — ровно та форма, которая роняла.
+        pattern = re.compile(r"Worker\([^)]*,\s*self\s*\)")
+        offenders = []
+        for path in root.rglob("*.py"):
+            # Сам qt_worker.py эту форму цитирует — он про неё и написан.
+            if path.name == "qt_worker.py":
+                continue
+            for i, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+                if pattern.search(line) and "run_detached" not in line:
+                    offenders.append(f"{path.name}:{i}")
+        self.assertEqual(offenders, [],
+                         "воркер с родителем-виджетом: удаление владельца "
+                         "снесёт работающий поток, см. ui/qt_worker.py")
+
+    def test_run_detached_refuses_a_parented_worker(self):
+        from PyQt6.QtCore import QObject, QThread
+        from ui.qt_worker import run_detached
+        owner = QObject()
+        worker = QThread(owner)
+        with self.assertRaises(ValueError):
+            run_detached(owner, worker)

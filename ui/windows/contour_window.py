@@ -41,6 +41,7 @@ from core.contour.client import (
     APPROVED, AWAITING_HUMAN, FAILED, QUEUED, REJECTED, RUNNING,
 )
 from ui.app_context import AppContext
+from ui.qt_worker import run_detached
 from ui.contour_poller import POLL_INTERVAL_MS, ContourJobPoller
 
 # Индексы стадий в QStackedWidget.
@@ -71,8 +72,8 @@ class _CallWorker(QThread):
     done = pyqtSignal(object)   # dict-ответ сервера
     failed = pyqtSignal(str)    # текст ContourError / прочего сбоя
 
-    def __init__(self, fn: Callable[[], dict], parent: QWidget | None = None):
-        super().__init__(parent)
+    def __init__(self, fn: Callable[[], dict]):
+        super().__init__()
         self._fn = fn
 
     def run(self) -> None:  # noqa: D102 — контракт QThread
@@ -710,11 +711,11 @@ class ContourWindow(QWidget):
     def _start_call(self, fn: Callable[[], dict],
                     on_done: Callable[[dict], None],
                     on_failed: Callable[[str], None]) -> None:
-        self._worker = _CallWorker(fn, self)
-        self._worker.done.connect(on_done)
-        self._worker.failed.connect(on_failed)
+        # Без родителя и через run_detached: поток, принадлежащий окну,
+        # умирает вместе с ним прямо на ходу (см. ui/qt_worker.py).
+        self._worker = _CallWorker(fn)
         self._worker.finished.connect(self._release_worker)
-        self._worker.start()
+        run_detached(self, self._worker, on_done, on_failed)
 
     def _release_worker(self) -> None:
         if self._worker is not None:
