@@ -44,6 +44,11 @@ class GraphScene(QGraphicsScene):
         # совместный роутер (core/graph/routing.py, см. _do_reroute).
         self.orthogonal_edges = True
         self._reroute_pending = False
+        # Точки ветвления сетей — их считает роутер (§7.2 плана), а сцена
+        # только рисует. Отдельной сущности в документе для них нет и не
+        # заводится: это геометрия укладки, а не часть графа, и попав в
+        # документ она засорила бы диффы синка.
+        self._junction_items: list = []
 
         self.setBackgroundBrush(style.SCENE_BG)
         self.setSceneRect(0, 0, 2400, 1600)
@@ -151,6 +156,13 @@ class GraphScene(QGraphicsScene):
         for e in self.edge_items:
             p1 = e.src.scene_center()
             p2 = e.dst.scene_center()
+            # Ручные перегибы живут в meta документа, а не в проводе
+            # (§7.2): конфликт синка по расположению безвреден, по
+            # логике — осмыслен, и смешивать их нельзя. Сюда они
+            # приезжают только на время укладки.
+            bends = self.doc.edge_bends(
+                e.src.node_id, e.src.port.name,
+                e.dst.node_id, e.dst.port.name)
             specs.append(EdgeSpec(
                 key=id(e),
                 src=(p1.x(), p1.y()),
@@ -158,11 +170,46 @@ class GraphScene(QGraphicsScene):
                 net=(e.src.node_id, e.src.port.name),
                 src_node=e.src.node_id,
                 dst_node=e.dst.node_id,
+                bends=tuple((p[0], p[1]) for p in bends),
             ))
 
-        routes = route_edges(rects, specs)
+        result = route_edges(rects, specs)
         for e in self.edge_items:
-            e.set_route(routes.get(id(e)))
+            e.set_route(result.routes.get(id(e)))
+        self._draw_junctions(result.junctions)
+
+    def _draw_junctions(self, by_net: dict) -> None:
+        """
+        Кружки в местах, где сеть расходится.
+
+        Без них веер читается как несколько проводов, случайно легших
+        друг на друга: развилка и перекрёсток выглядят одинаково, а это
+        разные вещи — в одном месте сигнал ветвится, в другом просто
+        пересекаются два чужих провода.
+
+        Цвет берётся у самой сети: точка принадлежит сигналу, а не
+        холсту, и серый кружок на цветном проводе читался бы как чужой.
+        """
+        for item in self._junction_items:
+            self.removeItem(item)
+        self._junction_items.clear()
+        if not by_net:
+            return
+
+        colors = {(e.src.node_id, e.src.port.name): style.port_color(e.src.port.type)
+                  for e in self.edge_items}
+        radius = 4.0
+        for net, points in by_net.items():
+            color = colors.get(net)
+            if color is None:
+                continue
+            for (x, y) in points:
+                dot = self.addEllipse(x - radius, y - radius, 2 * radius,
+                                      2 * radius, QPen(color, 1.0), color)
+                # Над проводами, но под узлами: точка обязана быть видна
+                # на проводе и не наезжать на тела.
+                dot.setZValue(0.5)
+                self._junction_items.append(dot)
 
     # ---------- Раскладка узлов по слоям ----------
 

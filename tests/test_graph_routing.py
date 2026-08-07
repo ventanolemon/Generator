@@ -112,7 +112,8 @@ def _body_hits(routes: dict, rects: dict, specs: list) -> list[str]:
 
 def _route_and_check(tc: unittest.TestCase, doc: GraphDocument):
     rects, specs = _specs_for(doc)
-    routes = route_edges(rects, specs)
+    result = route_edges(rects, specs)
+    routes = result.routes
     nets = {s.key: s.net for s in specs}
 
     tc.assertEqual(set(routes), {s.key for s in specs}, "все рёбра проложены")
