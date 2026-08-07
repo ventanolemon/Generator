@@ -11,7 +11,8 @@ from typing import Optional
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QFormLayout, QLineEdit, QSpinBox, QComboBox, QLabel, QPlainTextEdit,
+    QWidget, QFormLayout, QLineEdit, QSpinBox, QComboBox, QCheckBox, QLabel,
+    QPlainTextEdit,
     QPushButton,
 )
 
@@ -154,12 +155,31 @@ class ParamInspector(QWidget):
             w.setPlainText("" if cur is None else str(cur))
             w.textChanged.connect(lambda k=key: self._commit(k))
             self._editors[key] = w.toPlainText
+        elif kind == "bool":
+            # Раньше булев параметр попадал в общий `else` и набирался
+            # СТРОКОЙ: «False» надо было написать буквами, а «false»,
+            # «нет» и пустое поле значили разное. У поля с двумя
+            # значениями выбор — единственная честная форма.
+            w = QCheckBox()
+            w.setChecked(bool(cur) if cur is not None
+                         else bool(meta.get("default", False)))
+            w.toggled.connect(lambda _v, k=key: self._commit(k))
+            self._editors[key] = w.isChecked
         elif kind == "list":
-            w = QLineEdit("" if not cur else ", ".join(str(x) for x in cur))
-            w.setPlaceholderText("через запятую")
-            w.textChanged.connect(lambda _v, k=key: self._commit(k))
+            # По СТРОКЕ на элемент, а не через запятую.
+            #
+            # Запятая встречается внутри самих элементов — «y:expr:vars=x,y»
+            # в объявлении слота ответа разваливалось на два бессмысленных
+            # куска. И это же формат веб-редактора: два разных разбора
+            # одного параметра означали бы, что граф, собранный на
+            # десктопе, читается иначе на сервере.
+            w = QPlainTextEdit()
+            w.setMaximumHeight(80)
+            w.setPlainText("" if not cur else "\n".join(str(x) for x in cur))
+            w.setPlaceholderText("по одному в строке")
+            w.textChanged.connect(lambda k=key: self._commit(k))
             self._editors[key] = lambda _w=w: [
-                s.strip() for s in _w.text().split(",") if s.strip()
+                s.strip() for s in _w.toPlainText().splitlines() if s.strip()
             ]
         else:  # string / number — храним как строку, backend нормализует
             w = QLineEdit("" if cur is None else str(cur))
