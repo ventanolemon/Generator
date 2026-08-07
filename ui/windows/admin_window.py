@@ -73,13 +73,16 @@ _CELL = {True: "✓", False: "—", "own": "только своё", "soon": "с�
 
 class _CallWorker(QThread):
     """Один блокирующий вызов AdminClient в фоне (паттерн contour/sync-окон).
-    Результат/ошибка — сигналами; виджеты из воркера не трогаются."""
+    Результат/ошибка — сигналами; виджеты из воркера не трогаются.
+
+    Родителя у воркера НЕТ намеренно, см. `_IN_FLIGHT`.
+    """
 
     done = pyqtSignal(object)
     failed = pyqtSignal(object)   # (message: str, status: int|None)
 
-    def __init__(self, fn: Callable[[], object], parent: QWidget | None = None):
-        super().__init__(parent)
+    def __init__(self, fn: Callable[[], object]):
+        super().__init__()
         self._fn = fn
 
     def run(self) -> None:  # noqa: D102 — контракт QThread
@@ -93,6 +96,45 @@ class _CallWorker(QThread):
             self.failed.emit((f"администрирование: {e}", None))
 
 
+_IN_FLIGHT: set = set()
+"""
+Воркеры, которые сейчас работают.
+
+Держим их здесь, а не родителем-виджетом, и это не перестраховка, а
+починка падения. Раньше воркер создавался с окном в родителях, и удаление
+окна удаляло ЕГО ВМЕСТЕ С РАБОТАЮЩИМ ПОТОКОМ: закрыть окно (или выйти из
+программы) с запросом в полёте значило снести живой QThread, а это
+неопределённое поведение, на практике — segfault без единого сообщения.
+
+Ссылка здесь же не даёт сборщику мусора убрать python-обёртку раньше
+времени: `self._worker = None` в колбэке снимает последнюю ссылку окна,
+а поток к этому моменту ещё не закончился.
+
+Снимается по `finished` — то есть когда поток действительно встал.
+"""
+
+
+class _Alive:
+    """
+    Жив ли ещё виджет, ради которого затевался запрос.
+
+    Спросить об этом само окно нельзя: к моменту ответа его python-обёртка
+    указывает на удалённый объект, и любое обращение — либо исключение,
+    либо падение. Поэтому признак живёт в отдельном объекте, который
+    переживает окно, а гасит его сигнал `destroyed`.
+    """
+
+    # `__weakref__` в слотах обязателен: PyQt держит получателя сигнала
+    # слабой ссылкой, а на объект без него ссылку не создать.
+    __slots__ = ("alive", "__weakref__")
+
+    def __init__(self) -> None:
+        self.alive = True
+
+    def mark_dead(self, *_args) -> None:
+        self.alive = False
+
+
 class AdminWindow(QWidget):
     """Окно администрирования: пользователи/роли, группы, матрица прав."""
 
@@ -103,6 +145,10 @@ class AdminWindow(QWidget):
         self.client = getattr(context, "admin_client", None)
         self.grants_client = getattr(context, "grants_client", None)
         self._worker: Optional[_CallWorker] = None
+        # Сторож на случай, если окно умрёт раньше своего запроса: колбэк
+        # обязан промолчать, а не трогать удалённый виджет.
+        self._alive = _Alive()
+        self.destroyed.connect(self._alive.mark_dead)
         # Матрица выдач: канон с сервера, рабочая копия и очередь сохранения.
         self._grants_teachers: list[dict] = []
         self._grants_subjects: list[dict] = []
@@ -778,15 +824,29 @@ class AdminWindow(QWidget):
         # reload внутри on_done упёрся бы в ещё занятый _worker.
         if self._worker is not None:
             return
-        worker = _CallWorker(fn, self)
+        # Без родителя: виджет-владелец, умерев раньше потока, снёс бы
+        # живой QThread (см. `_IN_FLIGHT`). Живым его держит множество
+        # летящих, а не окно.
+        worker = _CallWorker(fn)
         self._worker = worker
+        _IN_FLIGHT.add(worker)
+        alive = self._alive
+
+        def _retire() -> None:
+            _IN_FLIGHT.discard(worker)
 
         def _on_done(result: object) -> None:
+            # Окна уже нет — отвечать некому. Не ошибка: пользователь
+            # вправе закрыть окно, не дожидаясь ответа сервера.
+            if not alive.alive:
+                return
             self._worker = None
             on_done(result)
             self._drain_refresh_queue()
 
         def _on_failed(err: object) -> None:
+            if not alive.alive:
+                return
             self._worker = None
             on_failed(err)
             # Шаг упал — остальные всё равно нужны: неудача с группами не
@@ -795,5 +855,6 @@ class AdminWindow(QWidget):
 
         worker.done.connect(_on_done)
         worker.failed.connect(_on_failed)
+        worker.finished.connect(_retire)
         worker.finished.connect(worker.deleteLater)
         worker.start()

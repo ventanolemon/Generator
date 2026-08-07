@@ -163,3 +163,90 @@ class AdminWindowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAS_QT, "PyQt6 не установлен")
+class WorkerOutlivesTheWindowTests(unittest.TestCase):
+    """
+    Окно закрыли, а запрос ещё в полёте.
+
+    Так падало по-настоящему, и не только в тестах: воркер создавался с
+    окном в родителях, удаление окна удаляло его ВМЕСТЕ С РАБОТАЮЩИМ
+    ПОТОКОМ, а это неопределённое поведение — на практике segfault без
+    единого сообщения. В программе это выход из неё (или закрытие окна)
+    с незавершённым запросом к серверу; в наборе — восьмой тест подряд,
+    когда `processEvents` добирался до отложенного удаления предыдущего
+    окна.
+
+    Тест намеренно не проверяет «результат пришёл»: проверяется, что
+    ПРОЦЕСС ЖИВ. Падение здесь выглядит не как провал теста, а как
+    прерванный прогон — потому и заметили его так поздно.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _window(self):
+        from types import SimpleNamespace
+        from ui.windows.admin_window import AdminWindow
+        srv = FakeAdminServer()
+        client = AdminClient(base_url="http://x", transport=srv.transport,
+                             user_id_provider=lambda: "root",
+                             user_role_provider=lambda: "admin")
+        ctx = SimpleNamespace(admin_client=client,
+                              user_id_provider=lambda: "root",
+                              user_role_provider=lambda: "admin")
+        return AdminWindow(ctx)
+
+    def test_destroying_a_window_mid_call_does_not_crash(self):
+        # Нарочно без обращения к внутренностям починки: тест обязан
+        # уметь упасть и на СТАРОМ коде, иначе он проверяет не падение, а
+        # реализацию. Проверено — на старом коде он его и роняет.
+        for _ in range(6):
+            w = self._window()
+            w.refresh()               # запрос в полёте
+            w.deleteLater()           # и тут же закрыли
+            self.app.processEvents()  # ← здесь и сносило живой поток
+
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.01)
+
+        # Дошли сюда — значит процесс жив. Другого утверждения тут и не
+        # нужно: падение выглядит не как провал теста, а как прерванный
+        # прогон.
+        self.assertTrue(True)
+
+    def test_a_dead_window_gets_no_callback(self):
+        """
+        Ответ пришёл, а окна уже нет — колбэк обязан промолчать. Не
+        ошибка: пользователь вправе закрыть окно, не дожидаясь сервера.
+
+        Этот и следующий тесты обращаются к внутренностям починки, и
+        потому на старом коде не запускаются вовсе. Падение ловит
+        предыдущий.
+        """
+        w = self._window()
+        w.refresh()
+        w._alive.mark_dead()          # как если бы окно уничтожили
+        deadline = time.monotonic() + 6.0
+        while w._worker is not None and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(0.01)
+        # Колбэк не выполнился, поэтому и флаг занятости не снят — это
+        # ожидаемо: окна нет, снимать его некому и незачем.
+        self.assertIsNotNone(w._worker)
+        w.deleteLater()
+
+    def test_the_worker_has_no_widget_parent(self):
+        """
+        Корень падения: у работающего потока не должно быть владельца,
+        который умрёт раньше него.
+        """
+        w = self._window()
+        w.refresh()
+        self.assertIsNotNone(w._worker)
+        self.assertIsNone(w._worker.parent())
+        w.deleteLater()
