@@ -1,8 +1,11 @@
 """
-Тесты узлов предложений с пропусками: sentences_file и sentence_fill.
+Тесты узлов предложений с пропусками: sentences_file и sentence_pick.
 
-Загрузка — headless через json; построение блоков и полный граф — под Qt
-(FillInTheBlankBlock тянет PyQt6).
+`sentence_fill` был здесь до того, как его убрали целиком. Он отдавал
+наружу собранные блоки, а не значения, и задание получалось
+непроверяемым (`is_checkable == False`), с правильными ответами прямо в
+условии — сверять их было больше негде. Замена отдаёт части, а ввод по
+месту стал режимом показа (виджет `slot_inline` у `task`).
 """
 
 from __future__ import annotations
@@ -52,7 +55,10 @@ class RegistryTests(unittest.TestCase):
     def test_nodes_registered(self):
         ids = {e["type_id"] for e in DEFAULT_REGISTRY.palette()}
         self.assertIn("sentences_file", ids)
-        self.assertIn("sentence_fill", ids)
+        self.assertIn("sentence_pick", ids)
+        # Убран целиком, а не оставлен «на всякий случай»: узел, делающий
+        # задание непроверяемым, в палитре — это ловушка для автора.
+        self.assertNotIn("sentence_fill", ids)
 
 
 @unittest.skipUnless(HAS_QT, "нужен PyQt6")
@@ -84,64 +90,88 @@ class SentencesFileTests(unittest.TestCase):
             SentencesFileNode("s", {"file": ""})
 
 
-@unittest.skipUnless(HAS_QT, "нужен PyQt6")
-class SentenceFillTests(unittest.TestCase):
-    def test_builds_statement_and_answer(self):
-        from core.graph.nodes.english import SentenceFillNode
-        out = SentenceFillNode("f", {}).compute({"in": _SENTENCES}, _ctx())
-        self.assertIn("statement", out)
-        self.assertIn("answer", out)
-        self.assertGreaterEqual(len(out["statement"]), 2)
-        self.assertGreaterEqual(len(out["answer"]), 3)
+class SentencePickTests(unittest.TestCase):
+    """Узел отдаёт ЧАСТИ предложения — их дальше проверяет слот `много`."""
 
-    def test_answer_fills_blanks(self):
-        from core.graph.nodes.english import SentenceFillNode
-        # единственное предложение -> детерминированный выбор
+    def test_gives_out_the_parts(self):
+        from core.graph.nodes.english import SentencePickNode
+        single = [{"template": "A ___ runs code.", "answers": ["computer"],
+                   "translation": "Компьютер выполняет код."}]
+        out = SentencePickNode("p", {}).compute({"in": single}, _ctx())
+        self.assertEqual(out["answers"], ["computer"])
+        self.assertIn("___", out["template"])
+        self.assertEqual(out["filled"], "A computer runs code.")
+        self.assertEqual(out["translation"], "Компьютер выполняет код.")
+
+    def test_blank_marker_is_a_parameter(self):
+        from core.graph.nodes.english import SentencePickNode
         single = [{"template": "A ___ runs code.", "answers": ["computer"]}]
-        out = SentenceFillNode("f", {}).compute({"in": single}, _ctx())
-        full = out["answer"][1].render_plain()
-        self.assertIn("computer", full)
-        self.assertNotIn("___", full)
+        out = SentencePickNode("p", {"blank": "…"}).compute({"in": single},
+                                                            _ctx())
+        self.assertIn("…", out["template"])
+        self.assertNotIn("___", out["template"])
 
     def test_empty_input_retries(self):
-        from core.graph.nodes.english import SentenceFillNode
+        from core.graph.nodes.english import SentencePickNode
         from core.graph import RetryGeneration
         with self.assertRaises(RetryGeneration):
-            SentenceFillNode("f", {}).compute({"in": []}, _ctx())
+            SentencePickNode("p", {}).compute({"in": []}, _ctx())
 
     def test_malformed_item_retries(self):
-        from core.graph.nodes.english import SentenceFillNode
+        from core.graph.nodes.english import SentencePickNode
         from core.graph import RetryGeneration
         with self.assertRaises(RetryGeneration):
-            SentenceFillNode("f", {}).compute({"in": [{"foo": "bar"}]}, _ctx())
+            SentencePickNode("p", {}).compute({"in": [{"foo": "bar"}]}, _ctx())
+
+    def test_blank_count_must_match_the_answers(self):
+        """
+        Пропусков в шаблоне и ответов должно быть поровну. Иначе поле
+        встанет не в тот пропуск, и предложение сменит смысл.
+        """
+        from core.graph.nodes.english import SentencePickNode
+        from core.graph import RetryGeneration
+        bad = [{"template": "A ___ runs ___.", "answers": ["computer"]}]
+        with self.assertRaises(RetryGeneration):
+            SentencePickNode("p", {}).compute({"in": bad}, _ctx())
 
     def test_reproducible_choice(self):
-        from core.graph.nodes.english import SentenceFillNode
-        a = SentenceFillNode("f", {}).compute({"in": _SENTENCES}, _ctx(5))
-        b = SentenceFillNode("f", {}).compute({"in": _SENTENCES}, _ctx(5))
-        self.assertEqual(a["answer"][1].render_plain(), b["answer"][1].render_plain())
+        from core.graph.nodes.english import SentencePickNode
+        a = SentencePickNode("p", {}).compute({"in": _SENTENCES}, _ctx(5))
+        b = SentencePickNode("p", {}).compute({"in": _SENTENCES}, _ctx(5))
+        self.assertEqual(a["filled"], b["filled"])
 
-    def test_full_graph_to_static_task(self):
+    def test_full_graph_gives_a_checkable_task(self):
+        """
+        Главное отличие от прежнего узла: задание проверяется, а ответы
+        клиенту не показываются.
+        """
         path = _write(_SENTENCES)
         try:
             graph = {
                 "nodes": [
-                    {"id": "sf", "type": "sentences_file", "params": {"file": path}},
-                    {"id": "fill", "type": "sentence_fill"},
-                    {"id": "task", "type": "static_task"},
+                    {"id": "sf", "type": "sentences_file",
+                     "params": {"file": path}},
+                    {"id": "pick", "type": "sentence_pick"},
+                    {"id": "task", "type": "task", "params": {
+                        "statement": "Вставьте слова:\n#предложение#",
+                        "slots": ["пропуск:text:много"],
+                        "widget": "slot_inline"}},
                 ],
                 "edges": [
-                    {"from": "sf:out", "to": "fill:in"},
-                    {"from": "fill:statement", "to": "task:statement"},
-                    {"from": "fill:answer", "to": "task:answer"},
+                    {"from": "sf:out", "to": "pick:in"},
+                    {"from": "pick:template", "to": "task:предложение"},
+                    {"from": "pick:answers", "to": "task:пропуск"},
                 ],
                 "meta": {"seed": 1},
             }
             task = GraphExecutor(GraphSpec.parse(graph)).run()
             from core.task import StaticTask
             self.assertIsInstance(task, StaticTask)
-            self.assertTrue(task.statement)
-            self.assertTrue(task.answer)
+            self.assertTrue(task.is_checkable)
+            shown = " ".join(b.render_plain() for b in task.statement)
+            for item in _SENTENCES:
+                for answer in item["answers"]:
+                    self.assertNotIn(answer, shown)
         finally:
             os.remove(path)
 
