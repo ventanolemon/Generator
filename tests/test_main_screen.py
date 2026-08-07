@@ -129,7 +129,7 @@ class AuthRegisterLinkTests(unittest.TestCase):
 
     def test_register_link_present_with_handler(self):
         opened = []
-        w = AuthWindow(self._repo(), on_success=lambda u: None,
+        w = AuthWindow(self._repo(), on_success=lambda u, t=None: None,
                        on_register=lambda: opened.append(True))
         self.addCleanup(w.deleteLater)
         self.assertTrue(hasattr(w, "register_btn"))
@@ -137,7 +137,7 @@ class AuthRegisterLinkTests(unittest.TestCase):
         self.assertEqual(opened, [True])
 
     def test_no_register_link_without_handler(self):
-        w = AuthWindow(self._repo(), on_success=lambda u: None)
+        w = AuthWindow(self._repo(), on_success=lambda u, t=None: None)
         self.addCleanup(w.deleteLater)
         self.assertFalse(hasattr(w, "register_btn"))
 

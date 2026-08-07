@@ -47,10 +47,12 @@ class AdminClient:
         transport: Optional[Transport] = None,
         user_id_provider: Optional[Callable[[], Optional[str]]] = None,
         user_role_provider: Optional[Callable[[], str]] = None,
+        user_token_provider: Optional[Callable[[], Optional[str]]] = None,
     ):
         self._base_url = base_url
         self._user_id_provider = user_id_provider or (lambda: None)
         self._user_role_provider = user_role_provider or (lambda: "student")
+        self._user_token_provider = user_token_provider or (lambda: None)
         self._transport = transport or self._http_transport()
 
     # ---------- конфигурация ----------
@@ -123,6 +125,11 @@ class AdminClient:
             if uid is not None:
                 headers["X-User-Id"] = str(uid)
                 headers["X-User-Role"] = self._user_role_provider()
+            # Заверенная личность. Сервер при её наличии не смотрит
+            # на X-User-Role вовсе — роль он читает у себя в БД.
+            token = self._user_token_provider()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
             body = None
             if payload is not None:
                 body = json.dumps(payload, ensure_ascii=False).encode()

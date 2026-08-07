@@ -92,11 +92,13 @@ class SyncClient:
         transport: Optional[Transport] = None,
         user_id: Optional[int] = None,
         user_role: str = "teacher",
+        user_token: Optional[str] = None,
     ):
         self.repo = repo
         self.store = store
         self.user_id = user_id
         self.user_role = user_role
+        self.user_token = user_token
         self._base_url = base_url
         self._transport = transport or self._http_transport()
 
@@ -472,6 +474,11 @@ class SyncClient:
             if self.user_id is not None:
                 headers["X-User-Id"] = str(self.user_id)
                 headers["X-User-Role"] = self.user_role
+            # Заверенная личность: сервер по ней сам смотрит, кто это и какая
+            # роль. Пока токена нет (офлайн-вход, сервер недоступен), едут
+            # только X-*, и сервер решает сам, доверять ли им.
+            if self.user_token:
+                headers["Authorization"] = f"Bearer {self.user_token}"
             req = urllib.request.Request(url, data=body, headers=headers)
             with urllib.request.urlopen(req, timeout=60) as resp:
                 return json.loads(resp.read().decode())

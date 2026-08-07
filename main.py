@@ -89,36 +89,45 @@ def main() -> int:
     def user_role_provider() -> str:
         return session.role
 
+    def user_token_provider() -> str | None:
+        """Токен серверной сессии. None — вход был только локальный."""
+        return session.token
+
     # Клиент LLM-контура: тот же web_layer, что и синк; идентичность — из
     # сессии. Кнопка контура гейтится ролью teacher/admin.
     contour_client = ContourClient(base_url=settings.get_base_url(),
                                    user_id_provider=user_id_provider,
-                                   user_role_provider=user_role_provider)
+                                   user_role_provider=user_role_provider,
+                                   user_token_provider=user_token_provider)
 
     # Клиент администрирования (пользователи/роли, группы): тот же web_layer.
     # Кнопка окна гейтится admin + заданным адресом сервера (can_use).
     admin_client = AdminClient(base_url=settings.get_base_url(),
                                user_id_provider=user_id_provider,
-                               user_role_provider=user_role_provider)
+                               user_role_provider=user_role_provider,
+                               user_token_provider=user_token_provider)
 
     # Клиент аналитики (дашборд успеваемости): тот же web_layer. Кнопка
     # гейтится teacher/admin + заданным адресом сервера (can_use).
     analytics_client = AnalyticsClient(base_url=settings.get_base_url(),
                                        user_id_provider=user_id_provider,
-                                       user_role_provider=user_role_provider)
+                                       user_role_provider=user_role_provider,
+                                       user_token_provider=user_token_provider)
 
     # Клиент домашек (выдача заданий группам / просмотр студентом): тот же
     # web_layer. Кнопка видна вошедшему пользователю (гейтинг ролью в окне).
     assignments_client = AssignmentsClient(base_url=settings.get_base_url(),
                                            user_id_provider=user_id_provider,
-                                           user_role_provider=user_role_provider)
+                                           user_role_provider=user_role_provider,
+                                           user_token_provider=user_token_provider)
 
     # Клиент выдач предметов: тот же web_layer. Читают его двое — витрина
     # преподавателя (снимок обновляется вместе с синком) и вкладка матрицы в
     # окне администрирования (она гейтится admin, can_manage).
     grants_client = GrantsClient(base_url=settings.get_base_url(),
                                  user_id_provider=user_id_provider,
-                                 user_role_provider=user_role_provider)
+                                 user_role_provider=user_role_provider,
+                                 user_token_provider=user_token_provider)
 
     # Обновление приложения и пакеты узлов. Один управляемый каталог на
     # машину (core.updates.home), общий keyring и состояние — иначе две
@@ -176,12 +185,12 @@ def main() -> int:
         on_logout=do_logout,
     )
 
-    def on_auth(user_info):
+    def on_auth(user_info, token=None):
         title = "Генератор заданий"
         if user_info is not None:
             # find_user → (login, FIO, group, role); роль гейтит UI-действия.
             role = user_info[3] if len(user_info) > 3 else None
-            session.set_user(user_info[0], role)
+            session.set_user(user_info[0], role, token)
             title = f"Генератор заданий — {session.login}"
         else:
             session.set_guest()
@@ -191,6 +200,10 @@ def main() -> int:
         # бы неатрибутируемы.
         sync_client.user_id = session.user_id
         sync_client.user_role = session.role
+        # Заверенная личность синка. Без неё сервер, снявший доверие к
+        # заголовкам, откажет в записи в общий каталог — и это правильно:
+        # учётной записи, которой он не знает, там делать нечего.
+        sync_client.user_token = session.token
         generator_window.setWindowTitle(title)
         generator_window.show()
 
