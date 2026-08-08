@@ -103,12 +103,41 @@ class SettingsWindow(QDialog):
         form.addRow(note)
         return w
 
+    def _membership_label(self, parent) -> QLabel:
+        """
+        Принадлежность к организации — строкой, словами.
+
+        Спрашиваем СЕРВЕР: организацию знает он, а десктоп, вошедший
+        локально, о ней не в курсе. Отказ не показываем ошибкой — вошедший
+        офлайн просто не может её узнать, и это обычная работа, а не сбой.
+        """
+        client = getattr(self.ctx, "organizations_client", None)
+        label = QLabel("—", parent)
+        label.setWordWrap(True)
+        if client is None:
+            return label
+        membership = client.fetch_quietly()
+        if membership is None:
+            label.setText("неизвестна — нет связи с сервером или вход "
+                          "был только локальным")
+            label.setProperty("class", "muted")
+            return label
+        label.setText(membership.describe())
+        if not membership.belongs:
+            label.setProperty("class", "danger")
+        return label
+
     def _account_tab(self) -> QWidget:
         w = QWidget(self)
         form = QFormLayout(w)
         uid = self.ctx.user_id_provider()
         form.addRow("Текущий вход:", QLabel(str(uid or "гость"), w))
-        form.addRow("Роль:", QLabel(self.ctx.user_role_provider(), w))
+        # «Роль в организации», а не просто «роль»: с §8 admin означает
+        # администратора СВОЕЙ организации, а решения уровня развёртывания
+        # (пакеты узлов, ключи, выпуски) — отдельная ось.
+        form.addRow("Роль в организации:",
+                    QLabel(self.ctx.user_role_provider(), w))
+        form.addRow("Организация:", self._membership_label(w))
 
         if uid is None:
             guest = QLabel("Войдите в аккаунт, чтобы менять пароль.", w)

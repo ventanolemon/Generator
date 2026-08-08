@@ -23,6 +23,7 @@ from core.analytics import AnalyticsClient
 from core.assignments import AssignmentsClient
 from core.contour import ContourClient
 from core.grants import GrantsClient
+from core.organizations import OrganizationsClient
 from core.session import Session
 from core.settings import Settings
 from core.sync import RepositorySyncListener, SyncClient, SyncStore
@@ -129,6 +130,15 @@ def main() -> int:
                                  user_role_provider=user_role_provider,
                                  user_token_provider=user_token_provider)
 
+    # Принадлежность к организации (§8): справочная строка в настройках.
+    # Отдельный клиент, а не поле сессии: организацию знает СЕРВЕР, и
+    # десктоп, вошедший локально, о ней попросту не в курсе.
+    organizations_client = OrganizationsClient(
+        base_url=settings.get_base_url(),
+        user_id_provider=user_id_provider,
+        user_role_provider=user_role_provider,
+        user_token_provider=user_token_provider)
+
     # Обновление приложения и пакеты узлов. Один управляемый каталог на
     # машину (core.updates.home), общий keyring и состояние — иначе две
     # половины считали бы установленным разное.
@@ -160,6 +170,7 @@ def main() -> int:
         analytics_client=analytics_client,
         assignments_client=assignments_client,
         grants_client=grants_client,
+        organizations_client=organizations_client,
         updater=updater,
         package_installer=package_installer,
     )

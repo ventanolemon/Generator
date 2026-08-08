@@ -14,6 +14,7 @@ docs/ui_rework_plan.md).
   * contour_client      — клиент LLM-контура (None, пока не настроен);
   * admin_client        — клиент администрирования (None, пока не настроен);
   * grants_client       — клиент выдач предметов (None, пока не настроен);
+  * organizations_client — принадлежность к организации (§8);
   * updater             — обновление приложения (None, если не собрано);
   * package_installer   — пакеты узлов графа (None, если не собрано).
 
@@ -43,5 +44,6 @@ class AppContext:
     analytics_client: object | None = None
     assignments_client: object | None = None
     grants_client: object | None = None
+    organizations_client: object | None = None
     updater: object | None = None
     package_installer: object | None = None
