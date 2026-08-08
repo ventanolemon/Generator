@@ -178,3 +178,52 @@ class ClientsSendTheToken(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SyncExplains401Tests(unittest.TestCase):
+    """
+    Со снятым GEN_TRUST_IDENTITY_HEADERS сервер отвечает 401 тому, у кого
+    нет токена, — например, вошедшему офлайн. Показать человеку «HTTP Error
+    401» значит не сказать ничего: локально-то он вошёл.
+    """
+
+    def test_401_becomes_an_explanation(self):
+        import urllib.error
+        import urllib.request
+        from core.sync.client import SyncAuthError, SyncClient
+
+        original = urllib.request.urlopen
+
+        def refuse(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized",
+                                         {}, None)
+
+        urllib.request.urlopen = refuse
+        try:
+            client = SyncClient(None, None, base_url="http://server",
+                                user_id="alla", user_role="teacher")
+            with self.assertRaises(SyncAuthError) as caught:
+                client._http_transport()("/sync/pull", {})
+        finally:
+            urllib.request.urlopen = original
+        self.assertIn("Войдите заново", str(caught.exception))
+
+    def test_other_http_errors_are_not_swallowed(self):
+        import urllib.error
+        import urllib.request
+        from core.sync.client import SyncClient
+
+        original = urllib.request.urlopen
+
+        def boom(req, timeout=None):
+            raise urllib.error.HTTPError(req.full_url, 500, "Server Error",
+                                         {}, None)
+
+        urllib.request.urlopen = boom
+        try:
+            client = SyncClient(None, None, base_url="http://server",
+                                user_id="alla", user_role="teacher")
+            with self.assertRaises(urllib.error.HTTPError):
+                client._http_transport()("/sync/pull", {})
+        finally:
+            urllib.request.urlopen = original

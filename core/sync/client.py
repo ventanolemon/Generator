@@ -20,12 +20,18 @@ theirs == mine, который клиент распознаёт и молча �
 
 from __future__ import annotations
 import json
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from ..repository import Repository
 from .store import SyncStore
+
+
+class SyncAuthError(Exception):
+    """Сервер не опознал устройство. Отдельный тип, чтобы окно синка могло
+    сказать человеку, что делать, а не показать код ответа."""
 
 Transport = Callable[[str, dict], dict]
 
@@ -480,6 +486,19 @@ class SyncClient:
             if self.user_token:
                 headers["Authorization"] = f"Bearer {self.user_token}"
             req = urllib.request.Request(url, data=body, headers=headers)
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return json.loads(resp.read().decode())
+            try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    return json.loads(resp.read().decode())
+            except urllib.error.HTTPError as exc:
+                if exc.code == 401:
+                    # Сервер перестал доверять заголовкам личности: теперь
+                    # нужен токен, а он выдаётся только при входе НА СЕРВЕРЕ.
+                    # Без объяснения человек видел бы «HTTP Error 401» и не
+                    # понимал, что делать: локально-то он вошёл.
+                    raise SyncAuthError(
+                        "Сервер не опознал вас. Войдите заново при доступной "
+                        "сети — вход выдаёт ключ сессии; локальный вход его "
+                        "не даёт, и правки останутся только на этом "
+                        "устройстве.") from exc
+                raise
         return post
