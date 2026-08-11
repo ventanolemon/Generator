@@ -203,21 +203,65 @@ class ParamInspector(QWidget):
         return _PORT_AFFECTING.get(node.type, set())
 
     def _add_file_field(self, node, key: str, meta: dict) -> None:
-        """Поле выбора файла: путь + «Выбрать…» (+ «Просмотр» для слов)."""
+        """
+        Поле выбора файла: из поставки, с диска или «Просмотр» для слов.
+
+        Выбор ИЗ ПОСТАВКИ стоит первым и не случайно. Путь с диска верен
+        ровно на этой машине: граф с ним, уехав на сервер, падает «файл не
+        найден» уже при выдаче задания. Идентификатор `res:…` разрешается
+        относительно resources/ той машины, которая исполняет граф, и
+        поэтому работает всюду (core/graph/resources.py). Выбор с диска
+        остаётся — у автора есть свои файлы, — но помечен как локальный.
+        """
         from PyQt6.QtWidgets import QFileDialog, QWidget, QVBoxLayout, QHBoxLayout
+        from core.graph.resources import available, is_resource_id
 
         wrap = QWidget()
         col = QVBoxLayout(wrap)
         col.setContentsMargins(0, 0, 0, 0)
 
         cur = str(node.params.get(key, meta.get("default", "")) or "")
-        path_lbl = QLabel(cur or "— файл не выбран —")
+
+        def describe(value: str) -> str:
+            if not value:
+                return "— файл не выбран —"
+            if is_resource_id(value):
+                return f"из поставки: {value[len('res:'):]}"
+            return f"{value}\n(файл этой машины — на сервере не откроется)"
+
+        path_lbl = QLabel(describe(cur))
         path_lbl.setWordWrap(True)
         path_lbl.setProperty("class", "muted")
         col.addWidget(path_lbl)
 
+        kind = meta.get("resource")
+        shipped = available([kind]) if kind else []
+        if shipped:
+            from PyQt6.QtWidgets import QComboBox
+            box = QComboBox()
+            box.addItem("— из поставки —", "")
+            for res in shipped:
+                box.addItem(res.title, res.id)
+            index = box.findData(cur)
+            if index >= 0:
+                box.setCurrentIndex(index)
+
+            def choose_shipped(_index: int, _box=box, _key=key, _node=node):
+                value = _box.currentData()
+                if not value or value == _node.params.get(_key):
+                    return
+                _node.params[_key] = value
+                if "inline" in (self._entries.get(_node.type, {})
+                                .get("params_schema") or {}):
+                    _node.params["inline"] = None
+                path_lbl.setText(describe(value))
+                self.params_changed.emit(self.node_id)
+
+            box.currentIndexChanged.connect(choose_shipped)
+            col.addWidget(box)
+
         row = QHBoxLayout()
-        pick = QPushButton("Выбрать…")
+        pick = QPushButton("С диска…")
         row.addWidget(pick)
         preview_kind = meta.get("preview")
         edit_btn = QPushButton("Просмотр/правка") if preview_kind == "words" else None
@@ -236,7 +280,7 @@ class ParamInspector(QWidget):
                 if "inline" in (self._entries.get(node.type, {})
                                 .get("params_schema") or {}):
                     node.params["inline"] = None
-                path_lbl.setText(fn)
+                path_lbl.setText(describe(fn))
                 self.params_changed.emit(self.node_id)
 
         pick.clicked.connect(lambda: choose())
