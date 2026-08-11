@@ -44,6 +44,13 @@ class GraphScene(QGraphicsScene):
         # совместный роутер (core/graph/routing.py, см. _do_reroute).
         self.orthogonal_edges = True
         self._reroute_pending = False
+        # Подсветка веток «условие»/«ответ» — режим ЧТЕНИЯ, поэтому
+        # включается, а не живёт всегда: при разводке нужнее цвет типа
+        # порта, при разборе чужого графа — ветка, и в одном цвете они не
+        # совмещаются. В meta не пишется: это настройка ГЛАЗ, а не графа,
+        # и уехав по синку она меняла бы вид холста у другого человека.
+        self.show_branches = False
+        self._branch_map = None
         # Точки ветвления сетей — их считает роутер (§7.2 плана), а сцена
         # только рисует. Отдельной сущности в документе для них нет и не
         # заводится: это геометрия укладки, а не часть графа, и попав в
@@ -129,6 +136,44 @@ class GraphScene(QGraphicsScene):
                 e.update_path()
         self.request_reroute()
         self.changed_doc.emit()
+
+    # ---------- Ветки «условие» и «ответ» ----------
+
+    def set_show_branches(self, flag: bool) -> None:
+        """Включить/выключить подсветку веток задания."""
+        flag = bool(flag)
+        if flag == self.show_branches:
+            return
+        self.show_branches = flag
+        self.refresh_branches()
+
+    def refresh_branches(self) -> None:
+        """
+        Пересчитать ветки и перерисовать холст.
+
+        Пересчёт целиком, без попыток обновить точечно: ветка узла зависит
+        от ВСЕГО пути до финала, поэтому один новый провод способен
+        перекрасить половину графа — «затронутые» узлы тут и есть весь
+        граф.
+        """
+        self._branch_map = self.doc.branches() if self.show_branches else None
+        for item in self.node_items.values():
+            item.update()
+        for e in self.edge_items:
+            e.update()
+        for f in self.frames():
+            for e in f.inner_edges:
+                e.update()
+
+    def branch_of_node(self, node_id: str):
+        return self._branch_map.nodes.get(node_id) if self._branch_map else None
+
+    def branch_of_edge(self, edge_tuple):
+        if not self._branch_map:
+            return None
+        src_node, src_port, dst_node, dst_port = edge_tuple
+        key = f"{src_node}:{src_port}->{dst_node}:{dst_port}"
+        return self._branch_map.edges.get(key)
 
     # ---------- Совместная укладка ортогональных проводов ----------
 
@@ -241,6 +286,13 @@ class GraphScene(QGraphicsScene):
                 roles = {nid: "conflict" for nid in sinks}
         for nid, item in self.node_items.items():
             item.set_result_role(roles.get(nid))
+        # Ветки считаются от финала — значит, пересчитывать их надо там же,
+        # где пересчитывается сам финал. Отдельного вызова у правок графа
+        # нет и заводить его нельзя: забытая ветвь означала бы устаревшую
+        # раскраску, то есть ровно ту ложь, ради ухода от которой ветку и
+        # решили не хранить.
+        if self.show_branches:
+            self.refresh_branches()
         # Внутри рамок циклов узлы-задания запрещены (это тела-подграфы).
         for f in self.frames():
             inner_roles = {nid: "forbidden" for nid in f.body_doc.task_node_ids()}
@@ -622,6 +674,15 @@ class GraphScene(QGraphicsScene):
         self.changed_doc.emit()
 
     def mouseDoubleClickEvent(self, event):
+        # Двойной клик по проводу — подписать его. Провода проверяются
+        # ПЕРВЫМИ: узел под курсором двойной клик уже занимает (разворот
+        # тела цикла), а провод не занимал ничего.
+        edge = next((it for it in self.items(event.scenePos())
+                     if isinstance(it, EdgeItem)), None)
+        if edge is not None:
+            self.edit_edge_note(edge)
+            event.accept()
+            return
         # Двойной клик по компактному узлу цикла — развернуть в рамку.
         for it in self.items(event.scenePos()):
             node = self._climb_to_node(it)
@@ -637,6 +698,28 @@ class GraphScene(QGraphicsScene):
                 return
             break
         super().mouseDoubleClickEvent(event)
+
+    def edit_edge_note(self, edge: EdgeItem) -> None:
+        """
+        Спросить подпись провода и записать её в документ.
+
+        Диалогом, а не полем прямо на холсте: подпись правят редко (это
+        пояснение, а не параметр), а поле поверх трассы пришлось бы
+        перекладывать вместе с ней на каждом движении узла.
+        """
+        from PyQt6.QtWidgets import QInputDialog
+        tup = edge.as_doc_tuple()
+        current = self.doc.edge_note(*tup)
+        text, ok = QInputDialog.getText(
+            None, "Подпись провода",
+            f"{tup[0]}:{tup[1]} → {tup[2]}:{tup[3]}",
+            text=current)
+        if not ok or text.strip() == current:
+            return
+        self.doc.set_edge_note(*tup, text)
+        edge.prepareGeometryChange()
+        edge.update()
+        self.changed_doc.emit()
 
     def _port_at(self, scene_pos: QPointF) -> Optional[PortItem]:
         for it in self.items(scene_pos):

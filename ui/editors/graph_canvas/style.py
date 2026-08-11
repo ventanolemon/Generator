@@ -91,6 +91,28 @@ ROLE_TOOLTIPS: dict[str, str] = {
                   "а финальное задание собирается во внешнем графе."),
 }
 
+# Ветки «условие»/«ответ» (core/graph/branches.py) — режим чтения графа.
+# Намеренно не пересекаются с палитрой типов портов выше: подсветка
+# включается поверх той же картинки, и совпадение цвета читалось бы как
+# «этот провод такого типа».
+BRANCH_COLORS: dict[str, QColor] = {
+    "statement": QColor("#3F7FD0"),   # условие
+    "answer":    QColor("#2E9E6B"),   # ответ
+    "both":      QColor("#A06CD5"),   # и туда, и туда
+}
+# Провод (узел), не доходящий до финала: он ни на что не влияет.
+BRANCH_UNUSED = QColor(140, 140, 140, 130)
+BRANCH_TITLES: dict[str, str] = {
+    "statement": "условие",
+    "answer": "ответ",
+    "both": "общее",
+}
+
+# Подпись провода (meta.edge_notes): текст поверх линии, обведённый цветом
+# фона, — плашка накрыла бы сам провод.
+EDGE_NOTE_TEXT = QColor("#E8E8E8")
+EDGE_NOTE_HALO = SCENE_BG
+
 PORT_RADIUS = 6.0
 NODE_WIDTH = 180.0
 HEADER_H = 26.0

@@ -68,6 +68,38 @@ class TypeLegendDialog(QDialog):
         line = QFrame(); line.setFrameShape(QFrame.Shape.HLine)
         root.addWidget(line)
 
+        # Ветки — вторая раскраска тех же проводов, поэтому объясняется
+        # там же, где первая: иначе включивший режим видит другие цвета и
+        # не знает, где посмотреть их значение.
+        root.addWidget(QLabel(
+            "<b>Ветки задания</b> (кнопка «Ветки»: цвет провода = куда он "
+            "в итоге приходит):"))
+        branch_grid = QGridLayout()
+        rows = [
+            ("statement", "готовит УСЛОВИЕ — то, что видит студент"),
+            ("answer", "готовит ОТВЕТ — то, с чем сверяется ввод"),
+            ("both", "работает и на условие, и на ответ"),
+        ]
+        for row, (key, meaning) in enumerate(rows):
+            branch_grid.addWidget(_swatch(style.BRANCH_COLORS[key]), row, 0)
+            branch_grid.addWidget(
+                QLabel(f"<b>{style.BRANCH_TITLES[key]}</b>"), row, 1)
+            branch_grid.addWidget(QLabel(meaning), row, 2)
+        last = len(rows)
+        branch_grid.addWidget(_swatch(style.BRANCH_UNUSED), last, 0)
+        branch_grid.addWidget(QLabel("<b>не в задании</b>"), last, 1)
+        branch_grid.addWidget(
+            QLabel("до финального узла не доходит — на задание не влияет"),
+            last, 2)
+        branch_grid.setColumnStretch(2, 1)
+        root.addLayout(branch_grid)
+        root.addWidget(QLabel(
+            "<i>Ветки не размечаются вручную: они считаются по графу от "
+            "финального узла.</i>"))
+
+        line2 = QFrame(); line2.setFrameShape(QFrame.Shape.HLine)
+        root.addWidget(line2)
+
         root.addWidget(QLabel(
             "<b>Как превратить один тип в другой</b> "
             "(узел-конвертер; авто — движок сам):"))
