@@ -12,9 +12,32 @@ GeneratorWindow получает фабрику build_registry — чтобы п
 """
 
 from __future__ import annotations
+import faulthandler
+import os
 import sys
 
 from PyQt6.QtWidgets import QApplication
+
+# Падение в Qt (обращение к удалённому C++-объекту) убивает процесс БЕЗ
+# следа: Python-исключения нет, в консоли только код выхода вроде
+# 0xC0000374. Отчёт «упало при правке формулы» без стека не воспроизвести
+# и не починить.
+#
+# faulthandler печатает стек ПИТОНОВСКОЙ стороны в момент фатального
+# сигнала — этого хватает, чтобы назвать место. Стоит он ничего:
+# обработчик сигналов ставится один раз при старте.
+#
+# GEN_CRASH_LOG=путь — дописывать след в файл, а не только в stderr: у
+# собранного приложения консоли нет, а падение случается именно там.
+_CRASH_LOG = os.environ.get("GEN_CRASH_LOG", "").strip()
+if _CRASH_LOG:
+    try:
+        _crash_file = open(_CRASH_LOG, "a", encoding="utf-8")
+        faulthandler.enable(file=_crash_file)
+    except OSError:
+        faulthandler.enable()          # не смогли открыть файл — хотя бы stderr
+else:
+    faulthandler.enable()
 
 from const import DB_PATH, WORDS_DIR
 from core import Repository, WordStatsStore
