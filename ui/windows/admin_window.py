@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
 from core.admin import AdminError
 from core.grants import GrantsError
 from ui.app_context import AppContext
+from ui.qt_worker import run_detached
 
 ROLES = ("student", "teacher", "admin")
 ROLE_LABELS = {"student": "студент", "teacher": "преподаватель",
@@ -73,13 +74,16 @@ _CELL = {True: "✓", False: "—", "own": "только своё", "soon": "с�
 
 class _CallWorker(QThread):
     """Один блокирующий вызов AdminClient в фоне (паттерн contour/sync-окон).
-    Результат/ошибка — сигналами; виджеты из воркера не трогаются."""
+    Результат/ошибка — сигналами; виджеты из воркера не трогаются.
+
+    Родителя у воркера НЕТ намеренно: см. ui/qt_worker.py.
+    """
 
     done = pyqtSignal(object)
     failed = pyqtSignal(object)   # (message: str, status: int|None)
 
-    def __init__(self, fn: Callable[[], object], parent: QWidget | None = None):
-        super().__init__(parent)
+    def __init__(self, fn: Callable[[], object]):
+        super().__init__()
         self._fn = fn
 
     def run(self) -> None:  # noqa: D102 — контракт QThread
@@ -778,7 +782,9 @@ class AdminWindow(QWidget):
         # reload внутри on_done упёрся бы в ещё занятый _worker.
         if self._worker is not None:
             return
-        worker = _CallWorker(fn, self)
+        # Без родителя и через run_detached: поток, принадлежащий окну,
+        # умирает вместе с ним прямо на ходу (см. ui/qt_worker.py).
+        worker = _CallWorker(fn)
         self._worker = worker
 
         def _on_done(result: object) -> None:
@@ -793,7 +799,4 @@ class AdminWindow(QWidget):
             # повод оставить вкладку выдач пустой.
             self._drain_refresh_queue()
 
-        worker.done.connect(_on_done)
-        worker.failed.connect(_on_failed)
-        worker.finished.connect(worker.deleteLater)
-        worker.start()
+        run_detached(self, worker, _on_done, _on_failed)

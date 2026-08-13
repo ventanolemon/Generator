@@ -11,7 +11,7 @@
 from __future__ import annotations
 import json
 
-from core import STATIC_DEFAULT, Task, TaskGenerator
+from core import CHECKABLE_DEFAULT, STATIC_DEFAULT, Task, TaskGenerator
 from core.graph import GraphExecutor, GraphSpec
 
 
@@ -26,6 +26,7 @@ class GraphConstructorGenerator(TaskGenerator):
         self.name = name
         self._spec = self._to_spec(config)
         self._executor: GraphExecutor | None = None
+        self.capabilities = self._capabilities()
 
     def configure(self, params: dict) -> None:
         """Обновить описание графа из БД (зовётся реестром при выдаче)."""
@@ -36,6 +37,29 @@ class GraphConstructorGenerator(TaskGenerator):
         else:
             self._spec = self._to_spec(params)
         self._executor = None
+        self.capabilities = self._capabilities()
+
+    def _capabilities(self):
+        """
+        CHECKABLE — свойство КОНКРЕТНОГО графа, а не класса генератора.
+
+        Один и тот же класс обслуживает все графы сразу, и объявить его
+        проверяемым целиком нельзя: граф на `static_task` отдаёт
+        отрендеренные блоки, проверять в них нечего. Витрина же должна
+        ответить ДО генерации — по ней выбирается экран, — поэтому
+        читаем объявление, а не результат.
+
+        Смотрим на объявленные слоты финального узла, а не исполняем
+        граф: исполнение даёт лишь ОДИН случайный вариант, тогда как
+        слоты у графа фиксированы.
+        """
+        for node in getattr(self._spec, "nodes", None) or ():
+            if getattr(node, "type", "") != "task":
+                continue
+            slots = (getattr(node, "params", None) or {}).get("slots") or []
+            if any(str(s).strip() for s in slots):
+                return CHECKABLE_DEFAULT
+        return STATIC_DEFAULT
 
     def generate(self) -> Task:
         # Сборка/валидация графа кэшируется: spec статичен между configure().
@@ -56,28 +80,31 @@ class GraphConstructorGenerator(TaskGenerator):
 # ---------- Пример графа (физика v*t, для ручного запуска) ----------
 
 # Пример по умолчанию — нарочно простой, на новых «умных» узлах: формула сама
-# заводит входы v,t по своей записи; узлы «Текст» подставляют #имя# и сразу дают
-# блок; одиночный блок идёт прямо в static_task (без block_list). Шесть узлов
-# вместо тринадцати — показываем новичку короткий путь.
+# заводит входы v,t по своей записи; финальный узел «Задание» принимает текст
+# условия с маркерами #имя# и значение ответа прямо в слот — узлы «Текст» на
+# условие и на ответ больше не нужны.
+#
+# Счёт: тринадцать узлов в первой версии языка, шесть после «умных» узлов,
+# четыре сейчас. Причём это задание ещё и проверяемое: слот объявил
+# размерность, и `task.is_checkable` — True, чего в шестиузловой версии не
+# было вовсе.
 EXAMPLE_GRAPH = {
     "version": 1,
     "nodes": [
         {"id": "v",    "type": "random_natural", "params": {"min": 1, "max": 50}},
         {"id": "t",    "type": "random_natural", "params": {"min": 1, "max": 50}},
         {"id": "f",    "type": "formula",        "params": {"expr": "v * t"}},
-        {"id": "cond", "type": "text",
-         "params": {"text": "Пройдено #v# м за #t# с. Найдите путь."}},
-        {"id": "ans",  "type": "text", "params": {"text": "S = #s# м"}},
-        {"id": "task", "type": "static_task"},
+        {"id": "task", "type": "task", "params": {
+            "statement": "Пройдено #v# м за #t# с. Найдите путь.",
+            "slots": ["s:number:unit=м:label=S"],
+        }},
     ],
     "edges": [
         {"from": "v:out", "to": "f:v"},
         {"from": "t:out", "to": "f:t"},
-        {"from": "v:out", "to": "cond:v"},
-        {"from": "t:out", "to": "cond:t"},
-        {"from": "f:out", "to": "ans:s"},
-        {"from": "cond:out", "to": "task:statement"},
-        {"from": "ans:out", "to": "task:answer"},
+        {"from": "v:out", "to": "task:v"},
+        {"from": "t:out", "to": "task:t"},
+        {"from": "f:out", "to": "task:s"},
     ],
     "meta": {"max_attempts": 100, "seed": None},
 }

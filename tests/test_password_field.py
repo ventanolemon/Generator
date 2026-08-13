@@ -106,7 +106,7 @@ class AuthConveniencesTests(unittest.TestCase):
         os.remove(self.db)
 
     def _win(self):
-        w = AuthWindow(repository=self.repo, on_success=self.result.append,
+        w = AuthWindow(repository=self.repo, on_success=lambda u, t=None: self.result.append(u),
                        settings=self.settings)
         self.addCleanup(w.deleteLater)
         return w

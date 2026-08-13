@@ -133,6 +133,32 @@ class EdgeItem(QGraphicsPathItem):
         path.cubicTo(p1.x() + dx, p1.y(), p2.x() - dx, p2.y(), p2.x(), p2.y())
         self.setPath(path)
 
+    def boundingRect(self) -> QRectF:
+        """
+        Область перерисовки шире трассы, когда у провода есть подпись:
+        текст рисуется поверх линии и вылезает за неё, а всё, что вне
+        boundingRect, сцена не перерисовывает — оставались бы хвосты
+        старого текста при перекладке проводов.
+        """
+        rect = super().boundingRect()
+        if self._note():
+            point = self.path().pointAtPercent(0.5)
+            rect = rect.united(QRectF(point.x() - 160, point.y() - 14,
+                                      320, 28))
+        return rect
+
+    def _branch(self) -> Optional[str]:
+        """Ветка провода в режиме «Ветки»; None — режим выключен."""
+        sc = self.scene()
+        if not getattr(sc, "show_branches", False):
+            return None
+        return sc.branch_of_edge(self.as_doc_tuple())
+
+    def _note(self) -> str:
+        sc = self.scene()
+        doc = getattr(sc, "doc", None)
+        return doc.edge_note(*self.as_doc_tuple()) if doc is not None else ""
+
     def paint(self, painter, option, widget=None) -> None:
         # У выделенного провода — тонкая жёлтая обводка поверх цветной линии
         # (вместо стандартной пунктирной рамки выделения).
@@ -140,8 +166,50 @@ class EdgeItem(QGraphicsPathItem):
         if self.isSelected():
             painter.setPen(QPen(style.NODE_BORDER_SEL, 4.5))
             painter.drawPath(self.path())
-        painter.setPen(QPen(style.port_color(self.src.port.type), 2.4))
+        branch = self._branch()
+        if branch is None:
+            color = style.port_color(self.src.port.type)
+        else:
+            color = style.BRANCH_COLORS.get(branch, style.BRANCH_UNUSED)
+        painter.setPen(QPen(color, 2.4))
         painter.drawPath(self.path())
+        note = self._note()
+        if note:
+            self._paint_note(painter, note)
+
+    def _paint_note(self, painter, note: str) -> None:
+        """
+        Подпись — на середине САМОЙ трассы (percentAtLength ½), а не между
+        концами провода: у ортогональной трассы и у кривой с обратным ходом
+        середина отрезка уезжает далеко от линии, и подпись висела бы в
+        пустоте отдельно от того, что подписывает.
+        """
+        path = self.path()
+        point = path.pointAtPercent(0.5)
+        font = painter.font()
+        font.setPointSize(8)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        rect = QRectF(point.x() - metrics.horizontalAdvance(note) / 2 - 3,
+                      point.y() - metrics.height() / 2 - 1,
+                      metrics.horizontalAdvance(note) + 6,
+                      metrics.height() + 2)
+        # Обводка текста цветом фона вместо плашки: провод проходит ровно
+        # под подписью, и прямоугольник накрыл бы и его.
+        text_path = QPainterPath()
+        text_path.addText(rect.left() + 3,
+                          rect.center().y() + metrics.ascent() / 2 - 1,
+                          font, note)
+        # ДВА прохода, а не заливка с обводкой одним drawPath: тот сначала
+        # заливает, а обводит поверх — при обводке в три пикселя по восьмому
+        # кеглю она съедает буквы целиком, и от подписи остаются светлые
+        # ниточки. Поймано снимком холста: в коде это неотличимо.
+        painter.setPen(QPen(style.EDGE_NOTE_HALO, 2.2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(text_path)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(style.EDGE_NOTE_TEXT))
+        painter.drawPath(text_path)
 
     def as_doc_tuple(self) -> tuple[str, str, str, str]:
         return (self.src.node_id, self.src.port.name,
@@ -229,6 +297,23 @@ class NodeItem(QGraphicsObject):
         for e in self.edges:
             e.update_path()
 
+    def _paint_branch_stripe(self, painter, rect: QRectF) -> None:
+        """
+        Полоса ветки — слева, а не заливкой заголовка: заголовок уже несёт
+        и цвет категории, и выделение узла, и третий слой поверх них
+        читался бы как «узел выделен». Полосу видно на любом из них.
+        """
+        sc = self.scene()
+        if not getattr(sc, "show_branches", False):
+            return
+        branch = sc.branch_of_node(self.node_id)
+        color = (style.BRANCH_COLORS.get(branch) if branch
+                 else style.BRANCH_UNUSED)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawRoundedRect(
+            QRectF(rect.left(), rect.top() + 3, 4.0, rect.height() - 6), 2, 2)
+
     def set_result_role(self, role: Optional[str]) -> None:
         """Пометить узел как финал / конфликт финалов / запрещённый TASK."""
         if role == self.result_role:
@@ -256,6 +341,7 @@ class NodeItem(QGraphicsObject):
             pen = QPen(style.NODE_BORDER, 1)
         painter.setPen(pen)
         painter.drawPath(body)
+        self._paint_branch_stripe(painter, rect)
 
         # заголовок
         header = QRectF(rect.left(), rect.top(), rect.width(), style.HEADER_H)

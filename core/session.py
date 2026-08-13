@@ -36,6 +36,11 @@ class Session:
 
     login: Optional[str] = None
     role: str = GUEST_ROLE
+    #: Токен серверной сессии, если вход на сервере состоялся. None —
+    #: работаем офлайн или сервер нас не знает: приложение при этом
+    #: полностью функционально локально, а сервер сам решает, пускать ли
+    #: такого к общему каталогу.
+    token: Optional[str] = None
 
     @property
     def user_id(self) -> Optional[str]:
@@ -50,10 +55,13 @@ class Session:
     def is_admin(self) -> bool:
         return self.role == "admin"
 
-    def set_user(self, login: str, role: Optional[str]) -> None:
+    def set_user(self, login: str, role: Optional[str],
+                 token: Optional[str] = None) -> None:
         self.login = login
         self.role = (role or DEFAULT_USER_ROLE)
+        self.token = token
 
     def set_guest(self) -> None:
         self.login = None
         self.role = GUEST_ROLE
+        self.token = None

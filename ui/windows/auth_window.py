@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core import Repository
+from core.auth import login_to_server
 from ui.widgets.password_field import make_password_field
 
 
@@ -66,12 +67,18 @@ def build_hero_panel(parent: QWidget, tagline: str) -> QWidget:
 
 class AuthWindow(QWidget):
     """Окно входа. on_success вызывается с tuple (login, fio, group, role) или
-    None для гостя. on_register (опционально) открывает экран регистрации."""
+    None для гостя и ВТОРЫМ аргументом — токеном серверной сессии (или None).
+    on_register (опционально) открывает экран регистрации.
+
+    Вход остаётся локальным: пароль сверяется по своей БД, и приложение
+    работает без сети. Токен — дополнение к этому, а не условие: сервер
+    теперь читает роль у себя, и без токена он нас не опознает (см.
+    core/auth/client.py)."""
 
     def __init__(
         self,
         repository: Repository,
-        on_success: Callable[[Optional[tuple]], None],
+        on_success: Callable[[Optional[tuple], Optional[str]], None],
         on_register: Optional[Callable[[], None]] = None,
         settings: object | None = None,
     ):
@@ -188,11 +195,16 @@ class AuthWindow(QWidget):
             return
         if self.settings is not None and hasattr(self.settings, "set_last_login"):
             self.settings.set_last_login(login)
-        self.on_success(user)
+        # Локальный вход уже состоялся; серверный — попытка, и её неудача
+        # не должна помешать войти.
+        token = None
+        if self.settings is not None and hasattr(self.settings, "get_base_url"):
+            token = login_to_server(self.settings.get_base_url(), login, password)
+        self.on_success(user, token)
         self.close()
 
     def _on_guest(self) -> None:
-        self.on_success(None)
+        self.on_success(None, None)
         self.close()
 
     def _on_register(self) -> None:

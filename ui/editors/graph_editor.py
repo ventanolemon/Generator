@@ -109,12 +109,21 @@ class GraphEditor(PartitionEditor):
         self.ortho_btn = QPushButton("Ортогональные связи", self)
         self.ortho_btn.setToolTip("Провода прямыми углами вместо кривых")
         self.ortho_btn.setCheckable(True)
+        self.branch_btn = QPushButton("Ветки", self)
+        self.branch_btn.setToolTip(
+            "Показать, что готовит условие, а что — ответ.\n"
+            "Считается по графу от финального узла: синее — условие, "
+            "зелёное — ответ,\nфиолетовое — и то и другое, серое — до "
+            "задания не доходит.")
+        self.branch_btn.setCheckable(True)
         layout_btn.clicked.connect(self._on_auto_layout)
         comment_btn.clicked.connect(self._on_add_comment)
         self.ortho_btn.toggled.connect(self._on_toggle_orthogonal)
+        self.branch_btn.toggled.connect(self._on_toggle_branches)
         tools.addWidget(layout_btn)
         tools.addWidget(comment_btn)
         tools.addWidget(self.ortho_btn)
+        tools.addWidget(self.branch_btn)
 
         tools.addStretch()
         root.addLayout(tools)
@@ -504,6 +513,9 @@ class GraphEditor(PartitionEditor):
 
     def _on_toggle_orthogonal(self, checked: bool) -> None:
         self.scene.set_orthogonal(checked)
+
+    def _on_toggle_branches(self, checked: bool) -> None:
+        self.scene.set_show_branches(checked)
 
     def _sync_edge_style_button(self) -> None:
         """Отразить сохранённую форму проводов на кнопке-переключателе."""

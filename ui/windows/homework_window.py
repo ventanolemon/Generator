@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 
 from core.assignments import AssignmentsError
 from ui.app_context import AppContext
+from ui.qt_worker import run_detached
 
 _PAGE_NOTICE = 0
 _PAGE_TEACHER = 1
@@ -37,8 +38,8 @@ class _CallWorker(QThread):
     done = pyqtSignal(object)
     failed = pyqtSignal(object)   # (message, status)
 
-    def __init__(self, fn: Callable[[], object], parent: QWidget | None = None):
-        super().__init__(parent)
+    def __init__(self, fn: Callable[[], object]):
+        super().__init__()
         self._fn = fn
 
     def run(self) -> None:  # noqa: D102 — контракт QThread
@@ -378,7 +379,9 @@ class HomeworkWindow(QWidget):
                     on_failed: Callable[[object], None]) -> None:
         if self._worker is not None:
             return
-        worker = _CallWorker(fn, self)
+        # Без родителя и через run_detached: поток, принадлежащий окну,
+        # умирает вместе с ним прямо на ходу (см. ui/qt_worker.py).
+        worker = _CallWorker(fn)
         self._worker = worker
 
         def _done(result: object) -> None:
@@ -389,7 +392,4 @@ class HomeworkWindow(QWidget):
             self._worker = None
             on_failed(err)
 
-        worker.done.connect(_done)
-        worker.failed.connect(_failed)
-        worker.finished.connect(worker.deleteLater)
-        worker.start()
+        run_detached(self, worker, _done, _failed)
