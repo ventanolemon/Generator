@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, List, Optional
 
+from . import partition_ids
+
 
 # Ключ бакета видимости для гостя (login = None). Пустая строка, а не NULL:
 # user_login входит в первичный ключ, а NULL в SQLite не равен сам себе —
@@ -746,13 +748,18 @@ class Repository:
                 )
                 pid = partition_id
             else:
-                cur = conn.execute(
+                # Не автоинкремент: он рано или поздно дорастает до полосы,
+                # которой распоряжается код, и начинает раздавать занятые
+                # номера. Разделы «Группа»/«Группа_2» получили 1017 и 1018
+                # именно так — вплотную к словарям английского.
+                taken = [r[0] for r in conn.execute("SELECT id FROM Partitions")]
+                pid = partition_ids.next_dynamic_id(taken)
+                conn.execute(
                     "INSERT INTO Partitions "
-                    "(subject_id, partition_name, constracted, generation_parametrs) "
-                    "VALUES (?, ?, ?, ?)",
-                    (subject_id, name, constracted, raw),
+                    "(id, subject_id, partition_name, constracted, "
+                    " generation_parametrs) VALUES (?, ?, ?, ?, ?)",
+                    (pid, subject_id, name, constracted, raw),
                 )
-                pid = cur.lastrowid
                 created = True
             conn.commit()
         self._notify_partition_changed(pid, subject_id, name, constracted, raw,
@@ -774,6 +781,64 @@ class Repository:
             conn.commit()
         if self.sync_listener is not None:
             self.sync_listener.partition_deleted(partition_id)
+
+    def renumber_partition(self, old_id: int, new_id: int) -> bool:
+        """
+        Перенести раздел на другой номер ВМЕСТЕ СО ВСЕМИ ССЫЛКАМИ на него.
+
+        Нужно ровно один раз — при переходе со старой позиционной схемы
+        номеров английских словарей (`1000 + место файла в списке`) на
+        выведенную из имени. Оставить старые номера нельзя: они означают
+        разные словари на сервере и на десктопе.
+
+        Переносится не только строка раздела: на номер ссылаются личные
+        скрытия (`PartitionVisibility`), состав групп и тестов (`task_id`
+        внутри `generation_parametrs` чужих разделов) и журнал версий
+        синхронизации. Перенос строки без ссылок оставил бы группу,
+        указывающую в пустоту, — это хуже исходного дефекта, потому что
+        сломалось бы то, что раньше работало.
+
+        Возвращает False, если переносить нечего или новый номер занят.
+        """
+        if old_id == new_id:
+            return False
+        self.ensure_visibility_tables()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM Partitions WHERE id = ?", (old_id,)).fetchone()
+            if row is None:
+                return False
+            if conn.execute("SELECT id FROM Partitions WHERE id = ?",
+                            (new_id,)).fetchone() is not None:
+                return False
+
+            conn.execute("UPDATE Partitions SET id = ? WHERE id = ?",
+                         (new_id, old_id))
+            conn.execute(
+                "UPDATE OR REPLACE PartitionVisibility SET partition_id = ? "
+                "WHERE partition_id = ?", (new_id, old_id))
+
+            # Состав групп и тестов: список позиций с полем task_id.
+            for pid, raw in conn.execute(
+                    "SELECT id, generation_parametrs FROM Partitions "
+                    "WHERE constracted IN (2, 3)").fetchall():
+                patched = _retarget_members(raw, old_id, new_id)
+                if patched is not None:
+                    conn.execute(
+                        "UPDATE Partitions SET generation_parametrs = ? "
+                        "WHERE id = ?", (patched, pid))
+
+            # Журнал синхронизации живёт в этом же файле, но заводится
+            # отдельным модулем: таблицы может не быть вовсе.
+            try:
+                conn.execute(
+                    "UPDATE OR REPLACE sync_versions SET entity_id = ? "
+                    "WHERE kind = 'partition' AND entity_id = ?",
+                    (new_id, old_id))
+            except sqlite3.OperationalError:
+                pass
+            conn.commit()
+        return True
 
     def _notify_partition_changed(self, pid, subject_id, name, constracted, raw,
                                   *, created: bool) -> None:
@@ -1049,3 +1114,27 @@ class Repository:
             )
             for r in rows
         ]
+
+
+def _retarget_members(raw, old_id: int, new_id: int) -> str | None:
+    """
+    Заменить номер раздела в составе группы/теста. None — менять нечего.
+
+    Состав хранится списком позиций `{"task_id": …, "task_name": …}`.
+    Разбор терпимый: чужой формат (или мусор) возвращает None и остаётся
+    нетронутым — перенумерация не повод переписывать то, чего мы не поняли.
+    """
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, list):
+        return None
+    changed = False
+    for item in data:
+        if isinstance(item, dict) and item.get("task_id") == old_id:
+            item["task_id"] = new_id
+            changed = True
+    return json.dumps(data, ensure_ascii=False) if changed else None

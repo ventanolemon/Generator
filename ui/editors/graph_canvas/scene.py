@@ -59,6 +59,10 @@ class GraphScene(QGraphicsScene):
 
         self.setBackgroundBrush(style.SCENE_BG)
         self.setSceneRect(0, 0, 2400, 1600)
+        # Фон сцены — кисть, а не QSS: смена темы сама до неё не доедет.
+        # Регистрация даёт style.apply_palette возможность перекрасить уже
+        # открытый редактор (раньше он оставался чёрным на светлой теме).
+        style.register_scene(self)
 
         # временный провод при протягивании
         self._drag_from: Optional[PortItem] = None
@@ -535,7 +539,34 @@ class GraphScene(QGraphicsScene):
                 self._apply_drag_highlights(port)
                 event.accept()
                 return
+            edge = self._nearest_edge(event.scenePos())
+            if edge is not None:
+                if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                    self.clearSelection()
+                edge.setSelected(True)
+                event.accept()
+                return
         super().mousePressEvent(event)
+
+    def _nearest_edge(self, pos) -> Optional[EdgeItem]:
+        """
+        Провод под курсором — БЛИЖАЙШИЙ, а не первый попавшийся.
+
+        Обычный разбор Qt отдаёт верхний по Z элемент, а Z у всех проводов
+        одинаковый (`setZValue(0)`) — «верхний» на деле определяется
+        порядком добавления. Из-за этого провод, проходящий внутри угла
+        другого, выделить было нельзя: щелчок по нему доставался соседу.
+
+        None — под курсором либо ничего, либо не провод: если сверху узел
+        или рамка, вмешиваться нельзя, у них своё поведение.
+        """
+        under = self.items(pos)
+        if not under or not isinstance(under[0], EdgeItem):
+            return None
+        edges = [it for it in under if isinstance(it, EdgeItem)]
+        if len(edges) == 1:
+            return edges[0]
+        return min(edges, key=lambda e: e.distance_to(pos))
 
     # ---------- Подсветка совместимых портов при протягивании ----------
 

@@ -381,8 +381,10 @@ class LoopFrameItem(NodeItem):
         header = self.header_rect()
         hp = QPainterPath()
         hp.addRoundedRect(header, 8, 8)
-        painter.fillPath(hp, QBrush(style.category_color(self.entry["category"])))
-        painter.setPen(QPen(style.NODE_TEXT))
+        header_fill = style.category_color(self.entry["category"])
+        painter.fillPath(hp, QBrush(header_fill))
+        header_text = style.on_color(header_fill)
+        painter.setPen(QPen(header_text))
         title = (self.entry.get("display_name") or self.entry["type_id"])
         summary = self._param_summary()
         if summary:
@@ -392,7 +394,7 @@ class LoopFrameItem(NodeItem):
                          title)
         # глиф «свернуть»
         g = self.collapse_glyph_rect()
-        painter.setPen(QPen(style.NODE_TEXT, 1.4))
+        painter.setPen(QPen(header_text, 1.4))
         painter.drawRect(g.adjusted(3, 3, -3, -3))
         painter.drawLine(QPointF(g.left() + 6, g.center().y()),
                          QPointF(g.right() - 6, g.center().y()))

@@ -53,7 +53,9 @@ from core.sync import RepositorySyncListener, SyncClient, SyncStore
 from core.updates import (
     PackageInstaller, Updater, default_home, load_installed,
 )
-from bootstrap import build_registry, sync_database
+from bootstrap import (
+    build_registry, sync_database, report_unserved_partitions,
+)
 from ui.app_context import AppContext
 from ui.theme import apply_theme
 from ui.windows import AuthWindow, GeneratorWindow
@@ -176,11 +178,19 @@ def main() -> int:
         keyring=updater.keyring, state=updater.state)
 
     def make_registry():
-        return build_registry(
+        registry = build_registry(
             repo, WORDS_DIR,
             stats_store=stats_store,
             user_id_provider=user_id_provider,
         )
+        # Номер раздела — единственное, что связывает запись в БД с кодом,
+        # и до сих пор за целостностью этой связи никто не следил: раздел,
+        # которому нечем открыться, обнаруживался в момент, когда
+        # преподаватель нажал «Сгенерировать». Проверка на старте стоит
+        # один проход по списку разделов.
+        for line in report_unserved_partitions(repo, registry):
+            print(f"[разделы] {line}", file=sys.stderr)
+        return registry
 
     context = AppContext(
         repo=repo,

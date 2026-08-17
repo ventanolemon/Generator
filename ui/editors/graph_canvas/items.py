@@ -10,7 +10,9 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QFont, QPainter, QPainterPath, QPen
+from PyQt6.QtGui import (
+    QBrush, QColor, QFont, QPainter, QPainterPath, QPainterPathStroker, QPen,
+)
 from PyQt6.QtWidgets import (
     QGraphicsItem, QGraphicsObject, QGraphicsPathItem, QGraphicsEllipseItem,
 )
@@ -146,6 +148,49 @@ class EdgeItem(QGraphicsPathItem):
             rect = rect.united(QRectF(point.x() - 160, point.y() - 14,
                                       320, 28))
         return rect
+
+    #: Ширина зоны попадания провода, пиксели сцены. Сам штрих — 2.4:
+    #: попасть по нему мышью трудно, а промах по проводу читается как
+    #: «щелчок по пустому месту» и снимает выделение.
+    HIT_WIDTH = 12.0
+
+    #: Сколько точек брать на трассе при измерении расстояния до курсора.
+    #: Хватает и меньшего, но 64 точки — это доли миллисекунды на щелчок,
+    #: а ошибка на кубической кривой становится незаметной.
+    _DISTANCE_SAMPLES = 64
+
+    def shape(self) -> QPainterPath:
+        """
+        Зона попадания — трасса, расширенная до HIT_WIDTH.
+
+        Умолчание QGraphicsPathItem — обводка пером, то есть 2.4 пикселя.
+        Расширение делает провода кликабельными; накладываться они при
+        этом начинают чаще, и потому выбор ближайшего (см. `distance_to`)
+        обязателен, а не желателен.
+        """
+        stroker = QPainterPathStroker()
+        stroker.setWidth(self.HIT_WIDTH)
+        return stroker.createStroke(self.path())
+
+    def distance_to(self, point: QPointF) -> float:
+        """
+        Расстояние от точки до трассы провода.
+
+        Нужно там, где под курсором оказалось несколько проводов: Qt
+        отдаёт верхний по Z, а Z у всех проводов один и тот же — значит
+        «верхний» определяется порядком добавления. Провод, проходящий
+        внутри угла другого, выделялся из-за этого не тот.
+        """
+        path = self.path()
+        if path.isEmpty():
+            return float("inf")
+        best = float("inf")
+        for i in range(self._DISTANCE_SAMPLES + 1):
+            sample = path.pointAtPercent(i / self._DISTANCE_SAMPLES)
+            dx = sample.x() - point.x()
+            dy = sample.y() - point.y()
+            best = min(best, (dx * dx + dy * dy) ** 0.5)
+        return best
 
     def _branch(self) -> Optional[str]:
         """Ветка провода в режиме «Ветки»; None — режим выключен."""
@@ -347,9 +392,13 @@ class NodeItem(QGraphicsObject):
         header = QRectF(rect.left(), rect.top(), rect.width(), style.HEADER_H)
         hp = QPainterPath()
         hp.addRoundedRect(header, 6, 6)
-        painter.fillPath(hp, QBrush(style.category_color(self.entry["category"])))
+        header_fill = style.category_color(self.entry["category"])
+        painter.fillPath(hp, QBrush(header_fill))
         badge_w = self._paint_role_badge(painter, header)
-        painter.setPen(QPen(style.NODE_TEXT))
+        # Текст заголовка выбирается по ЗАЛИВКЕ, а не по теме: цвет
+        # категории от темы не зависит, цвет текста темы — зависит, и в
+        # светлой теме получилось бы тёмное на тёмном.
+        painter.setPen(QPen(style.on_color(header_fill)))
         title = self.entry.get("display_name") or self.entry["type_id"]
         painter.drawText(header.adjusted(8, 0, -8 - badge_w, 0),
                          Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
