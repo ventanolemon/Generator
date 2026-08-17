@@ -7,3 +7,10 @@ resources/*.db.bak-*
 
 # Claude Code local tooling (agent worktrees, session settings)
 .claude/
+
+# Хвосты журнала SQLite. Файл БД в режиме WAL неполон без них, и попасть
+# в коммит они не должны никогда: поставочная БД с чужим -wal на другой
+# машине может не открыться.
+resources/*.db-wal
+resources/*.db-shm
+resources/*.db-journal
