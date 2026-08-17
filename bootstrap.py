@@ -123,6 +123,7 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
     # отсортированном списке, и один и тот же номер означал разные словари
     # на сервере (20 файлов) и на десктопе (12).
     if words_dir.exists():
+        from exercises.english.generators import _detect_kind
         _migrate_legacy_english_ids(repo, words_dir)
         for path in sorted(words_dir.glob("*.json")):
             repo.ensure_code_partition(
@@ -130,7 +131,43 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
                 subject_id=2,
                 name=_english_display_name(path),
             )
+            # Разбор транскрипции — ВТОРОЙ раздел того же файла, в своей
+            # полосе номеров. Рядом со словарём, а не вместо него: это
+            # другое упражнение на том же материале.
+            if _detect_kind(path) == "words" and _has_transcriptions(path):
+                repo.ensure_code_partition(
+                    partition_id=partition_ids.english_transcription_id(
+                        path.stem),
+                    subject_id=2,
+                    name=_english_transcription_name(path),
+                )
         _drop_stale_english_partitions(repo, words_dir)
+
+
+def _english_transcription_name(path: Path) -> str:
+    """Имя раздела «выбери транскрипцию» для этого словаря."""
+    return f"Английский: {path.stem} (транскрипция)"
+
+
+def _has_transcriptions(path: Path) -> bool:
+    """
+    Есть ли в словаре хоть один термин с известной транскрипцией.
+
+    Проверка не косметическая: раздел без единого термина показывал бы
+    задание «здесь ничего нет», а раздел, которого нет, ничего не
+    обещает. Пустых обещаний в списке у преподавателя быть не должно.
+    """
+    from exercises.english.generators import (
+        WordsTrainerGenerator, _read_json_lenient,
+    )
+    from core import pronunciation
+    try:
+        data = _read_json_lenient(path)
+        words = WordsTrainerGenerator._flatten_words(data)
+    except Exception:                       # noqa: BLE001
+        return False
+    inline = pronunciation.inline_transcriptions(data)
+    return any(pronunciation.transcription_of(t, inline) for t in words)
 
 
 #: Настройка, которой поставочный раздел «конструктор» предмета Физика
@@ -222,15 +259,16 @@ def _drop_stale_english_partitions(repo: Repository, words_dir: Path) -> None:
     для partition_id=…». Удалять их безопаснее, чем оставлять: раздел без
     генератора не несёт ничего, кроме имени.
     """
-    alive = {
-        partition_ids.english_words_id(path.stem)
-        for path in words_dir.glob("*.json")
-    }
+    alive = set()
+    for path in words_dir.glob("*.json"):
+        alive.add(partition_ids.english_words_id(path.stem))
+        alive.add(partition_ids.english_transcription_id(path.stem))
     for part in repo.list_partitions_for_subject(2):
         if part.constracted != 0 and part.constracted is not None:
             continue
         in_band = (part.id in partition_ids.LEGACY_ENGLISH
-                   or part.id in partition_ids.ENGLISH_WORDS)
+                   or part.id in partition_ids.ENGLISH_WORDS
+                   or part.id in partition_ids.ENGLISH_TRANSCRIPTION)
         if in_band and part.id not in alive:
             repo.delete_partition(part.id)
 
@@ -262,6 +300,9 @@ def build_registry(
 
     # 2. Английские словари
     if words_dir.exists():
+        from exercises.english.generators import (
+            TranscriptionChoiceGenerator, _detect_kind,
+        )
         for path in sorted(words_dir.glob("*.json")):
             pid = partition_ids.english_words_id(path.stem)
             display = _english_display_name(path)
@@ -272,6 +313,13 @@ def build_registry(
             )
             if gen is not None:
                 registry.register(gen)
+            if _detect_kind(path) == "words" and _has_transcriptions(path):
+                registry.register(TranscriptionChoiceGenerator(
+                    name=_english_transcription_name(path),
+                    words_path=path,
+                    partition_id=partition_ids.english_transcription_id(
+                        path.stem),
+                ))
 
     # 3. БД: фабрики для физики, групп, тестов
     for subj in repo.list_subjects():

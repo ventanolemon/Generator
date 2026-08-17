@@ -29,7 +29,9 @@ _EXPORTS: dict[str, str] = {
     "block_from_dict": ".blocks",
     "blocks_from_dicts": ".blocks",
     # dynamic blocks (Qt)
+    "AudioBlock": ".dynamic_blocks",
     "FillInTheBlankBlock": ".dynamic_blocks",
+    "TranscriptionChoiceBlock": ".dynamic_blocks",
     "WordCorrectionBlock": ".dynamic_blocks",
     # tasks
     "Task": ".task",
