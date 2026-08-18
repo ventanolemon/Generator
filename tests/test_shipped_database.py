@@ -93,6 +93,35 @@ class ShippedDatabaseTests(unittest.TestCase):
         self.assertGreater(
             conn.execute("SELECT COUNT(*) FROM Partitions").fetchone()[0], 0)
 
+    def test_file_is_unchanged_against_the_commit(self):
+        """
+        Заслон против того, что уже случалось: база меняется от любого
+        прикосновения — слой доступа заводит служебные таблицы, переводит
+        журнал, прогоняет миграции. Каждый раз это уезжало бы в коммит
+        двоичной строкой, в которой не видно ничего.
+
+        Правило: в разовых сценариях `Repository` открывают на КОПИИ, а
+        не на `const.DB_PATH`.
+
+        Проверка пропускается там, где git недоступен (собранная
+        поставка): она про дисциплину разработки, а не про свойство файла.
+        """
+        import subprocess
+
+        root = Path(__file__).resolve().parent.parent
+        try:
+            done = subprocess.run(
+                ["git", "diff", "--quiet", "--",
+                 str(Path(DB_PATH).relative_to(root))],
+                cwd=root, capture_output=True, timeout=30)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            self.skipTest("git недоступен — проверка только для рабочей копии")
+        self.assertEqual(
+            done.returncode, 0,
+            "Поставочная база изменилась относительно коммита. Если "
+            "правка НЕ намеренная — верните файл: git checkout -- "
+            "resources/users_database.db.")
+
     def test_every_code_partition_has_a_generator(self):
         """
         Раздел с `constracted = 0` заявляет, что его обслуживает КОД.
