@@ -122,6 +122,36 @@ class ShippedDatabaseTests(unittest.TestCase):
             "правка НЕ намеренная — верните файл: git checkout -- "
             "resources/users_database.db.")
 
+    def test_shipped_resources_are_unchanged_against_the_commit(self):
+        """
+        То же самое, но про ВСЮ поставку, а не только про базу.
+
+        Проверка расширена по случаю: тест задания на произношение
+        подставил виджету записи поставочный эталон, а очистка после
+        ответа удалила файл — и так ушло восемь WAV из `resources/audio/`.
+        Прежний заслон этого не увидел, потому что смотрел на один файл.
+
+        Класс тот же, что у базы: рабочая копия — это ещё и ПОСТАВКА, и
+        всё, что в ней лежит, прогон обязан оставить нетронутым. Заслон
+        стоит здесь, рядом с родственным, а не заводится третьим местом,
+        где помнят про это правило.
+        """
+        import subprocess
+
+        root = Path(__file__).resolve().parent.parent
+        try:
+            done = subprocess.run(
+                ["git", "status", "--porcelain", "--", "resources"],
+                cwd=root, capture_output=True, timeout=30, text=True)
+        except (OSError, subprocess.SubprocessError):
+            self.skipTest("git недоступен — проверка только для рабочей копии")
+        touched = [line for line in done.stdout.splitlines() if line.strip()]
+        self.assertEqual(
+            touched, [],
+            "Поставочные ресурсы изменились относительно коммита:\n"
+            + "\n".join(touched)
+            + "\nЕсли правка НЕ намеренная — верните: git checkout -- resources")
+
     def test_every_code_partition_has_a_generator(self):
         """
         Раздел с `constracted = 0` заявляет, что его обслуживает КОД.

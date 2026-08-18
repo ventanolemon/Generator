@@ -79,9 +79,41 @@ class CheckableTaskView(QWidget):
         self.solving_view: InteractiveTaskView | None = None
         root.addWidget(self.stack, stretch=1)
 
+        self._stats: dict | None = None
+
         self.look_btn.clicked.connect(lambda: self.set_mode(self.LOOK))
         self.solve_btn.clicked.connect(lambda: self.set_mode(self.SOLVE))
         self.set_mode(self.LOOK)
+
+    # ---------- Статистика попыток ----------
+
+    def attach_stats(self, *, partition_id: int | None, sync_client,
+                     assignment_id: int | None = None) -> None:
+        """
+        Передать контекст записи попыток ВЛОЖЕННЫМ представлениям.
+
+        Метод объявлен в `BaseTaskView`, а это представление им не
+        является — хром приносит вложенное (см. заголовок модуля).
+        Владелец же (`GeneratorWindow._open_partition_view`) зовёт
+        `attach_stats` у всего, что вернул `_pick_view`, и без этого метода
+        КАЖДЫЙ проверяемый раздел падал с `AttributeError` при открытии —
+        физика, матан со спецификацией, графы с проверяемым слотом.
+
+        Класс ошибки тот же, что у остальных в этом проекте: связь между
+        двумя половинами не выражена ничем, кроме совпадения имён, и
+        расхождение молчит. Тесты его не поймали, потому что строили
+        представление напрямую, минуя владельца; проверка на это теперь
+        есть.
+
+        Контекст запоминается: решающее представление строится лениво, и
+        к моменту вызова его ещё нет.
+        """
+        self._stats = {"partition_id": partition_id,
+                       "sync_client": sync_client,
+                       "assignment_id": assignment_id}
+        self.static_view.attach_stats(**self._stats)
+        if self.solving_view is not None:
+            self.solving_view.attach_stats(**self._stats)
 
     # ---------- Режим ----------
 
@@ -91,6 +123,8 @@ class CheckableTaskView(QWidget):
             self.solving_view = InteractiveTaskView(
                 SolvingGenerator(self.generator), self.stack)
             self.stack.addWidget(self.solving_view)
+            if self._stats is not None:
+                self.solving_view.attach_stats(**self._stats)
         self.stack.setCurrentIndex(
             self.stack.indexOf(self.solving_view) if mode == self.SOLVE else 0)
         self.look_btn.setChecked(mode == self.LOOK)
