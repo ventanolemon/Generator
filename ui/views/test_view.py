@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 from core import Capability, StaticTask
 from ui.utils import render_blocks
 from ui.exporter import export_test_to_docx
+from ui.variants import generate_variants, was_interrupted
 from .base_view import BaseTaskView
 
 
@@ -54,14 +55,17 @@ class TestExportView(BaseTaskView):
         root.addWidget(self.tabs, stretch=1)
 
     def _on_generate(self) -> None:
-        n = self.variants_spin.value()
-        self.variants = []
+        asked = self.variants_spin.value()
+        # Через общий помощник: счётчик здесь был с самого начала, а вот
+        # показа хода и отмены не было — пятьдесят вариантов медленного
+        # раздела замораживали окно на минуты без признаков жизни.
+        produced = generate_variants(self, self.generator, asked)
+        self.variants = produced
         self.tabs.clear()
-        for i in range(n):
-            task = self.generator.generate()
-            if isinstance(task, StaticTask):
-                self.variants.append(task)
         self._refresh_tabs()
+        note = was_interrupted(asked, len(produced))
+        if note:
+            QMessageBox.information(self, "Генерация", note)
 
     def _refresh_tabs(self) -> None:
         self.tabs.clear()
