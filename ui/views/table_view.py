@@ -22,6 +22,7 @@ from core import Capability, StaticTask
 from ui.utils import render_blocks
 from ui.exporter import export_tasks_to_docx
 from ui.variants import generate_variants, was_interrupted
+from ui.widgets.answer_placement import AnswerPlacementBox
 from .base_view import BaseTaskView
 
 #: Верхняя граница счётчика. Не «сколько выдержит система», а сколько
@@ -65,7 +66,13 @@ class TableTaskView(BaseTaskView):
         self.export_btn = QPushButton("Экспорт в Word", self)
         self.show_answers_chk = QCheckBox("Показывать ответы", self)
         row.addWidget(self.export_btn)
+        # Галочка осталась — она про ЭКРАН, про колонку «Ответ» в
+        # таблице. Список рядом — про ФАЙЛ. Это разные вопросы, и
+        # связывать их было ошибкой: преподаватель, скрывший ответы на
+        # экране от заглядывающего студента, получал лист без ключа.
         row.addWidget(self.show_answers_chk)
+        self.placement_box = AnswerPlacementBox(self)
+        row.addWidget(self.placement_box)
         self.count_label = QLabel("", self)
         self.count_label.setProperty("class", "muted")
         row.addWidget(self.count_label)
@@ -215,7 +222,7 @@ class TableTaskView(BaseTaskView):
         try:
             export_tasks_to_docx(self.tasks, path,
                                  title=self.generator.name,
-                                 with_answers=self.show_answers_chk.isChecked())
+                                 answers=self.placement_box.placement())
             QMessageBox.information(self, "Экспорт", "Готово.")
         except Exception as e:
             QMessageBox.critical(self, "Экспорт", f"Ошибка: {e}")

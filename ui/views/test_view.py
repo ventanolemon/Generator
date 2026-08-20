@@ -19,6 +19,7 @@ from core import Capability, StaticTask
 from ui.utils import render_blocks
 from ui.exporter import export_test_to_docx
 from ui.variants import generate_variants, was_interrupted
+from ui.widgets.answer_placement import AnswerPlacementBox
 from .base_view import BaseTaskView
 
 
@@ -39,10 +40,15 @@ class TestExportView(BaseTaskView):
 
         self.gen_btn = QPushButton("Сгенерировать варианты", self)
         self.export_btn = QPushButton("Экспорт в Word", self)
-        self.show_answers_chk = QCheckBox("С ответами", self)
+        self.show_answers_chk = QCheckBox("Показывать ответы", self)
+        self.show_answers_chk.setToolTip(
+            "Показывать ли ответы в предпросмотре вкладок. К файлу "
+            "отношения не имеет — за файл отвечает список справа.")
         row.addWidget(self.gen_btn)
         row.addWidget(self.export_btn)
         row.addWidget(self.show_answers_chk)
+        self.placement_box = AnswerPlacementBox(self, default="hidden")
+        row.addWidget(self.placement_box)
         row.addStretch()
 
         self.gen_btn.clicked.connect(self._on_generate)
@@ -93,7 +99,7 @@ class TestExportView(BaseTaskView):
             export_test_to_docx(
                 self.variants, path,
                 title=self.generator.name,
-                with_answers=self.show_answers_chk.isChecked(),
+                answers=self.placement_box.placement(),
             )
             QMessageBox.information(self, "Экспорт", "Готово.")
         except Exception as e:

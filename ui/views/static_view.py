@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 from core import Capability, StaticTask, TaskGenerator
 from ui.exporter import export_tasks_to_docx
 from ui.variants import generate_variants, was_interrupted
+from ui.widgets.answer_placement import AnswerPlacementBox
 from .base_view import BaseTaskView
 
 #: Верхняя граница счётчика вариантов при выгрузке.
@@ -68,6 +69,9 @@ class StaticTaskView(BaseTaskView):
                 "сколько запрошено."
             )
             row.addWidget(self.variants_spin)
+
+            self.placement_box = AnswerPlacementBox(self, default="under")
+            row.addWidget(self.placement_box)
 
         row.addStretch()
 
@@ -129,7 +133,7 @@ class StaticTaskView(BaseTaskView):
             export_tasks_to_docx(
                 tasks, path,
                 title=self.generator.name,
-                with_answers=True,
+                answers=self.placement_box.placement(),
             )
             QMessageBox.information(
                 self, "Экспорт",

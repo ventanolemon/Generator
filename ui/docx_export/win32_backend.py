@@ -17,12 +17,26 @@
 Для модулей, где это критично (изображения схем opvs), при необходимости
 можно расширить отдельной обработкой ImageBlock — но в текущей реализации
 матан — главный потребитель формул, и текст для остальных блоков достаточен.
+
+Раскладка сюда не входит
+------------------------
+Что где стоит — заголовки, разрывы страниц, куда уносятся ответы —
+описано ОДИН раз в `core/export_api.py` и одинаково для веб-службы и
+обоих настольных бэкендов. Здесь остаётся механика письма через
+`Selection`, собранная в `_Writer`: три действия, которых раскладке
+достаточно.
+
+До этого раскладка была здесь своя, третья по счёту, и отличалась от
+обеих остальных: у теста ответы назывались «Эталон ответов», разрывов
+страниц между вариантами не было вовсе. Расхождение не проявлялось
+никак, кроме как в готовом файле у пользователя Windows.
 """
 
 from __future__ import annotations
 from typing import List
 
 from core import StaticTask, FormulaBlock, TextBlock
+from core.export_api import build_with
 from core.latex import for_word_omath
 
 import shutil
@@ -37,69 +51,82 @@ except Exception as e:
     print(f"Ошибка: {e}")
 
 
-def export_tasks(
-    tasks: List[StaticTask],
-    path: str,
-    title: str = "Задания",
-    with_answers: bool = True,
-) -> None:
+class _Writer:
+    """
+    Писец поверх `Selection` Word. Реализует протокол `DocumentWriter`.
+
+    Заголовки печатаются встроенными стилями Word, а не «жирным
+    текстом»: по ним строится навигация документа и оглавление, а это
+    ровно то, ради чего преподаватель открывает файл в Word, а не в
+    просмотрщике. Уровень 0 — «Заголовок», дальше «Заголовок N».
+    """
+
+    #: Уровень раскладки → имя встроенного стиля Word.
+    STYLES = {0: "Title", 1: "Heading 1", 2: "Heading 2", 3: "Heading 3"}
+
+    def __init__(self, selection):
+        self.selection = selection
+
+    def heading(self, text: str, level: int) -> None:
+        style = self.STYLES.get(level, "Heading 3")
+        try:
+            self.selection.Style = style
+        except Exception:                       # noqa: BLE001
+            # Локализованный Word может не знать английских имён стилей.
+            # Заголовок без стиля — не повод потерять весь документ.
+            pass
+        _type(self.selection, f"{text}\r")
+        try:
+            self.selection.Style = "Normal"
+        except Exception:                       # noqa: BLE001
+            pass
+
+    def page_break(self) -> None:
+        # 7 — wdPageBreak. Числом, а не константой win32com: константы
+        # приходят из сгенерированного кэша, который этот модуль в начале
+        # работы как раз сносит.
+        self.selection.InsertBreak(7)
+
+    def blocks(self, blocks) -> None:
+        _insert_blocks(self.selection, blocks)
+        _type(self.selection, "\r")
+
+
+def _document(title: str, variants, answers: str, path: str) -> None:
+    """Общая обвязка Word: открыть, разложить, сохранить, закрыть."""
     import win32com.client as win32
 
     word = win32.gencache.EnsureDispatch("Word.Application")
     word.Visible = False
     doc = word.Documents.Add()
-    selection = word.Selection
-
     try:
-        _type(selection, f"{title}\n\n")
-        for i, task in enumerate(tasks, 1):
-            _type(selection, f"Задание {i}\n")
-            _insert_blocks(selection, task.statement)
-            _type(selection, "\n")
-
-        if with_answers and tasks:
-            _type(selection, "\n\nОтветы\n\n")
-            for i, task in enumerate(tasks, 1):
-                _type(selection, f"Ответ {i}\n")
-                _insert_blocks(selection, task.answer)
-                _type(selection, "\n")
-
+        build_with(_Writer(word.Selection), variants,
+                   title=title, answers=answers)
         doc.SaveAs(_abs(path))
     finally:
         doc.Close()
-        # Не закрываем Word целиком — пользователь, возможно, ещё работает с ним.
+        # Не закрываем Word целиком — пользователь, возможно, ещё
+        # работает с ним.
+
+
+def export_tasks(
+    tasks: List[StaticTask],
+    path: str,
+    title: str = "Задания",
+    answers: str = "file_end",
+) -> None:
+    """Список заданий — ОДИН вариант из многих заданий."""
+    _document(title, [list(tasks)], answers, path)
 
 
 def export_test(
     variants: List[StaticTask],
     path: str,
     title: str = "Тест",
-    with_answers: bool = False,
+    answers: str = "hidden",
 ) -> None:
-    import win32com.client as win32
-
-    word = win32.gencache.EnsureDispatch("Word.Application")
-    word.Visible = False
-    doc = word.Documents.Add()
-    selection = word.Selection
-
-    try:
-        _type(selection, f"{title}\n\n")
-        for i, variant in enumerate(variants, 1):
-            _type(selection, f"Вариант {i}\n")
-            _insert_blocks(selection, variant.statement)
-            _type(selection, "\n\n")
-
-        if with_answers:
-            _type(selection, "\nЭталон ответов\n\n")
-            for i, variant in enumerate(variants, 1):
-                _type(selection, f"Вариант {i}\n")
-                _insert_blocks(selection, variant.answer)
-                _type(selection, "\n\n")
-
-        doc.SaveAs(_abs(path))
-    finally:
-        doc.Close()
+    """Список вариантов — МНОГО вариантов по одному заданию в каждом."""
+    _document(title, [[variant] for variant in variants], answers, path)
 
 
 # ---------- Вставка блоков ----------
