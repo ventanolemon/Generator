@@ -30,6 +30,7 @@ from core.dynamic_blocks import (
 from exercises.english.generators import (
     TranscriptionChoiceGenerator, WordsSession, WordsTrainerGenerator,
 )
+from tests.tmpdb import temp_path  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WORDS_DIR = ROOT / "resources" / "words"
@@ -227,13 +228,13 @@ class SectionRegistrationTests(unittest.TestCase):
     def test_both_sections_appear_and_both_open(self):
         import warnings
 
-        from const import DB_PATH
+        from const import DB_TEMPLATE as DB_PATH
         import shutil
 
         import bootstrap
         from core import Repository
 
-        copy = tempfile.mktemp(suffix=".db")
+        copy = temp_path(suffix=".db")
         shutil.copyfile(DB_PATH, copy)
         self.addCleanup(lambda: os.path.exists(copy) and os.unlink(copy))
         repo = Repository(copy)

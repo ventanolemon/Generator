@@ -9,9 +9,9 @@ on_logout только после подтверждения, плашка "ло
 
 from __future__ import annotations
 import os
-import tempfile
 import unittest
 from unittest.mock import patch
+from tests.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -43,12 +43,12 @@ class LogoutTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def _window(self, *, role="teacher", login="alice", on_logout=None):
-        db = tempfile.mktemp(suffix=".db")
+        db = temp_path(suffix=".db")
         self._db = db
         _make_local_db(db)
         repo = Repository(db)
         repo.ensure_hidden_columns()
-        s = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        s = Settings(QSettings(temp_path(suffix=".ini"),
                                QSettings.Format.IniFormat))
         # Мутабельный бокс, а не замыкание на параметры — тесту повторного
         # входа нужно поменять identity ПОСЛЕ создания окна, как это

@@ -39,7 +39,7 @@ if _CRASH_LOG:
 else:
     faulthandler.enable()
 
-from const import DB_PATH, WORDS_DIR
+from const import DB_PATH, WORDS_DIR, ensure_data_dir
 from core import Repository, WordStatsStore
 from core.admin import AdminClient
 from core.analytics import AnalyticsClient
@@ -63,6 +63,16 @@ from ui.windows import AuthWindow, GeneratorWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
+    # Рабочая база — ОТДЕЛЬНО от поставки, и создаётся при первом запуске
+    # копированием того, что лежит в `resources/`. Раньше приложение
+    # писало прямо туда: заводило таблицы, переводило журнал в WAL,
+    # применяло миграции — то есть правило файл, который раздаётся
+    # пользователям. Отсюда же росла ведущая версия дефекта «database
+    # disk image is malformed».
+    #
+    # Данные существующих установок при этом не теряются: прежняя рабочая
+    # база лежала ровно там, откуда теперь копируют, — она и переедет.
+    ensure_data_dir()
     repo = Repository(DB_PATH)
 
     # Установленные пакеты узлов — ДО всего остального: они дополняют общий

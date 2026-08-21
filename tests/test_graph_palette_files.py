@@ -8,8 +8,8 @@
 from __future__ import annotations
 import json
 import os
-import tempfile
 import unittest
+from tests.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -23,8 +23,7 @@ except Exception:
 
 
 def _write(obj, suffix=".json") -> str:
-    fd, path = tempfile.mkstemp(suffix=suffix)
-    os.close(fd)
+    path = temp_path(suffix=suffix)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False)
     return path

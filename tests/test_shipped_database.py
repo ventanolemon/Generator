@@ -34,13 +34,13 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
-import tempfile
 import unittest
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from const import DB_PATH
+from const import DB_TEMPLATE as DB_PATH
+from tests.tmpdb import temp_path  # noqa: E402
 
 
 class ShippedDatabaseTests(unittest.TestCase):
@@ -50,7 +50,7 @@ class ShippedDatabaseTests(unittest.TestCase):
             self.skipTest("поставочной БД нет в этой сборке")
         # Работаем с КОПИЕЙ: проверка не имеет права стать ещё одним
         # писателем в файл, который сама и защищает.
-        self.copy = tempfile.mktemp(suffix=".db")
+        self.copy = temp_path(suffix=".db")
         shutil.copyfile(DB_PATH, self.copy)
         self.addCleanup(
             lambda: os.path.exists(self.copy) and os.unlink(self.copy))

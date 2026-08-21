@@ -85,7 +85,7 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.db is None:
-        from const import DB_PATH
+        from const import DB_TEMPLATE as DB_PATH
         db_path = DB_PATH
     else:
         db_path = args.db

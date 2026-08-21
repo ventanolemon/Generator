@@ -12,35 +12,26 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import sqlite3
-import tempfile
 import threading
 import unittest
 
 from bootstrap import sync_database
-from const import DB_PATH, WORDS_DIR
+from const import DB_TEMPLATE as DB_PATH, WORDS_DIR
 from core.repository import Repository
 from core.sync.store import SyncStore
+from tests.tmpdb import temp_path
 
 
 class DbConcurrencyTests(unittest.TestCase):
     def setUp(self) -> None:
-        fd, self.path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
+        self.path = temp_path()
         # Схему десктоп не создаёт из кода — БД поставляется вместе с
         # приложением. Копируем поставочную, чтобы тест шёл тем же путём,
         # что и реальный запуск (Repository → sync_database).
         shutil.copyfile(DB_PATH, self.path)
         self.repo = Repository(self.path)
-
-    def tearDown(self) -> None:
-        for suffix in ("", "-wal", "-shm"):
-            try:
-                os.unlink(self.path + suffix)
-            except OSError:
-                pass
 
     def test_ensure_wal_mode_switches_journal(self):
         """ensure_wal_mode переводит файл в WAL и идемпотентна."""

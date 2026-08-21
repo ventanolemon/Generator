@@ -11,6 +11,7 @@ SyncClient.queue_attempt — ортогонально словарной WordSta
 from __future__ import annotations
 import os
 import unittest
+from tests.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -159,7 +160,7 @@ class GeneratorWindowWiringTests(unittest.TestCase):
         from ui.app_context import AppContext
         from ui.windows import GeneratorWindow
 
-        db = tempfile.mktemp(suffix=".db")
+        db = temp_path(suffix=".db")
         self.addCleanup(lambda: os.path.exists(db) and os.remove(db))
         _make_local_db(db)
         repo = Repository(db)
@@ -172,7 +173,7 @@ class GeneratorWindowWiringTests(unittest.TestCase):
                                     constracted=0, generation_params={})
 
         client = _FakeSyncClient()
-        s = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        s = Settings(QSettings(temp_path(suffix=".ini"),
                                QSettings.Format.IniFormat))
         ctx = AppContext(repo=repo, settings=s,
                          user_id_provider=lambda: "u",

@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 import random
-import tempfile
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -20,6 +19,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from core.graph import (
     DEFAULT_REGISTRY, ExecContext, GraphExecutor, GraphSpec, PortType,
 )
+from tests.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401
@@ -33,8 +33,7 @@ def _ctx(seed=0):
 
 
 def _write(obj) -> str:
-    fd, path = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
+    path = temp_path(suffix=".json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False)
     return path

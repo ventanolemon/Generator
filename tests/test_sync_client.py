@@ -17,13 +17,13 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
-import tempfile
 import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.repository import Repository  # noqa: E402
 from core.sync import SyncClient, SyncStore  # noqa: E402
+from tests.tmpdb import temp_path  # noqa: E402
 
 
 # ---------- Фейк-сервер протокола ----------
@@ -166,9 +166,7 @@ def _make_local_db(path: str) -> None:
 
 class SyncClientTestBase(unittest.TestCase):
     def setUp(self):
-        fd, self.db_path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
-        os.unlink(self.db_path)
+        self.db_path = temp_path(suffix=".db")
         _make_local_db(self.db_path)
         self.repo = Repository(self.db_path)
         self.store = SyncStore(self.db_path)

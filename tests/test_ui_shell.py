@@ -9,13 +9,13 @@
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.repository import Repository
 from core.settings import Settings, DEFAULT_THEME
+from tests.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401
@@ -27,7 +27,7 @@ except Exception:
 
 
 def _temp_db_with_user(role_column: bool) -> str:
-    path = tempfile.mktemp(suffix=".db")
+    path = temp_path(suffix=".db")
     conn = sqlite3.connect(path)
     cols = 'login TEXT, password TEXT, FIO TEXT, "group" TEXT'
     if role_column:
@@ -45,7 +45,7 @@ def _temp_db_with_user(role_column: bool) -> str:
 class SettingsTests(unittest.TestCase):
     @unittest.skipUnless(HAS_QT, "PyQt6 не установлен")
     def _settings(self) -> Settings:
-        return Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        return Settings(QSettings(temp_path(suffix=".ini"),
                                   QSettings.Format.IniFormat))
 
     @unittest.skipUnless(HAS_QT, "PyQt6 не установлен")

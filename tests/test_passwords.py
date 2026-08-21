@@ -9,14 +9,14 @@ D1 плана docs/ui_rework_plan.md — пароли: PBKDF2-хэширован
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
 
 from core.repository import Repository
+from tests.tmpdb import temp_path  # noqa: E402
 
 
 def _db_with_user(password_value: str) -> str:
-    path = tempfile.mktemp(suffix=".db")
+    path = temp_path(suffix=".db")
     conn = sqlite3.connect(path)
     conn.execute(
         'CREATE TABLE users (login TEXT PRIMARY KEY, password TEXT, '

@@ -28,7 +28,6 @@ QtMultimedia — нет `libpulse.so.0`). Поэтому разделение в
 from __future__ import annotations
 
 import pathlib
-import tempfile
 import unittest
 
 import numpy as np
@@ -44,6 +43,7 @@ from exercises.english.generators import PronunciationGenerator
 from ui.audio_recorder import to_mono_int16, write_wav
 from ui.views.checkable_view import CheckableTaskView
 from ui.views.interactive_view import InteractiveTaskView
+from tests.tmpdb import temp_path  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -72,8 +72,7 @@ def _recording_of(term: str) -> pathlib.Path:
     подсовывать проверке поставку незачем и при заслоне.
     """
     source = pathlib.Path(resolve(P.audio_of(term)))
-    copy = pathlib.Path(tempfile.mkstemp(prefix="fake-record-",
-                                         suffix=".wav")[1])
+    copy = pathlib.Path(temp_path(".wav"))
     copy.write_bytes(source.read_bytes())
     return copy
 
@@ -92,7 +91,7 @@ class CaptureConversionTests(unittest.TestCase):
                     channels: int, raw: bytes) -> np.ndarray:
         pcm = to_mono_int16(raw, sample_format=sample_format,
                             channels=channels)
-        path = pathlib.Path(tempfile.mkstemp(suffix=".wav")[1])
+        path = pathlib.Path(temp_path(".wav"))
         self.addCleanup(path.unlink)
         write_wav(path, pcm, M.TARGET_RATE)
         back, rate = M.read_wav(path)
@@ -168,7 +167,7 @@ class CaptureConversionTests(unittest.TestCase):
         raw = signal.astype(np.float32).tobytes()
 
         pcm = to_mono_int16(raw, sample_format="float", channels=1)
-        path = pathlib.Path(tempfile.mkstemp(suffix=".wav")[1])
+        path = pathlib.Path(temp_path(".wav"))
         self.addCleanup(path.unlink)
         write_wav(path, pcm, M.TARGET_RATE)
 
@@ -185,7 +184,7 @@ class CaptureConversionTests(unittest.TestCase):
         terms = sorted(P.audio_index())[:5]
         signal, rate = M.read_wav(resolve(P.audio_of(terms[0])))
         quiet = M.resample(signal, rate) * 0.05
-        path = pathlib.Path(tempfile.mkstemp(suffix=".wav")[1])
+        path = pathlib.Path(temp_path(".wav"))
         self.addCleanup(path.unlink)
         write_wav(path, to_mono_int16(quiet.astype(np.float32).tobytes(),
                                       sample_format="float", channels=1),
@@ -391,7 +390,7 @@ class RecorderWidgetTests(unittest.TestCase):
         recorder = VoiceRecorder()
         self.addCleanup(recorder.deleteLater)
 
-        outsider = pathlib.Path(tempfile.mkstemp(suffix=".wav")[1])
+        outsider = pathlib.Path(temp_path(".wav"))
         outsider.write_bytes("чужой файл".encode("utf-8"))
         self.addCleanup(lambda: outsider.exists() and outsider.unlink())
 
@@ -405,7 +404,7 @@ class RecorderWidgetTests(unittest.TestCase):
         from ui.audio_recorder import VoiceRecorder
         recorder = VoiceRecorder()
         self.addCleanup(recorder.deleteLater)
-        own = pathlib.Path(tempfile.mkstemp(suffix=".wav")[1])
+        own = pathlib.Path(temp_path(".wav"))
         recorder._replace(own)
         recorder.discard()
         self.assertFalse(own.exists())
@@ -417,13 +416,13 @@ class SectionRegistrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import shutil
-        from const import DB_PATH, WORDS_DIR
+        from const import DB_TEMPLATE as DB_PATH, WORDS_DIR
         from core import Repository
         import bootstrap
 
         # Поставочную БД открываем на КОПИИ (docs/handbook/05 §10):
         # разовые сценарии уже трижды меняли её в коммите.
-        cls.copy = tempfile.mktemp(suffix=".db")
+        cls.copy = temp_path(suffix=".db")
         shutil.copyfile(DB_PATH, cls.copy)
         cls.repo = Repository(cls.copy)
         bootstrap.sync_database(cls.repo, WORDS_DIR)

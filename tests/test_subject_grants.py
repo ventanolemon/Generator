@@ -21,7 +21,6 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
-import tempfile
 import time
 import unittest
 
@@ -32,6 +31,7 @@ from core.grants import GrantsClient, GrantsError  # noqa: E402
 from core.repository import GrantsSnapshot, Repository  # noqa: E402
 from core.sync import SyncClient, SyncStore  # noqa: E402
 from tests.test_sync_client import FakeServer, _make_local_db  # noqa: E402
+from tests.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401
@@ -100,9 +100,7 @@ def _client(server: FakeGrantsServer, *, role="teacher", login="ivanov",
 
 class GrantsRepositoryTests(unittest.TestCase):
     def setUp(self):
-        fd, self.db_path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
-        os.unlink(self.db_path)
+        self.db_path = temp_path(suffix=".db")
         _make_local_db(self.db_path)
         self.repo = Repository(self.db_path)
         self.repo.ensure_hidden_columns()
@@ -225,9 +223,7 @@ class GrantsClientTests(unittest.TestCase):
     def setUp(self):
         self.server = FakeGrantsServer()
         self.client = _client(self.server)
-        fd, self.db_path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
-        os.unlink(self.db_path)
+        self.db_path = temp_path(suffix=".db")
         _make_local_db(self.db_path)
         self.repo = Repository(self.db_path)
         self.addCleanup(lambda: os.path.exists(self.db_path)
@@ -327,9 +323,7 @@ class ScopedFakeServer(FakeServer):
 
 class SyncScopeTests(unittest.TestCase):
     def setUp(self):
-        fd, self.db_path = tempfile.mkstemp(suffix=".db")
-        os.close(fd)
-        os.unlink(self.db_path)
+        self.db_path = temp_path(suffix=".db")
         _make_local_db(self.db_path)
         self.repo = Repository(self.db_path)
         self.repo.ensure_owner_column()

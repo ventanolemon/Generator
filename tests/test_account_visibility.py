@@ -33,6 +33,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.repository import GUEST_VISIBILITY_KEY, Repository
 from tests.test_sync_client import _make_local_db
+from tests.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401
@@ -45,7 +46,7 @@ class VisibilityIsPerAccountTests(unittest.TestCase):
     """Скрытие живёт в бакете аккаунта и не течёт к соседям."""
 
     def setUp(self):
-        self.db = tempfile.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         self.repo = Repository(self.db)
         with sqlite3.connect(self.db) as conn:
@@ -137,7 +138,7 @@ class LegacyHiddenMigrationTests(unittest.TestCase):
     """Перенос старой общей колонки hidden в персональные таблицы."""
 
     def setUp(self):
-        self.db = tempfile.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         repo = Repository(self.db)
         repo.ensure_hidden_columns()
@@ -202,7 +203,7 @@ class StartupWarningsTests(unittest.TestCase):
     """build_registry ругается только на настоящие коллизии id."""
 
     def setUp(self):
-        self.db = tempfile.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         self.repo = Repository(self.db)
         with sqlite3.connect(self.db) as conn:
@@ -263,7 +264,7 @@ class SubjectDeletionIsAdminOnlyTests(unittest.TestCase):
             def get(self, *a, **k):
                 raise KeyError("нет генератора")
 
-        s = Settings(QSettings(tf.mktemp(suffix=".ini"),
+        s = Settings(QSettings(temp_path(suffix=".ini"),
                                QSettings.Format.IniFormat))
         ctx = AppContext(repo=self.repo, settings=s,
                          user_id_provider=lambda: login,
@@ -274,7 +275,7 @@ class SubjectDeletionIsAdminOnlyTests(unittest.TestCase):
         return win
 
     def setUp(self):
-        self.db = tempfile.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         self.repo = Repository(self.db)
         with sqlite3.connect(self.db) as conn:
@@ -351,7 +352,7 @@ class GuestReturnsToAuthTests(unittest.TestCase):
             def get(self, *a, **k):
                 raise KeyError("нет генератора")
 
-        s = Settings(QSettings(tf.mktemp(suffix=".ini"),
+        s = Settings(QSettings(temp_path(suffix=".ini"),
                                QSettings.Format.IniFormat))
         ctx = AppContext(repo=self.repo, settings=s,
                          user_id_provider=lambda: login,
@@ -364,7 +365,7 @@ class GuestReturnsToAuthTests(unittest.TestCase):
         return win
 
     def setUp(self):
-        self.db = tempfile.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         self.repo = Repository(self.db)
 

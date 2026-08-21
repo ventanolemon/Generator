@@ -8,8 +8,8 @@
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
+from tests.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -29,7 +29,7 @@ if HAS_QT:
 
 
 def _db_with_user() -> str:
-    path = tempfile.mktemp(suffix=".db")
+    path = temp_path(suffix=".db")
     conn = sqlite3.connect(path)
     conn.execute(
         'CREATE TABLE users (login TEXT PRIMARY KEY, password TEXT, '
@@ -83,7 +83,7 @@ class AuthConveniencesTests(unittest.TestCase):
         self.db = _db_with_user()
         self.repo = Repository(self.db)
         self.settings = Settings(
-            QSettings(tempfile.mktemp(suffix=".ini"), QSettings.Format.IniFormat))
+            QSettings(temp_path(suffix=".ini"), QSettings.Format.IniFormat))
         self.result = []
         # Модальные QMessageBox из _on_login заблокировали бы offscreen-тест —
         # подменяем на no-op на время теста.

@@ -30,6 +30,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import bootstrap
 from core import Repository, partition_ids
+from tests.tmpdb import temp_path  # noqa: E402
 
 
 DICTIONARY = json.dumps(
@@ -46,8 +47,7 @@ def _words_dir(stems: list[str]) -> Path:
 
 
 def _fresh_db() -> str:
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
+    path = temp_path(suffix=".db")
     conn = sqlite3.connect(path)
     conn.executescript("""
         CREATE TABLE Subjects (

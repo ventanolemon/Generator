@@ -13,7 +13,6 @@ get_partition (генераторы по скрытому продолжают �
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -21,6 +20,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from core.repository import Repository
 from core.sync import RepositorySyncListener, SyncClient, SyncStore
 from tests.test_sync_client import FakeServer, _make_local_db
+from tests.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401
@@ -31,7 +31,7 @@ except Exception:
 
 class HideDeleteRepoTests(unittest.TestCase):
     def setUp(self):
-        self.db = tempfile.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         self.repo = Repository(self.db)
         self.repo.ensure_hidden_columns()
@@ -81,7 +81,7 @@ class HideDeleteRepoTests(unittest.TestCase):
 
     def test_lists_survive_db_without_hidden_column(self):
         # Старые копии БД без колонки hidden не должны ломать выборки.
-        raw = tempfile.mktemp(suffix=".db")
+        raw = temp_path(suffix=".db")
         _make_local_db(raw)
         with sqlite3.connect(raw) as conn:
             conn.execute("INSERT INTO Subjects (id, subject_name, pra_subject) "
@@ -124,7 +124,7 @@ class HideDeleteWindowTests(unittest.TestCase):
         from ui.app_context import AppContext
         from ui.windows import GeneratorWindow
 
-        self.db = tf.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         self.repo = Repository(self.db)
         self.repo.ensure_hidden_columns()
@@ -139,7 +139,7 @@ class HideDeleteWindowTests(unittest.TestCase):
             def get(self, *a, **k):
                 raise KeyError("нет генератора")
 
-        s = Settings(QSettings(tf.mktemp(suffix=".ini"),
+        s = Settings(QSettings(temp_path(suffix=".ini"),
                                QSettings.Format.IniFormat))
         ctx = AppContext(repo=self.repo, settings=s,
                          user_id_provider=lambda: "u",
