@@ -31,7 +31,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core import GeneratorRegistry, Repository
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 
 def _fresh_repo() -> tuple[Repository, str]:

@@ -43,7 +43,7 @@ from exercises.english.generators import PronunciationGenerator
 from ui.audio_recorder import to_mono_int16, write_wav
 from ui.views.checkable_view import CheckableTaskView
 from ui.views.interactive_view import InteractiveTaskView
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 

@@ -30,7 +30,7 @@ from core.dynamic_blocks import (
 from exercises.english.generators import (
     TranscriptionChoiceGenerator, WordsSession, WordsTrainerGenerator,
 )
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WORDS_DIR = ROOT / "resources" / "words"

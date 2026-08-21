@@ -16,7 +16,7 @@ import unittest
 from core.repository import Repository
 from core.sync import SyncClient, SyncStore
 from tests.test_sync_client import FakeServer, _make_local_db
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 
 def _db_with_subjects() -> str:

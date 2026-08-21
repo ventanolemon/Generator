@@ -21,7 +21,7 @@ from bootstrap import sync_database
 from const import DB_TEMPLATE as DB_PATH, WORDS_DIR
 from core.repository import Repository
 from core.sync.store import SyncStore
-from tests.tmpdb import temp_path
+from core.tmpdb import temp_path
 
 
 class DbConcurrencyTests(unittest.TestCase):

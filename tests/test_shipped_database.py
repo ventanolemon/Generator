@@ -40,7 +40,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from const import DB_TEMPLATE as DB_PATH
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 
 class ShippedDatabaseTests(unittest.TestCase):

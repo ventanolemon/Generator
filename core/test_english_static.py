@@ -31,7 +31,7 @@ from core.blocks import TextBlock
 from core.graph.executor import GraphExecutor
 from core.graph.spec import GraphSpec
 from core.interactive import Question, option_blocks, session_from_task
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 
 WORDS = {"vacuum tube": "электронная лампа",

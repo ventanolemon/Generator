@@ -31,7 +31,7 @@ from core.grants import GrantsClient, GrantsError  # noqa: E402
 from core.repository import GrantsSnapshot, Repository  # noqa: E402
 from core.sync import SyncClient, SyncStore  # noqa: E402
 from tests.test_sync_client import FakeServer, _make_local_db  # noqa: E402
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401

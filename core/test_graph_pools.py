@@ -26,7 +26,7 @@ from core.graph.nodes import DEFAULT_REGISTRY
 from core.graph.nodes.pools import parse_columns, parse_rows
 from core.graph.spec import GraphSpec
 from core.interactive import session_from_task
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 
 РУССКИЙ = ["Пр_баутка|Прибаутка", "Беспр_кословный|Беспрекословный",

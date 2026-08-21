@@ -12,7 +12,7 @@ import sqlite3
 import unittest
 
 from core.repository import Repository
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 
 def _db_with_user(password_value: str) -> str:

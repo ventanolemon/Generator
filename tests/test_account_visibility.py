@@ -33,7 +33,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core.repository import GUEST_VISIBILITY_KEY, Repository
 from tests.test_sync_client import _make_local_db
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401

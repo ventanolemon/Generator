@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from core.repository import Repository  # noqa: E402
 from core.sync import SyncClient, SyncStore  # noqa: E402
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 
 # ---------- Фейк-сервер протокола ----------

@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import unittest
 from unittest.mock import patch
-from tests.tmpdb import temp_path  # noqa: E402
+from core.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
