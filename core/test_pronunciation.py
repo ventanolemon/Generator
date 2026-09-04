@@ -117,6 +117,22 @@ class InlineExtractionTests(unittest.TestCase):
                                 "transcription": "  "}]}
         self.assertEqual(P.inline_transcriptions(data), {})
 
+    def test_custom_audio_is_resolved_relative_to_dictionary(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            (root / "cat.wav").write_bytes(b"RIFF")
+            data = {"vocabulary": [
+                {"term": "cat", "translation": "кошка", "audio": "cat.wav"},
+                {"term": "dog", "translation": "собака", "audio": "missing.wav"},
+            ]}
+            self.assertEqual(P.inline_audio(data, root),
+                             {"cat": str((root / "cat.wav").resolve())})
+
+    def test_custom_audio_overrides_shipped_audio(self):
+        self.assertEqual(P.audio_for("cat", {"cat": "/own/cat.wav"}),
+                         "/own/cat.wav")
+
 
 class ShippedCoverageTests(unittest.TestCase):
     """Сколько поставки покрыто — числом, а не словом «есть»."""

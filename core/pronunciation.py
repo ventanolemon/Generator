@@ -177,6 +177,53 @@ def audio_of(term: str) -> Optional[str]:
     return _audio_by_head().get(_head(term))
 
 
+def inline_audio(data, base_dir: pathlib.Path | None = None) -> dict[str, str]:
+    """Извлечь пользовательские WAV из полей ``audio`` словаря.
+
+    Относительные пути считаются относительно JSON-файла словаря. Так папку
+    ``my_dictionary/`` с JSON и WAV можно переносить целиком. Идентификаторы
+    ``res:audio/...`` сохраняются как есть. Несуществующие и не-WAV файлы не
+    обещаются интерфейсу и пропускаются.
+    """
+    out: dict[str, str] = {}
+    if not isinstance(data, dict):
+        return out
+    vocabulary = data.get("vocabulary")
+    if isinstance(vocabulary, list):
+        for entry in vocabulary:
+            if not isinstance(entry, dict):
+                continue
+            term, value = entry.get("term"), entry.get("audio")
+            if not isinstance(term, str) or not isinstance(value, str):
+                continue
+            raw = value.strip()
+            if not raw:
+                continue
+            if raw.startswith(AUDIO_PREFIX):
+                path = AUDIO_DIR / raw[len(AUDIO_PREFIX):]
+                if path.is_file() and path.suffix.lower() == ".wav":
+                    out[term] = raw
+                continue
+            path = pathlib.Path(raw).expanduser()
+            if not path.is_absolute() and base_dir is not None:
+                path = base_dir / path
+            if path.is_file() and path.suffix.lower() == ".wav":
+                out[term] = str(path.resolve())
+        return out
+    units = data.get("units")
+    if isinstance(units, list):
+        for unit in units:
+            out.update(inline_audio(unit, base_dir))
+    return out
+
+
+def audio_for(term: str, inline: Mapping[str, str] | None = None) -> Optional[str]:
+    """Пользовательский эталон имеет приоритет над общей поставкой."""
+    if inline and inline.get(term):
+        return inline[term]
+    return audio_of(term)
+
+
 def inline_transcriptions(data) -> dict[str, str]:
     """
     Достать поля `"transcription"` из словаря любого поддерживаемого вида.

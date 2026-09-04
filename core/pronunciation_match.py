@@ -1,5 +1,5 @@
 """
-Проверка произношения: ближайший эталон в СЛОВАРЕ, а не абсолютный порог.
+Проверка произношения: guided matching в СЛОВАРЕ, а не распознавание речи.
 
 Правило то же, что у опечатки
 -----------------------------
@@ -25,14 +25,15 @@
 сессии, и общий сдвиг, вносимый голосом и микрофоном, на порядок
 сравнения не влияет.
 
-Правило:
+Базовое правило:
 
     произношение принято, если эталон ЦЕЛЕВОГО слова оказался ближе
     к записи студента, чем эталоны других слов словаря.
 
-Сравниваются не абсолютные величины, а порядок. Разница дикторов сдвигает
-все расстояния разом и порядок не меняет — а именно порядок и несёт
-смысл «студент сказал это слово, а не соседнее».
+В задании целевое слово уже известно. Поэтому итоговая проверка допускает,
+что из-за разницы синтетического и живого диктора цель немного уступит
+соседу. Размер уступки задаётся расстоянием между эталонами конкретного
+словаря; явно более близкое чужое слово по-прежнему отклоняется.
 
 Что здесь есть и чего нет
 -------------------------
@@ -96,9 +97,10 @@ from typing import Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 
-#: Частота, к которой приводится любой вход. Поставочные эталоны
-#: синтезированы на 11025 Гц; приводить их вверх смысла нет.
-TARGET_RATE = 11025
+#: Частота, к которой приводится любой вход. 16 кГц сохраняют полосу до 8 кГц:
+#: это существенно для тихих высокочастотных /s/, /f/, /th/ в окончаниях.
+#: Старые поставочные записи читаются без изменений и ресемплируются здесь.
+TARGET_RATE = 16000
 
 #: Окно анализа и шаг, в секундах. 25/10 мс — общепринятые значения для
 #: речи: окно короче не ловит форманты, длиннее размывает переходы.
@@ -534,6 +536,43 @@ def accepts(expected: str, recording: np.ndarray,
     if found is None or found.term != expected:
         return False
     return found.confident if require_confident else True
+
+
+def expected_match(expected: str, recording: np.ndarray,
+                   references: Mapping[str, np.ndarray], *,
+                   gaps: Optional[Mapping[str, float]] = None,
+                   tolerance_share: float = 0.01) -> tuple[Optional[Match], bool]:
+    """Сопоставить запись с учётом слова, которое попросили произнести.
+
+    Это не open-set распознавание: пользователь видит целевое слово заранее.
+    Поэтому небольшая междикторская перестановка двух ближайших эталонов не
+    должна превращать верное произношение в «вы сказали другое слово».
+
+    Цель принимается, если она победила, либо отстала от победителя не больше
+    чем на ``tolerance_share`` расстояния от её эталона до ближайшего чужого.
+    Масштаб по-прежнему приносит конкретный словарь, а не глобальный порог.
+    Явно другое слово остаётся отклонённым.
+    """
+    found = match(recording, references, gaps=gaps)
+    if found is None or expected not in references:
+        return found, False
+    if found.term == expected:
+        if found.runner_up is None:
+            return found, True
+        # Шум или произвольный звук тоже всегда имеет «первое место». Нужен
+        # хотя бы небольшой измеримый отрыв, иначе прошлое исправление
+        # действительно засчитывало почти любую запись.
+        return found, found.share >= tolerance_share
+
+    expected_distance = dtw_distance(recording, references[expected])
+    separation = (gaps or {}).get(expected)
+    if separation is None:
+        separation = separation_of(
+            expected, references, gaps if isinstance(gaps, dict) else None)
+    if not math.isfinite(separation) or separation <= 0:
+        return found, False
+    allowance = max(0.0, float(tolerance_share)) * separation
+    return found, expected_distance <= found.distance + allowance
 
 
 def reference_features(terms: Iterable[str],

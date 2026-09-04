@@ -17,7 +17,7 @@
 
 Поддерживаемые форматы словарей (words):
   Новый, одиночный юнит:
-    {"unit": 1, "title": "...", "vocabulary": [{"term": "...", "translation": "..."}, ...]}
+    {"unit": 1, "title": "...", "vocabulary": [{"term": "...", "translation": "...", "audio": "term.wav"}, ...]}
   Новый, объединённый файл:
     {"title": "...", "units": [{"unit": 1, "vocabulary": [...]}, ...]}
   Старый прямой:
@@ -159,6 +159,7 @@ class WordsSession(InteractiveTask):
         user_id: str | None = None,
         priority_recent_wrong: float = DEFAULT_PRIORITY_RECENT_WRONG,
         inline_transcriptions: dict[str, str] | None = None,
+        inline_audio: dict[str, str] | None = None,
     ):
         # _remaining: {english: russian}
         self._remaining: dict[str, str] = dict(words_dict)
@@ -172,6 +173,7 @@ class WordsSession(InteractiveTask):
         # «своё важнее общего» живёт там, а не размазано по вызывающим.
         self._inline_transcriptions: dict[str, str] = dict(
             inline_transcriptions or {})
+        self._inline_audio: dict[str, str] = dict(inline_audio or {})
         self._total: int = len(self._remaining)
         self._current: str | None = None
 
@@ -405,7 +407,7 @@ class WordsSession(InteractiveTask):
         # Кнопка «прослушать» — в РАЗБОРЕ, а не в задании: озвученное
         # английское слово было бы подсказкой к переводу, который и
         # спрашивают. Нет звука для слова — нет и кнопки.
-        sound = pronunciation.audio_of(expected)
+        sound = pronunciation.audio_for(expected, self._inline_audio)
         if sound:
             feedback.append(AudioBlock(sound, label=f"Прослушать «{expected}»"))
 
@@ -487,6 +489,8 @@ class WordsTrainerGenerator(TaskGenerator):
             # таблица поставки накладывается в core.pronunciation.
             self._inline_transcriptions = pronunciation.inline_transcriptions(
                 data)
+            self._inline_audio = pronunciation.inline_audio(
+                data, self.words_path.parent)
             # Если имя генератора не задано явно — берём заголовок из JSON
             extracted = self._extract_title(data)
             if extracted and self.name.startswith("Английский:"):
@@ -580,6 +584,7 @@ class WordsTrainerGenerator(TaskGenerator):
             user_id=user_id,
             priority_recent_wrong=self.priority_recent_wrong,
             inline_transcriptions=getattr(self, "_inline_transcriptions", None),
+            inline_audio=getattr(self, "_inline_audio", None),
         )
 
 
@@ -792,6 +797,7 @@ class PronunciationGenerator(TaskGenerator):
         self.words_path = Path(words_path)
         self._terms: list[str] | None = None
         self._inline: dict[str, str] = {}
+        self._audio: dict[str, str] = {}
 
     def _load(self) -> list[str]:
         """Термины этого словаря, у которых есть эталон произношения."""
@@ -800,7 +806,9 @@ class PronunciationGenerator(TaskGenerator):
         data = _read_json_lenient(self.words_path)
         words = WordsTrainerGenerator._flatten_words(data)
         self._inline = pronunciation.inline_transcriptions(data)
-        self._terms = [term for term in words if pronunciation.audio_of(term)]
+        self._audio = pronunciation.inline_audio(data, self.words_path.parent)
+        self._terms = [term for term in words
+                       if pronunciation.audio_for(term, self._audio)]
         return self._terms
 
     def _neighbourhood(self, term: str, terms: list[str]) -> list[str]:
@@ -836,7 +844,7 @@ class PronunciationGenerator(TaskGenerator):
         # произношение, и услышать образец до попытки это и есть
         # упражнение. В словарном диктанте та же кнопка стоит в разборе,
         # потому что там она выдала бы ответ.
-        sound = pronunciation.audio_of(term)
+        sound = pronunciation.audio_for(term, self._audio)
         if sound:
             statement.append(AudioBlock(sound, label=f"Эталон «{term}»"))
 
@@ -844,6 +852,7 @@ class PronunciationGenerator(TaskGenerator):
             term=term,
             vocabulary=tuple(self._neighbourhood(term, terms)),
             transcription=ipa,
+            audio=tuple(self._audio.items()),
             mode=CheckMode.STRICT,
         )
         return StaticTask(

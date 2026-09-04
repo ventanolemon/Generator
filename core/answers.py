@@ -1910,12 +1910,11 @@ class VoiceSpec(AnswerSpec):
 
     Правило приёма
     --------------
-    То же правило окрестности, что у опечатки и у допуска, только на
-    звуке (`core.pronunciation_match`): запись принимается, если эталон
-    целевого слова оказался к ней БЛИЖЕ, чем эталоны остальных слов
-    словаря. Абсолютного порога нет намеренно — его пришлось бы
-    калибровать под голос и микрофон, а порядок близости общий сдвиг
-    тракта записи не меняет.
+    Это guided matching: целевое слово пользователю уже показано. Запись
+    принимается, если его эталон оказался ближайшим либо лишь немного
+    уступил ближайшему соседу. Допустимое отставание измеряется долей
+    расстояния между эталонами этого словаря, а не абсолютным порогом,
+    который пришлось бы калибровать под голос и микрофон.
 
     Отсюда обязательное поле `vocabulary`: без окрестности правило не
     определено. Спецификация с одним словом принимает что угодно, и это
@@ -1923,17 +1922,15 @@ class VoiceSpec(AnswerSpec):
 
     Что означают режимы
     -------------------
-    * мягкий  — достаточно первого места;
-    * строгий — первое место И отрыв от следующего (`Match.confident`).
-
-    Строгий режим здесь не «придирчивее», а осторожнее: он отказывается
-    судить там, где выбор между двумя словами случаен.
+    Оба режима учитывают известную цель и допускают небольшое второе место:
+    синтетический голос не должен штрафовать живого диктора. Строгий режим
+    дополнительно требует хотя бы один чужой эталон для сравнения.
 
     Отказ судить — не «неверно»
     ---------------------------
     `Reason.UNCERTAIN` заведён ради этого различия. Сказать студенту
-    «неверно» там, где система просто не расслышала (нет эталонов, отрыв
-    в пределах шума), — значит соврать о его ответе. Вердикт при этом
+    «неверно» там, где система просто не может сравнить (нет эталонов), —
+    значит соврать о его ответе. Вердикт при этом
     всё равно `accepted = False`: зачесть неразобранное тоже нельзя.
 
     Чего здесь НЕТ
@@ -1964,6 +1961,9 @@ class VoiceSpec(AnswerSpec):
 
     transcription: str = ""
     """IPA для показа. К проверке отношения не имеет — только к подсказке."""
+
+    audio: Tuple[Tuple[str, str], ...] = ()
+    """Пользовательские эталоны ``(термин, WAV)`` для этого словаря."""
 
     mode: CheckMode = DEFAULT_MODE
     tuning: dict = field(default_factory=dict)
@@ -2016,22 +2016,25 @@ class VoiceSpec(AnswerSpec):
             return Verdict(False, active, Reason.UNCERTAIN, shown,
                            "Не с чем сравнить: эталонов произношения нет.")
 
-        found = matching.match(recording, references, gaps=gaps)
+        found, expected_accepted = matching.expected_match(
+            self.term, recording, references, gaps=gaps)
         if found is None:
             return Verdict(False, active, Reason.UNCERTAIN, shown,
                            "Запись не удалось сопоставить.")
 
-        if found.term != self.term:
+        if not expected_accepted:
             return Verdict(
                 False, active, Reason.MISMATCH, shown,
                 f"Больше похоже на «{found.term}».")
 
-        if active is CheckMode.STRICT and not found.confident:
+        if active is CheckMode.STRICT and found.runner_up is None:
             return Verdict(
                 False, active, Reason.UNCERTAIN, shown,
-                f"Похоже на «{self.term}», но почти так же — на "
-                f"«{found.runner_up}». Повторите отчётливее.")
+                "Недостаточно эталонов для надёжного сравнения.")
 
+        # Задание известно заранее, поэтому это guided matching, а не попытка
+        # угадать произвольное слово. Небольшое преимущество соседнего
+        # синтетического голоса больше не штрафует живого диктора.
         return Verdict(True, active, Reason.EXACT, shown)
 
     # ---------- показ ----------
@@ -2043,7 +2046,7 @@ class VoiceSpec(AnswerSpec):
 
         head = f"{self.term} {self.transcription}".strip()
         blocks: List[Block] = [TextBlock(head)]
-        sound = pronunciation.audio_of(self.term)
+        sound = pronunciation.audio_for(self.term, dict(self.audio))
         if sound:
             blocks.append(AudioBlock(sound, label=f"Эталон «{self.term}»"))
         return blocks
@@ -2068,7 +2071,7 @@ class VoiceSpec(AnswerSpec):
         слово неотличимо от соседа по словарю, — пример отсеется сам.
         """
         from . import pronunciation
-        sound = pronunciation.audio_of(self.term)
+        sound = pronunciation.audio_for(self.term, dict(self.audio))
         return [sound] if sound else []
 
     # ---------- вспомогательное ----------
@@ -2095,7 +2098,8 @@ class VoiceSpec(AnswerSpec):
         terms = list(dict.fromkeys((self.term, *self.vocabulary)))
         built = matching.reference_features(
             [t for t in terms if t],
-            lambda term: _recording_source(pronunciation.audio_of(term) or ""))
+            lambda term: _recording_source(
+                pronunciation.audio_for(term, dict(self.audio)) or ""))
         # Именно ЭТОТ словарь, а не его копия: в него пишет `match`, и
         # возврат нового каждый раз молча выбрасывал бы накопленное.
         prepared = (built, {})
@@ -2108,6 +2112,8 @@ class VoiceSpec(AnswerSpec):
             out["vocabulary"] = list(self.vocabulary)
         if self.transcription:
             out["transcription"] = self.transcription
+        if self.audio:
+            out["audio"] = [list(item) for item in self.audio]
         return out
 
 
@@ -2472,6 +2478,7 @@ def _build_voice(data: dict) -> VoiceSpec:
         term=str(data.get("term", "")),
         vocabulary=tuple(data.get("vocabulary") or ()),
         transcription=str(data.get("transcription", "")),
+        audio=tuple((str(k), str(v)) for k, v in (data.get("audio") or ())),
         **_common(data))
 
 
