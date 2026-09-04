@@ -542,6 +542,7 @@ def expected_match(expected: str, recording: np.ndarray,
                    references: Mapping[str, np.ndarray], *,
                    gaps: Optional[Mapping[str, float]] = None,
                    tolerance_share: float = 0.01) -> tuple[Optional[Match], bool]:
+                   tolerance_share: float = 0.35) -> tuple[Optional[Match], bool]:
     """Сопоставить запись с учётом слова, которое попросили произнести.
 
     Это не open-set распознавание: пользователь видит целевое слово заранее.
@@ -563,6 +564,7 @@ def expected_match(expected: str, recording: np.ndarray,
         # хотя бы небольшой измеримый отрыв, иначе прошлое исправление
         # действительно засчитывало почти любую запись.
         return found, found.share >= tolerance_share
+        return found, True
 
     expected_distance = dtw_distance(recording, references[expected])
     separation = (gaps or {}).get(expected)

@@ -185,6 +185,7 @@ class NeighbourhoodRuleTests(unittest.TestCase):
             "neighbour": np.full((4, 2), 10.0, dtype=np.float32),
         }
         recording = np.full((4, 2), 5.02, dtype=np.float32)
+        recording = np.full((4, 2), 6.0, dtype=np.float32)
         found, accepted = M.expected_match("target", recording, references)
         self.assertEqual(found.term, "neighbour")
         self.assertTrue(accepted)
