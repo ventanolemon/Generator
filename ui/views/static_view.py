@@ -11,12 +11,17 @@ EXPORTABLE — появляется кнопка прямого экспорта
 
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QHBoxLayout, QPushButton, QFileDialog, QMessageBox
+    QHBoxLayout, QLabel, QPushButton, QFileDialog, QMessageBox, QSpinBox
 )
 
 from core import Capability, StaticTask, TaskGenerator
 from ui.exporter import export_tasks_to_docx
+from ui.variants import generate_variants, was_interrupted
+from ui.widgets.answer_placement import AnswerPlacementBox
 from .base_view import BaseTaskView
+
+#: Верхняя граница счётчика вариантов при выгрузке.
+MAX_VARIANTS = 50
 
 
 class StaticTaskView(BaseTaskView):
@@ -47,6 +52,26 @@ class StaticTaskView(BaseTaskView):
             self.export_btn.setEnabled(False)
             self.export_btn.clicked.connect(self._on_export)
             row.addWidget(self.export_btn)
+
+            # Сколько вариантов положить в файл. До этого выгружалось
+            # ровно то, что на экране, — один вариант, — и собрать лист
+            # на группу было нечем: приходилось жать «Экспорт» тридцать
+            # раз в тридцать файлов и сшивать их вручную.
+            row.addWidget(QLabel("вариантов:", self))
+            self.variants_spin = QSpinBox(self)
+            self.variants_spin.setRange(1, MAX_VARIANTS)
+            self.variants_spin.setValue(1)
+            self.variants_spin.setToolTip(
+                "1 — выгрузить то, что показано на экране. Больше — "
+                "породить столько же новых вариантов и положить их в один "
+                "файл. Показанное на экране в этом случае не участвует: "
+                "варианты порождаются заново, чтобы их было ровно столько, "
+                "сколько запрошено."
+            )
+            row.addWidget(self.variants_spin)
+
+            self.placement_box = AnswerPlacementBox(self, default="under")
+            row.addWidget(self.placement_box)
 
         row.addStretch()
 
@@ -88,12 +113,31 @@ class StaticTaskView(BaseTaskView):
         )
         if not path:
             return
+
+        # Путь к файлу спрашивается ДО генерации: отменённый диалог
+        # сохранения не должен стоить пользователю четырёх минут ожидания
+        # на медленном разделе.
+        asked = self.variants_spin.value()
+        if asked == 1:
+            tasks = [self.current_task]
+        else:
+            tasks = generate_variants(self, self.generator, asked,
+                                      label="Готовим варианты для выгрузки")
+            note = was_interrupted(asked, len(tasks))
+            if note:
+                QMessageBox.information(self, "Экспорт", note)
+            if not tasks:
+                return
+
         try:
             export_tasks_to_docx(
-                [self.current_task], path,
+                tasks, path,
                 title=self.generator.name,
-                with_answers=True,
+                answers=self.placement_box.placement(),
             )
-            QMessageBox.information(self, "Экспорт", "Готово.")
+            QMessageBox.information(
+                self, "Экспорт",
+                "Готово." if len(tasks) == 1
+                else f"Готово: {len(tasks)} вариантов.")
         except Exception as e:
             QMessageBox.critical(self, "Экспорт", f"Ошибка: {e}")

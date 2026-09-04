@@ -12,11 +12,34 @@ GeneratorWindow получает фабрику build_registry — чтобы п
 """
 
 from __future__ import annotations
+import faulthandler
+import os
 import sys
 
 from PyQt6.QtWidgets import QApplication
 
-from const import DB_PATH, WORDS_DIR
+# Падение в Qt (обращение к удалённому C++-объекту) убивает процесс БЕЗ
+# следа: Python-исключения нет, в консоли только код выхода вроде
+# 0xC0000374. Отчёт «упало при правке формулы» без стека не воспроизвести
+# и не починить.
+#
+# faulthandler печатает стек ПИТОНОВСКОЙ стороны в момент фатального
+# сигнала — этого хватает, чтобы назвать место. Стоит он ничего:
+# обработчик сигналов ставится один раз при старте.
+#
+# GEN_CRASH_LOG=путь — дописывать след в файл, а не только в stderr: у
+# собранного приложения консоли нет, а падение случается именно там.
+_CRASH_LOG = os.environ.get("GEN_CRASH_LOG", "").strip()
+if _CRASH_LOG:
+    try:
+        _crash_file = open(_CRASH_LOG, "a", encoding="utf-8")
+        faulthandler.enable(file=_crash_file)
+    except OSError:
+        faulthandler.enable()          # не смогли открыть файл — хотя бы stderr
+else:
+    faulthandler.enable()
+
+from const import DB_PATH, WORDS_DIR, ensure_data_dir
 from core import Repository, WordStatsStore
 from core.admin import AdminClient
 from core.analytics import AnalyticsClient
@@ -30,7 +53,9 @@ from core.sync import RepositorySyncListener, SyncClient, SyncStore
 from core.updates import (
     PackageInstaller, Updater, default_home, load_installed,
 )
-from bootstrap import build_registry, sync_database
+from bootstrap import (
+    build_registry, sync_database, report_unserved_partitions,
+)
 from ui.app_context import AppContext
 from ui.theme import apply_theme
 from ui.windows import AuthWindow, GeneratorWindow
@@ -38,6 +63,16 @@ from ui.windows import AuthWindow, GeneratorWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
+    # Рабочая база — ОТДЕЛЬНО от поставки, и создаётся при первом запуске
+    # копированием того, что лежит в `resources/`. Раньше приложение
+    # писало прямо туда: заводило таблицы, переводило журнал в WAL,
+    # применяло миграции — то есть правило файл, который раздаётся
+    # пользователям. Отсюда же росла ведущая версия дефекта «database
+    # disk image is malformed».
+    #
+    # Данные существующих установок при этом не теряются: прежняя рабочая
+    # база лежала ровно там, откуда теперь копируют, — она и переедет.
+    ensure_data_dir()
     repo = Repository(DB_PATH)
 
     # Установленные пакеты узлов — ДО всего остального: они дополняют общий
@@ -153,11 +188,19 @@ def main() -> int:
         keyring=updater.keyring, state=updater.state)
 
     def make_registry():
-        return build_registry(
+        registry = build_registry(
             repo, WORDS_DIR,
             stats_store=stats_store,
             user_id_provider=user_id_provider,
         )
+        # Номер раздела — единственное, что связывает запись в БД с кодом,
+        # и до сих пор за целостностью этой связи никто не следил: раздел,
+        # которому нечем открыться, обнаруживался в момент, когда
+        # преподаватель нажал «Сгенерировать». Проверка на старте стоит
+        # один проход по списку разделов.
+        for line in report_unserved_partitions(repo, registry):
+            print(f"[разделы] {line}", file=sys.stderr)
+        return registry
 
     context = AppContext(
         repo=repo,

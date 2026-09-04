@@ -15,13 +15,20 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QFileDialog, QMessageBox,
-    QSizePolicy
+    QSizePolicy, QSpinBox
 )
 
 from core import Capability, StaticTask
 from ui.utils import render_blocks
 from ui.exporter import export_tasks_to_docx
+from ui.variants import generate_variants, was_interrupted
+from ui.widgets.answer_placement import AnswerPlacementBox
 from .base_view import BaseTaskView
+
+#: Верхняя граница счётчика. Не «сколько выдержит система», а сколько
+#: осмысленно раздать: больше полусотни вариантов одного задания за раз
+#: не печатают, а промах в поле ввода на порядок стоит минут ожидания.
+MAX_AT_ONCE = 50
 
 
 class TableTaskView(BaseTaskView):
@@ -40,16 +47,41 @@ class TableTaskView(BaseTaskView):
 
     def build_controls(self, row: QHBoxLayout) -> None:
         self.gen_btn = QPushButton("Сгенерировать", self)
+
+        # Сколько вариантов добавить за раз. До этого кнопка давала РОВНО
+        # ОДНО задание, и лист на тридцать вариантов собирался тридцатью
+        # кликами — при том что на вебе то же самое делается числом в
+        # поле. Два клиента расходились в поведении молча.
+        row.addWidget(self.gen_btn)
+        self.count_spin = QSpinBox(self)
+        self.count_spin.setRange(1, MAX_AT_ONCE)
+        self.count_spin.setValue(1)
+        self.count_spin.setToolTip(
+            "Сколько вариантов добавить за одно нажатие. Уже набранные "
+            "строки остаются: таблица накапливается, а не замещается."
+        )
+        self.count_spin.setSuffix(" шт.")
+        row.addWidget(self.count_spin)
+
         self.export_btn = QPushButton("Экспорт в Word", self)
         self.show_answers_chk = QCheckBox("Показывать ответы", self)
-        row.addWidget(self.gen_btn)
         row.addWidget(self.export_btn)
+        # Галочка осталась — она про ЭКРАН, про колонку «Ответ» в
+        # таблице. Список рядом — про ФАЙЛ. Это разные вопросы, и
+        # связывать их было ошибкой: преподаватель, скрывший ответы на
+        # экране от заглядывающего студента, получал лист без ключа.
         row.addWidget(self.show_answers_chk)
+        self.placement_box = AnswerPlacementBox(self)
+        row.addWidget(self.placement_box)
+        self.count_label = QLabel("", self)
+        self.count_label.setProperty("class", "muted")
+        row.addWidget(self.count_label)
         row.addStretch()
 
         self.gen_btn.clicked.connect(self._on_generate)
         self.export_btn.clicked.connect(self._on_export)
         self.show_answers_chk.stateChanged.connect(self._refresh_answers_column)
+        self._update_count_label()
 
     def build_center(self, root: QVBoxLayout) -> None:
         self.table = QTableWidget(0, 4, self)
@@ -70,11 +102,37 @@ class TableTaskView(BaseTaskView):
         root.addWidget(self.table, stretch=1)
 
     def _on_generate(self) -> None:
-        task = self.generator.generate()
-        if not isinstance(task, StaticTask):
-            QMessageBox.warning(self, "Ошибка",
-                                f"Генератор вернул {type(task).__name__}.")
+        asked = self.count_spin.value()
+        if asked == 1:
+            # Один вариант — прежний путь, без окна хода и без разбора
+            # прерывания: прерывать там нечего, а сообщение о том, что
+            # генератор вернул не то, здесь конкретнее общего пропуска.
+            task = self.generator.generate()
+            if not isinstance(task, StaticTask):
+                QMessageBox.warning(self, "Ошибка",
+                                    f"Генератор вернул {type(task).__name__}.")
+                return
+            self._append_task(task)
+            self._update_count_label()
             return
+
+        produced = generate_variants(self, self.generator, asked)
+        for task in produced:
+            self._append_task(task)
+        self._update_count_label()
+        note = was_interrupted(asked, len(produced))
+        if note:
+            QMessageBox.information(self, "Генерация", note)
+        elif not produced:
+            QMessageBox.warning(
+                self, "Ошибка",
+                "Генератор не вернул ни одного задания нужного вида.")
+
+    def _update_count_label(self) -> None:
+        total = len(self.tasks)
+        self.count_label.setText(f"в таблице: {total}" if total else "")
+
+    def _append_task(self, task: StaticTask) -> None:
         self.tasks.append(task)
         row = self.table.rowCount()
         self.table.insertRow(row)
@@ -150,6 +208,7 @@ class TableTaskView(BaseTaskView):
         self.table.removeRow(idx)
         for r in range(self.table.rowCount()):
             self.table.setItem(r, 0, QTableWidgetItem(str(r + 1)))
+        self._update_count_label()
 
     def _on_export(self) -> None:
         if not self.tasks:
@@ -163,7 +222,7 @@ class TableTaskView(BaseTaskView):
         try:
             export_tasks_to_docx(self.tasks, path,
                                  title=self.generator.name,
-                                 with_answers=self.show_answers_chk.isChecked())
+                                 answers=self.placement_box.placement())
             QMessageBox.information(self, "Экспорт", "Готово.")
         except Exception as e:
             QMessageBox.critical(self, "Экспорт", f"Ошибка: {e}")

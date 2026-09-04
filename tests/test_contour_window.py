@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import time
 import unittest
+from core.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -72,7 +73,7 @@ class ContourWindowTestBase(unittest.TestCase):
         self.server = FakeContourServer()
         self.repo = _FakeRepo([Subject(1, "Математика", ""),
                                Subject(2, "Физика", "")])
-        self.settings = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        self.settings = Settings(QSettings(temp_path(suffix=".ini"),
                                            QSettings.Format.IniFormat))
 
     def _client(self, role="teacher", base_url="http://fake"):

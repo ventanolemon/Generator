@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from core.graph import (
     DEFAULT_REGISTRY, ExecContext, GraphExecutor, GraphSpec, PortType,
 )
+from core.tmpdb import temp_path  # noqa: E402
 
 try:
     import PyQt6  # noqa: F401
@@ -82,8 +83,7 @@ class ImageFileTests(unittest.TestCase):
     def _png(self):
         import tempfile
         from PIL import Image
-        fd, path = tempfile.mkstemp(suffix=".png")
-        os.close(fd)
+        path = temp_path(suffix=".png")
         Image.new("RGB", (20, 20), "blue").save(path)
         return path
 

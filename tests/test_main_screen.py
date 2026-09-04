@@ -9,8 +9,8 @@ E1 плана docs/ui_rework_plan.md — реструктуризация гла
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
+from core.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -43,7 +43,7 @@ class MainScreenTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def _window(self, with_partitions=True):
-        db = tempfile.mktemp(suffix=".db")
+        db = temp_path(suffix=".db")
         self._db = db
         _make_local_db(db)
         repo = Repository(db)
@@ -57,7 +57,7 @@ class MainScreenTests(unittest.TestCase):
                                   constracted=4, generation_params={})
             repo.upsert_partition(subject_id=1, name="Статика",
                                   constracted=3, generation_params={})
-        s = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        s = Settings(QSettings(temp_path(suffix=".ini"),
                                QSettings.Format.IniFormat))
         ctx = AppContext(repo=repo, settings=s,
                          user_id_provider=lambda: "u",
@@ -114,7 +114,7 @@ class AuthRegisterLinkTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def _repo(self):
-        db = tempfile.mktemp(suffix=".db")
+        db = temp_path(suffix=".db")
         self._db = db
         conn = sqlite3.connect(db)
         conn.execute('CREATE TABLE users (login TEXT, password TEXT, '

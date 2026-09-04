@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import time
 import unittest
+from core.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -44,7 +45,7 @@ class SyncWindowTestBase(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        self.db_path = tempfile.mktemp(suffix=".db")
+        self.db_path = temp_path(suffix=".db")
         _make_local_db(self.db_path)
         self.repo = Repository(self.db_path)
         self.store = SyncStore(self.db_path)
@@ -54,7 +55,7 @@ class SyncWindowTestBase(unittest.TestCase):
         self.client = SyncClient(self.repo, self.store,
                                  base_url="http://fake-server",
                                  transport=self.server.transport)
-        self.settings = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        self.settings = Settings(QSettings(temp_path(suffix=".ini"),
                                            QSettings.Format.IniFormat))
         self.settings.set_base_url("http://fake-server")
 

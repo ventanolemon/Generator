@@ -22,8 +22,33 @@ import sys
 from typing import List, Literal
 
 from core import StaticTask
+from core.export_api import ANSWER_PLACEMENTS, normalise_placement
 
 ExportMode = Literal["auto", "image", "native"]
+
+#: Размещения ответов — те же, что на вебе, и из того же места.
+#: Перечислять их здесь заново значило бы завести второй список, который
+#: однажды разойдётся с первым.
+PLACEMENTS = ANSWER_PLACEMENTS
+
+
+def _placement(answers: str | None, with_answers: bool | None,
+               default: str = "file_end") -> str:
+    """
+    Свести две настройки к одной.
+
+    Правило то же, что на сервере (`normalise_placement`), с одной
+    поправкой: там прежним поведением было «под заданием», здесь — «в
+    конце файла», потому что настольный бэкенд всегда раскладывал так.
+    Совместимость означает не «как у соседа», а «как было ЗДЕСЬ».
+    """
+    if answers:
+        return normalise_placement(answers, None)
+    if with_answers is False:
+        return "hidden"
+    if with_answers is True:
+        return default
+    return default
 
 
 def _can_use_native() -> bool:
@@ -41,24 +66,36 @@ def export_tasks_to_docx(
     tasks: List[StaticTask],
     path: str,
     title: str = "Задания",
-    with_answers: bool = True,
+    with_answers: bool | None = None,
     mode: ExportMode = "auto",
+    answers: str | None = None,
 ) -> None:
-    """Экспорт списка задач в Word. Использует доступный бэкенд."""
+    """
+    Экспорт списка задач в Word. Использует доступный бэкенд.
+
+    `answers` — размещение ответов: under / variant_end / file_end /
+    hidden. `with_answers` оставлен ради вызывающих, написанных до
+    появления размещений: `True` означает прежнее поведение этого
+    бэкенда — ответы в конце файла.
+    """
     backend = _pick_backend(mode)
-    backend.export_tasks(tasks, path, title=title, with_answers=with_answers)
+    backend.export_tasks(tasks, path, title=title,
+                         answers=_placement(answers, with_answers))
 
 
 def export_test_to_docx(
     variants: List[StaticTask],
     path: str,
     title: str = "Тест",
-    with_answers: bool = False,
+    with_answers: bool | None = None,
     mode: ExportMode = "auto",
+    answers: str | None = None,
 ) -> None:
     """Экспорт нескольких вариантов теста в Word."""
     backend = _pick_backend(mode)
-    backend.export_test(variants, path, title=title, with_answers=with_answers)
+    backend.export_test(variants, path, title=title,
+                        answers=_placement(answers, with_answers,
+                                           default="hidden"))
 
 
 def _pick_backend(mode: ExportMode):
@@ -86,4 +123,5 @@ __all__ = [
     "export_tasks_to_docx",
     "export_test_to_docx",
     "ExportMode",
+    "PLACEMENTS",
 ]

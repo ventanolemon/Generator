@@ -740,5 +740,17 @@ def apply_theme(app, name: str = DEFAULT_THEME_NAME) -> None:
     `name` — "dark" | "light" (иное имя тихо откатывается к "dark").
     Точка вызова — main.py после создания QApplication:
         apply_theme(app, settings.get_theme())
+
+    Холст графа перекрашивается отсюда же: QSS на QGraphicsScene не
+    действует, её цвета — кисти и перья, поставленные кодом рисования.
+    Пока этого вызова не было, холст оставался тёмным на светлой теме.
+    Импорт локальный: холст не должен зависеть от темы, зависимость идёт
+    в одну сторону.
     """
-    app.setStyleSheet(build_qss(current_palette(name)))
+    palette = current_palette(name)
+    app.setStyleSheet(build_qss(palette))
+    try:
+        from ui.editors.graph_canvas import style as canvas_style
+    except ImportError:
+        return          # сборка без редактора графа — тема всё равно применена
+    canvas_style.apply_palette(palette)

@@ -30,7 +30,8 @@ from core import (
 from ui.app_context import AppContext
 from ui.widgets import TopBar
 from ui.views import (
-    StaticTaskView, TableTaskView, InteractiveTaskView, TestExportView
+    CheckableTaskView, StaticTaskView, TableTaskView, InteractiveTaskView,
+    TestExportView,
 )
 from ui.editors import create_editor, PartitionEditor
 from ui.utils import clear_layout
@@ -904,6 +905,13 @@ class GeneratorWindow(QMainWindow):
     def _pick_view(self, generator: TaskGenerator, view_kind: str) -> QWidget:
         if Capability.INTERACTIVE in generator.capabilities:
             return InteractiveTaskView(generator, self)
+        # Проверяемое задание умеет ОБЕ формы, и выбор за тем, кто открыл
+        # раздел: преподавателю нужны варианты и выгрузка, студенту —
+        # проверка. Раньше десктоп смотрел только на INTERACTIVE, и
+        # физику здесь можно было лишь подсмотреть, тогда как на вебе у
+        # неё есть переключатель «Смотреть / Решать».
+        if Capability.CHECKABLE in generator.capabilities:
+            return CheckableTaskView(generator, self)
         if view_kind == "table":
             return TableTaskView(generator, self)
         if view_kind == "test":

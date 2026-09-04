@@ -11,16 +11,16 @@ list_subjects(owned_by=...). NB: это НЕ access-control — настояще
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
 
 from core.repository import Repository
 from core.sync import SyncClient, SyncStore
 from tests.test_sync_client import FakeServer, _make_local_db
+from core.tmpdb import temp_path  # noqa: E402
 
 
 def _db_with_subjects() -> str:
-    path = tempfile.mktemp(suffix=".db")
+    path = temp_path(suffix=".db")
     _make_local_db(path)
     repo = Repository(path)
     repo.ensure_hidden_columns()
@@ -40,7 +40,7 @@ def _db_with_subjects() -> str:
 
 class OwnerColumnTests(unittest.TestCase):
     def test_ensure_owner_idempotent(self):
-        path = tempfile.mktemp(suffix=".db")
+        path = temp_path(suffix=".db")
         _make_local_db(path)
         repo = Repository(path)
         repo.ensure_owner_column()
@@ -72,7 +72,7 @@ class OwnerColumnTests(unittest.TestCase):
 
     def test_owner_survives_old_db_without_column(self):
         # list_subjects по БД без колонки owner — не падает, owner=None.
-        path = tempfile.mktemp(suffix=".db")
+        path = temp_path(suffix=".db")
         _make_local_db(path)
         with sqlite3.connect(path) as conn:
             conn.execute("INSERT INTO Subjects (id, subject_name, pra_subject) "
@@ -89,7 +89,7 @@ class OwnerSyncRoundTripTests(unittest.TestCase):
     """owner_user_id, присланный сервером в pull, применяется локально."""
 
     def setUp(self):
-        self.db = tempfile.mktemp(suffix=".db")
+        self.db = temp_path(suffix=".db")
         _make_local_db(self.db)
         self.repo = Repository(self.db)
         self.repo.ensure_owner_column()
@@ -154,7 +154,7 @@ class OwnerScopeWindowTests(unittest.TestCase):
             def get(self, *a, **k):
                 raise KeyError("нет")
 
-        s = Settings(QSettings(tf.mktemp(suffix=".ini"),
+        s = Settings(QSettings(temp_path(suffix=".ini"),
                                QSettings.Format.IniFormat))
         ctx = AppContext(repo=repo, settings=s,
                          user_id_provider=lambda: login,

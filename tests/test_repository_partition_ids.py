@@ -24,7 +24,6 @@ rowid (1019+) — свободный в момент сева, но не защ�
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
 import warnings
 from pathlib import Path
@@ -32,12 +31,12 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from core import GeneratorRegistry, Repository
+from core.tmpdb import temp_path  # noqa: E402
 
 
 def _fresh_repo() -> tuple[Repository, str]:
     """Пустая БД со схемой Subjects/Partitions во временном файле."""
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
+    path = temp_path(suffix=".db")
     conn = sqlite3.connect(path)
     conn.executescript("""
         CREATE TABLE Subjects (

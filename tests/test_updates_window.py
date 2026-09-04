@@ -31,6 +31,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from core.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -360,7 +361,7 @@ class NoServerTests(UpdatesWindowTestBase):
 
 def _ini_settings():
     from PyQt6.QtCore import QSettings
-    return QSettings(tempfile.mktemp(suffix=".ini"), QSettings.Format.IniFormat)
+    return QSettings(temp_path(suffix=".ini"), QSettings.Format.IniFormat)
 
 
 if __name__ == "__main__":

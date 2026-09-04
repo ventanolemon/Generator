@@ -9,8 +9,8 @@ B1 плана docs/ui_rework_plan.md — диалог технических н�
 from __future__ import annotations
 import os
 import sqlite3
-import tempfile
 import unittest
+from core.tmpdb import temp_path  # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -32,7 +32,7 @@ if HAS_QT:
 
 
 def _empty_db() -> str:
-    path = tempfile.mktemp(suffix=".db")
+    path = temp_path(suffix=".db")
     conn = sqlite3.connect(path)
     conn.executescript(
         "CREATE TABLE Subjects(id INTEGER PRIMARY KEY, subject_name TEXT, "
@@ -56,7 +56,7 @@ class SettingsWindowTests(unittest.TestCase):
         repo = Repository(db)
         store = SyncStore(db)
         self.client = SyncClient(repo, store, base_url="")
-        self.settings = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        self.settings = Settings(QSettings(temp_path(suffix=".ini"),
                                            QSettings.Format.IniFormat))
         return AppContext(repo=repo, settings=self.settings,
                           user_id_provider=lambda: "u1",
@@ -107,7 +107,7 @@ class AccountTabTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def _ctx_with_user(self, uid="t"):
-        db = tempfile.mktemp(suffix=".db")
+        db = temp_path(suffix=".db")
         self._db = db
         conn = sqlite3.connect(db)
         conn.execute(
@@ -118,7 +118,7 @@ class AccountTabTests(unittest.TestCase):
         conn.commit()
         conn.close()
         self.repo = Repository(db)
-        settings = Settings(QSettings(tempfile.mktemp(suffix=".ini"),
+        settings = Settings(QSettings(temp_path(suffix=".ini"),
                                       QSettings.Format.IniFormat))
         return AppContext(repo=self.repo, settings=settings,
                           user_id_provider=lambda: uid,

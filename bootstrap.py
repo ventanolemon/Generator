@@ -22,6 +22,7 @@ from core import (
     Capability, GeneratorRegistry, Repository, TaskGenerator,
     GroupGenerator, TestGenerator, WordStatsStore,
 )
+from core import partition_ids
 
 from exercises.linal.generators import (
     Linal2DGenerator, Linal3DGenerator,
@@ -115,17 +116,198 @@ def sync_database(repo: Repository, words_dir: Path) -> None:
             graph=entry["graph"],
         )
 
-    # Английские словари: 1000+i → раздел английского
+    _repair_physics_constructor(repo)
+
+    # Английские словари. Номер выводится из ИМЕНИ файла (см.
+    # core/partition_ids.py) — раньше он выводился из места файла в
+    # отсортированном списке, и один и тот же номер означал разные словари
+    # на сервере (20 файлов) и на десктопе (12).
     if words_dir.exists():
-        for i, path in enumerate(sorted(words_dir.glob("*.json"))):
-            pid = 1000 + i
-            # Имя зависит от типа: для предложений — пометим как «(предложения)»
-            display = _english_display_name(path)
+        from exercises.english.generators import _detect_kind
+        _migrate_legacy_english_ids(repo, words_dir)
+        for path in sorted(words_dir.glob("*.json")):
             repo.ensure_code_partition(
-                partition_id=pid,
+                partition_id=partition_ids.english_words_id(path.stem),
                 subject_id=2,
-                name=display,
+                name=_english_display_name(path),
             )
+            # Разбор транскрипции — ВТОРОЙ раздел того же файла, в своей
+            # полосе номеров. Рядом со словарём, а не вместо него: это
+            # другое упражнение на том же материале.
+            if _detect_kind(path) == "words" and _has_transcriptions(path):
+                repo.ensure_code_partition(
+                    partition_id=partition_ids.english_transcription_id(
+                        path.stem),
+                    subject_id=2,
+                    name=_english_transcription_name(path),
+                )
+            # Произношение — ТРЕТИЙ раздел того же файла. Заводится только
+            # там, где есть звук: правило приёма сравнивает запись с
+            # эталонами, и раздел без них обещал бы проверку, которой нет.
+            if _detect_kind(path) == "words" and _has_audio(path):
+                repo.ensure_code_partition(
+                    partition_id=partition_ids.english_pronunciation_id(
+                        path.stem),
+                    subject_id=2,
+                    name=_english_pronunciation_name(path),
+                )
+        _drop_stale_english_partitions(repo, words_dir)
+
+
+def _english_transcription_name(path: Path) -> str:
+    """Имя раздела «выбери транскрипцию» для этого словаря."""
+    return f"Английский: {path.stem} (транскрипция)"
+
+
+def _english_pronunciation_name(path: Path) -> str:
+    """Имя раздела «произнесите вслух» для этого словаря."""
+    return f"Английский: {path.stem} (произношение)"
+
+
+def _has_audio(path: Path) -> bool:
+    """
+    Есть ли в словаре хоть один термин с готовым эталоном произношения.
+
+    Проверка того же рода, что `_has_transcriptions`, и по той же причине:
+    раздел, который на первом же клике говорит «здесь ничего нет», хуже
+    отсутствующего раздела.
+    """
+    from exercises.english.generators import (
+        WordsTrainerGenerator, _read_json_lenient,
+    )
+    from core import pronunciation
+    try:
+        data = _read_json_lenient(path)
+        words = WordsTrainerGenerator._flatten_words(data)
+    except Exception:                       # noqa: BLE001
+        return False
+    return any(pronunciation.audio_of(term) for term in words)
+
+
+def _has_transcriptions(path: Path) -> bool:
+    """
+    Есть ли в словаре хоть один термин с известной транскрипцией.
+
+    Проверка не косметическая: раздел без единого термина показывал бы
+    задание «здесь ничего нет», а раздел, которого нет, ничего не
+    обещает. Пустых обещаний в списке у преподавателя быть не должно.
+    """
+    from exercises.english.generators import (
+        WordsTrainerGenerator, _read_json_lenient,
+    )
+    from core import pronunciation
+    try:
+        data = _read_json_lenient(path)
+        words = WordsTrainerGenerator._flatten_words(data)
+    except Exception:                       # noqa: BLE001
+        return False
+    inline = pronunciation.inline_transcriptions(data)
+    return any(pronunciation.transcription_of(t, inline) for t in words)
+
+
+#: Настройка, которой поставочный раздел «конструктор» предмета Физика
+#: не имел никогда. Второй закон Ньютона взят не как «какая-нибудь
+#: задача», а как пример из документации самого конструктора
+#: (`exercises/fisic/fisic_generater.py`): раздел из поставки обязан
+#: показывать, что конструктор умеет, — иначе первое, что видит
+#: преподаватель, это пустая форма.
+_PHYSICS_CONSTRUCTOR_DEFAULT = {
+    "condition": "Тело массой #m# движется с ускорением #a#. "
+                 "Найдите действующую на него силу.",
+    "result_letter": "F",
+    "formula": "m * a",
+    "dimension": "Н",
+    "variables": {
+        "m": {"min": 1, "max": 20, "kind": "natural", "dimension": "кг"},
+        "a": {"min": 1, "max": 10, "kind": "natural", "dimension": "м/с^2"},
+    },
+}
+
+
+def _repair_physics_constructor(repo: Repository) -> bool:
+    """
+    Починить поставочный раздел «конструктор» предмета Физика.
+
+    В БД он лежит с `constracted = 0` — то есть заявляет, что его
+    обслуживает КОД, — но код-генератора с его номером нет и не было.
+    Клик по нему даёт `KeyError: Нет генератора для partition_id=2`.
+    По имени и предмету это конструктор физики, то есть `constracted = 1`.
+
+    Правка осторожная: трогаем только запись, которая ещё не настроена
+    (пустые параметры). Настроенный раздел — уже работа преподавателя, и
+    перезаписывать её нельзя, даже если `constracted` выглядит странно.
+    """
+    for part in repo.list_partitions_for_subject(3):
+        if part.constracted != 0 or part.generation_params:
+            continue
+        if "конструктор" not in part.name.lower():
+            continue
+        repo.upsert_partition(
+            subject_id=3,
+            name=part.name,
+            constracted=1,
+            generation_params=_PHYSICS_CONSTRUCTOR_DEFAULT,
+            partition_id=part.id,
+        )
+        return True
+    return False
+
+
+def english_partition_ids(words_dir: Path) -> dict[str, int]:
+    """
+    Номера разделов словарей: `имя файла → id`. Одна функция на sync и на
+    сборку реестра — разойтись им нельзя, иначе раздел в БД снова окажется
+    без генератора.
+    """
+    stems = [p.stem for p in sorted(words_dir.glob("*.json"))]
+    return partition_ids.assign(stems, partition_ids.ENGLISH_WORDS)
+
+
+def _migrate_legacy_english_ids(repo: Repository, words_dir: Path) -> None:
+    """
+    Перевести словари со старых позиционных номеров (1000+i) на выведенные
+    из имени, сохранив ссылки на них.
+
+    Опознаём по ИМЕНИ РАЗДЕЛА, а не по номеру: имя — единственное, что в
+    старой схеме что-то значило. Номер значил только положение файла в
+    каталоге в день запуска.
+    """
+    by_display = {
+        _english_display_name(path): partition_ids.english_words_id(path.stem)
+        for path in sorted(words_dir.glob("*.json"))
+    }
+    for part in repo.list_partitions_for_subject(2):
+        if part.constracted != 0 or part.id not in partition_ids.LEGACY_ENGLISH:
+            continue
+        target = by_display.get(part.name)
+        if target is not None and target != part.id:
+            repo.renumber_partition(part.id, target)
+
+
+def _drop_stale_english_partitions(repo: Repository, words_dir: Path) -> None:
+    """
+    Убрать разделы словарей, которым больше не соответствует ни один файл.
+
+    Такие остаются от переименованных словарей и от синхронизации со старой
+    схемой номеров. Открыть их нельзя — генератора нет, — но в списке у
+    преподавателя они стоят наравне с рабочими: клик даёт «Нет генератора
+    для partition_id=…». Удалять их безопаснее, чем оставлять: раздел без
+    генератора не несёт ничего, кроме имени.
+    """
+    alive = set()
+    for path in words_dir.glob("*.json"):
+        alive.add(partition_ids.english_words_id(path.stem))
+        alive.add(partition_ids.english_transcription_id(path.stem))
+        alive.add(partition_ids.english_pronunciation_id(path.stem))
+    for part in repo.list_partitions_for_subject(2):
+        if part.constracted != 0 and part.constracted is not None:
+            continue
+        in_band = (part.id in partition_ids.LEGACY_ENGLISH
+                   or part.id in partition_ids.ENGLISH_WORDS
+                   or part.id in partition_ids.ENGLISH_TRANSCRIPTION
+                   or part.id in partition_ids.ENGLISH_PRONUNCIATION)
+        if in_band and part.id not in alive:
+            repo.delete_partition(part.id)
 
 
 def _english_display_name(path: Path) -> str:
@@ -155,8 +337,11 @@ def build_registry(
 
     # 2. Английские словари
     if words_dir.exists():
-        for i, path in enumerate(sorted(words_dir.glob("*.json"))):
-            pid = 1000 + i
+        from exercises.english.generators import (
+            PronunciationGenerator, TranscriptionChoiceGenerator, _detect_kind,
+        )
+        for path in sorted(words_dir.glob("*.json")):
+            pid = partition_ids.english_words_id(path.stem)
             display = _english_display_name(path)
             gen = english_generators_for_path(
                 path, pid, name=display,
@@ -165,6 +350,20 @@ def build_registry(
             )
             if gen is not None:
                 registry.register(gen)
+            if _detect_kind(path) == "words" and _has_transcriptions(path):
+                registry.register(TranscriptionChoiceGenerator(
+                    name=_english_transcription_name(path),
+                    words_path=path,
+                    partition_id=partition_ids.english_transcription_id(
+                        path.stem),
+                ))
+            if _detect_kind(path) == "words" and _has_audio(path):
+                registry.register(PronunciationGenerator(
+                    name=_english_pronunciation_name(path),
+                    words_path=path,
+                    partition_id=partition_ids.english_pronunciation_id(
+                        path.stem),
+                ))
 
     # 3. БД: фабрики для физики, групп, тестов
     for subj in repo.list_subjects():
@@ -183,19 +382,17 @@ def build_registry(
                 #
                 # Настоящая коллизия — конструкторный раздел (constracted
                 # 1..4, создан пользователем), чей id занят кодовым
-                # генератором: обычно словарём английского, чей id =
-                # 1000 + номер файла в отсортированном списке — он растёт
-                # вместе с числом словарей и ничем не согласован с id
-                # остальных разделов. Такой раздел молча терялся бы —
+                # генератором. Такой раздел молча терялся бы —
                 # предупреждаем явно, вместо тихого открытия не того
                 # задания при клике (см. историю бага).
                 if part.constracted != 0:
                     warnings.warn(
                         f"partition_id={part.id} раздела {part.name!r} "
                         f"(предмет {subj.name!r}) уже занят другим генератором "
-                        f"в реестре — раздел не будет открываться. Дайте ему "
-                        f"id вне диапазона 1000+<число словарей> "
-                        f"(Repository.upsert_partition(partition_id=...)).",
+                        f"в реестре — раздел не будет открываться. Номера "
+                        f"полос кода перечислены в core/partition_ids.py; "
+                        f"пользовательские разделы должны получать номер "
+                        f"через upsert_partition без явного id.",
                         stacklevel=2,
                     )
                 continue
@@ -209,6 +406,50 @@ def build_registry(
                 _register_graph(registry, part)
 
     return registry
+
+
+# ---------- Проверка связи «раздел ↔ генератор» ----------
+
+def unserved_partitions(repo: Repository, registry: GeneratorRegistry,
+                        ) -> list[tuple[int, str, str]]:
+    """
+    Разделы, которые нечем открыть: `(id, имя раздела, имя предмета)`.
+
+    Номер раздела — единственное, что связывает запись в БД с кодом, и до
+    сих пор за целостностью этой связи никто не следил. Проверять её надо
+    на старте, а не в момент, когда преподаватель нажал «Сгенерировать» и
+    получил `KeyError: Нет генератора для partition_id=2`.
+
+    Так и нашёлся раздел «конструктор» предмета Физика: `constracted = 0`
+    объявляет «меня обслуживает код», а кода с таким номером нет и не было.
+    Проверяются только `constracted = 0`: у остальных генератор строится из
+    самой записи БД и существовать обязан по построению.
+    """
+    problems: list[tuple[int, str, str]] = []
+    for subj in repo.list_subjects():
+        for part in repo.list_partitions_for_subject(subj.id):
+            if part.constracted == 0 and not registry.has(part.id):
+                problems.append((part.id, part.name, subj.name))
+    return problems
+
+
+def report_unserved_partitions(repo: Repository,
+                               registry: GeneratorRegistry) -> list[str]:
+    """
+    То же, но текстом и через `warnings` — для вызова на старте.
+
+    Возвращает готовые строки, чтобы вызывающий мог показать их человеку,
+    а не только записать в консоль, которой у собранного приложения нет.
+    """
+    lines = [
+        f"Раздел {pid} {name!r} (предмет {subject!r}) объявлен кодовым "
+        f"(constracted=0), но генератора с таким номером нет — открыть его "
+        f"нельзя."
+        for pid, name, subject in unserved_partitions(repo, registry)
+    ]
+    for line in lines:
+        warnings.warn(line, stacklevel=2)
+    return lines
 
 
 # ---------- Фабрики ----------
