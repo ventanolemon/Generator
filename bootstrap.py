@@ -181,7 +181,8 @@ def _has_audio(path: Path) -> bool:
         words = WordsTrainerGenerator._flatten_words(data)
     except Exception:                       # noqa: BLE001
         return False
-    return any(pronunciation.audio_of(term) for term in words)
+    inline = pronunciation.inline_audio(data, path.parent)
+    return any(pronunciation.audio_for(term, inline) for term in words)
 
 
 def _has_transcriptions(path: Path) -> bool:

@@ -303,9 +303,13 @@ class ParamInspector(QWidget):
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Не удалось открыть слова", str(e))
                 return
-        dlg = WordEditorDialog(words, parent=self)
+        audio = node.params.get("inline_audio")
+        if not isinstance(audio, dict):
+            audio = getattr(words, "audio", {})
+        dlg = WordEditorDialog(words, parent=self, audio=audio)
         if dlg.exec():
             node.params["inline"] = dlg.result_words()
+            node.params["inline_audio"] = dlg.result_audio()
             self.params_changed.emit(self.node_id)
 
     def _commit(self, key: str) -> None:

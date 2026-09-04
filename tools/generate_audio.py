@@ -87,28 +87,39 @@ def downsample_wav(path: Path, target_rate: int, trim: bool = True) -> None:
     """
     Пост-обработка WAV на месте: привести к mono, обрезать тишину в начале
     и конце (espeak добавляет заметные паузы), понизить частоту до
-    target_rate. Используется stdlib audioop — это build-time скрипт.
-    Если audioop недоступен (Python 3.13+) — тихо пропускаем.
+    target_rate. Реализация использует numpy: удалённый из Python 3.13
+    модуль audioop раньше тихо отключал всю постобработку на новых Python.
     """
     try:
-        import audioop  # noqa: PLC0415  (deprecated в 3.13, но это dev-tool)
-    except Exception:
-        return
-    try:
+        import numpy as np
+
         with wave.open(str(path), "rb") as r:
             frames = r.readframes(r.getnframes())
             sampwidth, nchannels, rate = (
                 r.getsampwidth(), r.getnchannels(), r.getframerate()
             )
+        dtype = {1: np.uint8, 2: np.int16, 4: np.int32}.get(sampwidth)
+        if dtype is None:
+            raise ValueError(f"неподдерживаемая разрядность: {sampwidth * 8}")
+        samples = np.frombuffer(frames, dtype=dtype)
+        if sampwidth == 1:
+            samples = samples.astype(np.float64) - 128.0
+        else:
+            samples = samples.astype(np.float64)
         if nchannels > 1:
-            frames = audioop.tomono(frames, sampwidth, 0.5, 0.5)
-            nchannels = 1
+            usable = samples.size - samples.size % nchannels
+            samples = samples[:usable].reshape(-1, nchannels).mean(axis=1)
+        frames = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
+        sampwidth, nchannels = 2, 1
         if trim:
             frames = _trim_silence(frames, sampwidth, rate)
         if rate > target_rate:
-            frames, _ = audioop.ratecv(
-                frames, sampwidth, nchannels, rate, target_rate, None
-            )
+            samples = np.frombuffer(frames, dtype=np.int16).astype(np.float64)
+            count = max(1, int(round(samples.size * target_rate / rate)))
+            samples = np.interp(
+                np.linspace(0.0, 1.0, count),
+                np.linspace(0.0, 1.0, samples.size), samples)
+            frames = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
             rate = target_rate
         with wave.open(str(path), "wb") as w:
             w.setnchannels(nchannels)
@@ -120,11 +131,16 @@ def downsample_wav(path: Path, target_rate: int, trim: bool = True) -> None:
 
 
 def _trim_silence(frames: bytes, sampwidth: int, rate: int,
-                  threshold: int = 350, pad_ms: int = 40) -> bytes:
+                  threshold: int = 120, pad_ms: int = 160,
+                  window_ms: int = 20) -> bytes:
     """
-    Обрезать тихие участки в начале/конце по порогу амплитуды, оставив
-    небольшой отступ pad_ms, чтобы слово не «щёлкало». Работает на 16-бит
-    PCM (то, что выдаёт espeak). При иной разрядности — возвращает как есть.
+    Обрезать тишину по средней энергии коротких окон, оставив достаточно
+    большой отступ после речи.
+
+    Проверка отдельных отсчётов с прежними 350/40 мс съедала тихие конечные
+    согласные (особенно /s/, /f/, /t/): у них малая амплитуда, но энергия
+    держится целым окном. Порог окна ниже, а 160 мс хвоста сохраняют окончание
+    и естественное затухание, не возвращая длинную паузу синтезатора.
     """
     if sampwidth != 2:
         return frames
@@ -133,14 +149,17 @@ def _trim_silence(frames: bytes, sampwidth: int, rate: int,
     if n == 0:
         return frames
     samples = struct.unpack(f"<{n}h", frames)
-    lo = 0
-    while lo < n and abs(samples[lo]) < threshold:
-        lo += 1
-    hi = n
-    while hi > lo and abs(samples[hi - 1]) < threshold:
-        hi -= 1
-    if lo >= hi:
+    window = max(1, int(rate * window_ms / 1000))
+    active: list[tuple[int, int]] = []
+    for start in range(0, n, window):
+        stop = min(n, start + window)
+        rms = (sum(sample * sample for sample in samples[start:stop])
+               / max(1, stop - start)) ** 0.5
+        if rms >= threshold:
+            active.append((start, stop))
+    if not active:
         return frames  # всё ниже порога — не трогаем
+    lo, hi = active[0][0], active[-1][1]
     pad = int(rate * pad_ms / 1000)
     lo = max(0, lo - pad)
     hi = min(n, hi + pad)
@@ -205,8 +224,8 @@ def parse_args(argv=None):
                    help="Каталог для WAV и index.json.")
     p.add_argument("--backend", default="espeak",
                    help="TTS-бэкенд: espeak | piper | online.")
-    p.add_argument("--rate", type=int, default=11025,
-                   help="Целевая частота дискретизации (Гц). По умолчанию 11025.")
+    p.add_argument("--rate", type=int, default=16000,
+                   help="Целевая частота дискретизации (Гц). По умолчанию 16000.")
     p.add_argument("--force", action="store_true",
                    help="Перегенерировать даже существующие файлы.")
     return p.parse_args(argv)
