@@ -145,15 +145,13 @@ def input_availability() -> tuple[bool, str]:
     второе — устройство.
     """
     try:
-        from PyQt6.QtMultimedia import QMediaDevices
+        # Здесь проверяется только наличие backend. Опрос устройства намеренно
+        # отложен до нажатия «Записать»: на части Windows-драйверов вызов
+        # defaultAudioInput() во время построения окна аварийно завершает весь
+        # процесс (0xC0000409), и Python не может перехватить native crash.
+        from PyQt6.QtMultimedia import QAudioSource  # noqa: F401
     except Exception as exc:                            # noqa: BLE001
         return False, f"Звуковой модуль QtMultimedia недоступен: {exc}"
-    try:
-        device = QMediaDevices.defaultAudioInput()
-    except Exception as exc:                            # noqa: BLE001
-        return False, f"Не удалось опросить устройства ввода: {exc}"
-    if device is None or device.isNull():
-        return False, "Микрофон не найден."
     return True, ""
 
 
@@ -218,7 +216,7 @@ class VoiceRecorder(QWidget):
 
     def start(self) -> None:
         from PyQt6.QtMultimedia import (
-            QAudioFormat, QAudioSource, QMediaDevices,
+            QAudioSource, QMediaDevices,
         )
 
         device = QMediaDevices.defaultAudioInput()
@@ -226,15 +224,11 @@ class VoiceRecorder(QWidget):
             self.status.setText("Микрофон не найден.")
             return
 
-        fmt = QAudioFormat()
-        fmt.setSampleRate(WANTED_RATE)
-        fmt.setChannelCount(WANTED_CHANNELS)
-        fmt.setSampleFormat(QAudioFormat.SampleFormat.Int16)
-        if not device.isFormatSupported(fmt):
-            # Своё предложение устройства принимается целиком, а не
-            # правится по частям: частоту снимет `resample`, каналы и
-            # разрядность — `to_mono_int16`.
-            fmt = device.preferredFormat()
+        # Используем формат самого устройства. Запрос искусственного 16 kHz
+        # Int16 заставлял некоторые Windows-драйверы пройти нестабильную ветку
+        # isFormatSupported; частоту, каналы и float/int всё равно безопасно
+        # нормализуют resample и to_mono_int16 после записи.
+        fmt = device.preferredFormat()
 
         self._chunks = []
         self._source = QAudioSource(device, fmt, self)
