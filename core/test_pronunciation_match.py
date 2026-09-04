@@ -178,6 +178,27 @@ class NeighbourhoodRuleTests(unittest.TestCase):
         recording = M.mfcc(_signal(terms[0]))
         self.assertFalse(M.accepts(terms[1], recording, self.references))
 
+    def test_guided_match_tolerates_a_narrow_runner_up_win(self):
+        """Смена диктора не должна штрафовать цель за небольшое второе место."""
+        references = {
+            "target": np.zeros((4, 2), dtype=np.float32),
+            "neighbour": np.full((4, 2), 10.0, dtype=np.float32),
+        }
+        recording = np.full((4, 2), 6.0, dtype=np.float32)
+        found, accepted = M.expected_match("target", recording, references)
+        self.assertEqual(found.term, "neighbour")
+        self.assertTrue(accepted)
+
+    def test_guided_match_still_rejects_a_clearly_different_word(self):
+        references = {
+            "target": np.zeros((4, 2), dtype=np.float32),
+            "neighbour": np.full((4, 2), 10.0, dtype=np.float32),
+        }
+        recording = np.full((4, 2), 9.0, dtype=np.float32)
+        found, accepted = M.expected_match("target", recording, references)
+        self.assertEqual(found.term, "neighbour")
+        self.assertFalse(accepted)
+
     def test_verdict_is_refused_when_the_lead_is_thin(self):
         """
         Вторая половина правила: при слабом отрыве вердикт не выносится.
