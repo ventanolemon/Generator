@@ -541,6 +541,7 @@ def accepts(expected: str, recording: np.ndarray,
 def expected_match(expected: str, recording: np.ndarray,
                    references: Mapping[str, np.ndarray], *,
                    gaps: Optional[Mapping[str, float]] = None,
+                   tolerance_share: float = 0.01) -> tuple[Optional[Match], bool]:
                    tolerance_share: float = 0.35) -> tuple[Optional[Match], bool]:
     """Сопоставить запись с учётом слова, которое попросили произнести.
 
@@ -557,6 +558,12 @@ def expected_match(expected: str, recording: np.ndarray,
     if found is None or expected not in references:
         return found, False
     if found.term == expected:
+        if found.runner_up is None:
+            return found, True
+        # Шум или произвольный звук тоже всегда имеет «первое место». Нужен
+        # хотя бы небольшой измеримый отрыв, иначе прошлое исправление
+        # действительно засчитывало почти любую запись.
+        return found, found.share >= tolerance_share
         return found, True
 
     expected_distance = dtw_distance(recording, references[expected])

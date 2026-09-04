@@ -1962,6 +1962,9 @@ class VoiceSpec(AnswerSpec):
     transcription: str = ""
     """IPA для показа. К проверке отношения не имеет — только к подсказке."""
 
+    audio: Tuple[Tuple[str, str], ...] = ()
+    """Пользовательские эталоны ``(термин, WAV)`` для этого словаря."""
+
     mode: CheckMode = DEFAULT_MODE
     tuning: dict = field(default_factory=dict)
 
@@ -2043,7 +2046,7 @@ class VoiceSpec(AnswerSpec):
 
         head = f"{self.term} {self.transcription}".strip()
         blocks: List[Block] = [TextBlock(head)]
-        sound = pronunciation.audio_of(self.term)
+        sound = pronunciation.audio_for(self.term, dict(self.audio))
         if sound:
             blocks.append(AudioBlock(sound, label=f"Эталон «{self.term}»"))
         return blocks
@@ -2068,7 +2071,7 @@ class VoiceSpec(AnswerSpec):
         слово неотличимо от соседа по словарю, — пример отсеется сам.
         """
         from . import pronunciation
-        sound = pronunciation.audio_of(self.term)
+        sound = pronunciation.audio_for(self.term, dict(self.audio))
         return [sound] if sound else []
 
     # ---------- вспомогательное ----------
@@ -2095,7 +2098,8 @@ class VoiceSpec(AnswerSpec):
         terms = list(dict.fromkeys((self.term, *self.vocabulary)))
         built = matching.reference_features(
             [t for t in terms if t],
-            lambda term: _recording_source(pronunciation.audio_of(term) or ""))
+            lambda term: _recording_source(
+                pronunciation.audio_for(term, dict(self.audio)) or ""))
         # Именно ЭТОТ словарь, а не его копия: в него пишет `match`, и
         # возврат нового каждый раз молча выбрасывал бы накопленное.
         prepared = (built, {})
@@ -2108,6 +2112,8 @@ class VoiceSpec(AnswerSpec):
             out["vocabulary"] = list(self.vocabulary)
         if self.transcription:
             out["transcription"] = self.transcription
+        if self.audio:
+            out["audio"] = [list(item) for item in self.audio]
         return out
 
 
@@ -2472,6 +2478,7 @@ def _build_voice(data: dict) -> VoiceSpec:
         term=str(data.get("term", "")),
         vocabulary=tuple(data.get("vocabulary") or ()),
         transcription=str(data.get("transcription", "")),
+        audio=tuple((str(k), str(v)) for k, v in (data.get("audio") or ())),
         **_common(data))
 
 

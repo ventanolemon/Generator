@@ -37,6 +37,14 @@ from ..node import ExecContext, Node, Port
 from ..port_types import PortType
 
 
+class WordsVocabulary(dict):
+    """Словарь term→translation с необязательными аудио-метаданными."""
+
+    def __init__(self, *args, audio=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.audio = dict(audio or {})
+
+
 def _load_words_file(path: str) -> dict[str, str]:
     """Прочитать файл и привести к dict[str, str] (через english.generators)."""
     from exercises.english.generators import (
@@ -48,7 +56,10 @@ def _load_words_file(path: str) -> dict[str, str]:
         raise GraphValidationError(
             f"Файл со словами не найден: {describe(path)}")
     data = _read_json_lenient(p)
-    return WordsTrainerGenerator._flatten_words(data)
+    from core import pronunciation
+    return WordsVocabulary(
+        WordsTrainerGenerator._flatten_words(data),
+        audio=pronunciation.inline_audio(data, p.parent))
 
 
 def _load_sentences_file(path: str) -> list[dict]:
@@ -89,6 +100,7 @@ class WordsFileNode(Node):
         # Встроенный словарь (правки из предпросмотра). Не редактируется как
         # обычное поле — хранится графом; пусто → читаем file.
         "inline": {"type": "hidden", "default": None},
+        "inline_audio": {"type": "hidden", "default": None},
     }
 
     def validate_params(self) -> None:
@@ -102,7 +114,9 @@ class WordsFileNode(Node):
     def compute(self, inputs, ctx: ExecContext):
         inline = self.params.get("inline")
         if isinstance(inline, dict) and inline:
-            words = {str(k): str(v) for k, v in inline.items()}
+            words = WordsVocabulary(
+                {str(k): str(v) for k, v in inline.items()},
+                audio=self.params.get("inline_audio") or {})
         else:
             words = _load_words_file(str(self.params.get("file", "")).strip())
         if not words:
@@ -239,7 +253,9 @@ class WordsTrainerNode(Node):
         if str(self.params.get("direction", "translation_to_term")) \
                 == "term_to_translation":
             words = {v: k for k, v in words.items()}
-        return {"out": WordsSession(dict(words), tolerant=tolerant)}
+        return {"out": WordsSession(
+            dict(words), tolerant=tolerant,
+            inline_audio=getattr(words, "audio", None))}
 
 
 class SentencesFileNode(Node):
